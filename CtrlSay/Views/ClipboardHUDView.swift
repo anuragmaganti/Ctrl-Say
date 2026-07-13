@@ -1,0 +1,291 @@
+import SwiftUI
+
+struct ClipboardHUDView: View {
+    let model: AppModel
+    let presentationState: ClipboardHUDPresentationState
+    let editingSession: DashboardEditingSession
+    let thumbnailProvider: ClipboardThumbnailProvider
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        VStack(spacing: 0) {
+            dragHeader
+                .frame(height: ClipboardHUDMetrics.headerHeight)
+
+            collectionPicker
+                .frame(height: ClipboardHUDMetrics.pickerHeight)
+
+            Divider()
+
+            copyList
+                .frame(maxHeight: .infinity)
+
+            if presentationState.selectedCollection == .numbered {
+                numberedFooter
+                    .frame(height: ClipboardHUDMetrics.numberedFooterHeight)
+            }
+        }
+        .frame(width: ClipboardHUDMetrics.width)
+        .containerShape(.rect(cornerRadius: ClipboardHUDMetrics.cornerRadius))
+        .glassEffect(
+            .regular,
+            in: .rect(cornerRadius: ClipboardHUDMetrics.cornerRadius)
+        )
+        .glassEffectTransition(.materialize)
+        .animation(
+            reduceMotion ? nil : .snappy(duration: 0.2),
+            value: presentationState.selectedCollection
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Ctrl-Say Clipboard HUD")
+    }
+
+    private var dragHeader: some View {
+        HStack(spacing: 10) {
+            ZStack {
+                Circle()
+                    .fill(statusColor.opacity(0.14))
+                Image(systemName: statusIcon)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(statusColor)
+            }
+            .frame(width: 32, height: 32)
+            .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(statusTitle)
+                    .font(.callout.weight(.semibold))
+                    .lineLimit(1)
+                Text("Hold Right Option to hide")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 8)
+
+            if model.isProcessingCommand {
+                ProgressView()
+                    .controlSize(.mini)
+                    .accessibilityLabel("Processing clipboard command")
+            }
+
+            Image(systemName: "line.3.horizontal")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
+        }
+        .padding(.horizontal, 14)
+        .contentShape(.rect)
+        .gesture(WindowDragGesture())
+        .allowsWindowActivationEvents(true)
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Drag to move the Clipboard HUD")
+    }
+
+    private var collectionPicker: some View {
+        Picker(
+            "Clipboard collection",
+            selection: selectedCollectionBinding
+        ) {
+            ForEach(ClipboardHUDCollection.allCases) { collection in
+                Text(collection.rawValue)
+                    .tag(collection)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .padding(.horizontal, 14)
+        .padding(.vertical, 7)
+    }
+
+    private var copyList: some View {
+        ScrollView {
+            Group {
+                switch presentationState.selectedCollection {
+                case .numbered:
+                    numberedCopies
+                case .permanent:
+                    permanentCopies
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, ClipboardHUDMetrics.listVerticalPadding / 2)
+        }
+        .scrollIndicators(.automatic)
+        .scrollEdgeEffectStyle(.hard, for: [.top, .bottom])
+    }
+
+    @ViewBuilder
+    private var numberedCopies: some View {
+        let slots = model.slots.numberedSlots
+        if slots.isEmpty {
+            emptyState(
+                icon: "square.stack",
+                title: "No numbered copies",
+                detail: "Say “copy 1” with something selected."
+            )
+        } else {
+            LazyVStack(spacing: 0) {
+                ForEach(slots, id: \.number) { slot in
+                    NumberedCopyRow(
+                        number: slot.number,
+                        payload: slot.payload,
+                        paste: {
+                            model.pasteNumberedCopy(slot.payload)
+                        },
+                        delete: {
+                            model.deleteNumberedCopy(slot.number)
+                        },
+                        style: .hud,
+                        thumbnailProvider: thumbnailProvider
+                    )
+                    .id(slot.payload.id)
+                    .onAppear {
+                        model.recordHUDRowAppearance(for: slot.payload.id)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var permanentCopies: some View {
+        let slots = model.slots.namedSlots
+        if slots.isEmpty {
+            emptyState(
+                icon: "pin",
+                title: "No permanent copies",
+                detail: "Say “permanent copy house” with something selected."
+            )
+        } else {
+            LazyVStack(spacing: 0) {
+                ForEach(slots, id: \.payload.id) { slot in
+                    PermanentCopyRow(
+                        name: slot.name,
+                        payload: slot.payload,
+                        editingSession: editingSession,
+                        paste: {
+                            model.pastePermanentCopy(slot.payload.id)
+                        },
+                        delete: {
+                            model.deletePermanentCopy(slot.payload.id)
+                        },
+                        rename: { payloadID, requestedName in
+                            try model.renamePermanentCopy(
+                                payloadID,
+                                to: requestedName
+                            )
+                        },
+                        updateText: { payloadID, text in
+                            try model.updatePermanentCopyText(
+                                payloadID,
+                                text: text
+                            )
+                        },
+                        style: .hud,
+                        thumbnailProvider: thumbnailProvider
+                    )
+                    .onAppear {
+                        model.recordHUDRowAppearance(for: slot.payload.id)
+                    }
+                }
+            }
+        }
+    }
+
+    private func emptyState(
+        icon: String,
+        title: String,
+        detail: String
+    ) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 17, weight: .medium))
+                .foregroundStyle(.tertiary)
+                .frame(width: 30)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.callout.weight(.medium))
+                Text(detail)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: ClipboardHUDMetrics.emptyListHeight)
+        .padding(.horizontal, 10)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var numberedFooter: some View {
+        HStack {
+            Spacer()
+            Button("Clear All", systemImage: "trash") {
+                model.clearNumberedCopies()
+            }
+            .font(.caption)
+            .buttonStyle(.borderless)
+            .disabled(model.slots.numberedSlots.isEmpty)
+            .accessibilityLabel("Clear all numbered copies")
+        }
+        .padding(.horizontal, 14)
+        .overlay(alignment: .top) {
+            Divider()
+        }
+    }
+
+    private var selectedCollectionBinding: Binding<ClipboardHUDCollection> {
+        Binding(
+            get: { presentationState.selectedCollection },
+            set: { collection in
+                editingSession.prepareForDismissal()
+                presentationState.selectedCollection = collection
+            }
+        )
+    }
+
+    private var statusTitle: String {
+        if !model.isReadyForCommands { return "Setup required" }
+        switch model.speech.state {
+        case .requestingMicrophone, .preparing, .downloadingModel:
+            return "Starting listening…"
+        case .listening:
+            return "Listening"
+        case .stopping:
+            return "Stopping…"
+        case .failed:
+            return "Listening unavailable"
+        case .stopped:
+            return "Clipboard HUD"
+        }
+    }
+
+    private var statusIcon: String {
+        switch model.speech.state {
+        case .listening:
+            return "waveform"
+        case .requestingMicrophone, .preparing, .downloadingModel, .stopping:
+            return "ellipsis"
+        case .failed:
+            return "exclamationmark"
+        case .stopped:
+            return model.isReadyForCommands ? "doc.on.clipboard" : "checklist"
+        }
+    }
+
+    private var statusColor: Color {
+        if !model.isReadyForCommands { return .orange }
+        switch model.speech.state {
+        case .listening:
+            return .green
+        case .requestingMicrophone, .preparing, .downloadingModel, .stopping:
+            return .accentColor
+        case .failed:
+            return .red
+        case .stopped:
+            return .secondary
+        }
+    }
+}

@@ -96,6 +96,10 @@ enum VoiceCommandParser {
         normalizedTokens(name).joined(separator: " ")
     }
 
+    static func validNormalizedPermanentName(_ name: String) -> String? {
+        validNameTokens(normalizedTokens(name))
+    }
+
     static func isPotentialCommand(_ transcript: String) -> Bool {
         let tokens = normalizedTokens(transcript)
         guard let first = tokens.first else { return true }

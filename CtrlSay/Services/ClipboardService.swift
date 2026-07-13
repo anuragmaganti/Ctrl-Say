@@ -286,8 +286,7 @@ final class ClipboardService {
         switch kind {
         case .text, .mixed:
             if let text {
-                let singleLine = text.replacingOccurrences(of: "\n", with: " ")
-                return String(singleLine.prefix(80))
+                return ClipboardPayload.preview(forText: text)
             }
             return itemCount == 1 ? "Mixed content" : "\(itemCount) items"
         case .files:

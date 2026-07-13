@@ -4,16 +4,13 @@ import Foundation
 
 @MainActor
 final class RightOptionKeyMonitor {
-    private static let rightOptionKeyCode = CGKeyCode(61)
-
-    private let onToggle: () -> Void
+    private let pressClassifier: RightOptionPressClassifier
     private var globalMonitor: Any?
     private var localMonitor: Any?
-    private var isRightOptionDown = false
     private var previouslyHadGlobalMonitoringAccess = false
 
-    init(onToggle: @escaping () -> Void) {
-        self.onToggle = onToggle
+    init(onGesture: @escaping (RightOptionGesture) -> Void) {
+        pressClassifier = RightOptionPressClassifier(onGesture: onGesture)
     }
 
     var hasGlobalMonitoringAccess: Bool {
@@ -67,7 +64,7 @@ final class RightOptionKeyMonitor {
             NSEvent.removeMonitor(localMonitor)
             self.localMonitor = nil
         }
-        isRightOptionDown = false
+        pressClassifier.reset()
     }
 
     private func installGlobalMonitor() {
@@ -85,19 +82,15 @@ final class RightOptionKeyMonitor {
     }
 
     private func handle(_ event: NSEvent) {
-        guard event.keyCode == Self.rightOptionKeyCode else { return }
+        guard RightOptionEventFilter.recognizes(keyCode: event.keyCode) else {
+            return
+        }
 
         // flagsChanged already contains the modifier transition. A separate
         // global key-state query can lag the event on some keyboards.
         let isDown = event.modifierFlags.contains(.option)
 
-        if isDown, !isRightOptionDown {
-            isRightOptionDown = true
-            Telemetry.commands.info("Right Option toggled Listening mode")
-            onToggle()
-        } else if !isDown {
-            isRightOptionDown = false
-        }
+        pressClassifier.process(isDown: isDown)
     }
 
 }

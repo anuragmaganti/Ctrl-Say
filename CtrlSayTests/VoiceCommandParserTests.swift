@@ -164,4 +164,33 @@ final class VoiceCommandParserTests: XCTestCase {
             .pasteNumber(2)
         )
     }
+
+    func testPermanentNameValidationNormalizesUsingVoiceGrammar() {
+        XCTAssertEqual(
+            VoiceCommandParser.validNormalizedPermanentName("  Main-Home! "),
+            "main home"
+        )
+        XCTAssertEqual(
+            VoiceCommandParser.validNormalizedPermanentName("Shipping Address"),
+            "shipping address"
+        )
+        XCTAssertEqual(
+            VoiceCommandParser.parse("paste main home"),
+            .pasteNamed("main home")
+        )
+
+        for invalidName in [
+            "",
+            "2",
+            "two",
+            "too",
+            "one place",
+            "this name has four words",
+        ] {
+            XCTAssertNil(
+                VoiceCommandParser.validNormalizedPermanentName(invalidName),
+                "Expected \(invalidName.debugDescription) to be rejected"
+            )
+        }
+    }
 }

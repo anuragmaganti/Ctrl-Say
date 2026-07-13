@@ -13,6 +13,7 @@ final class AppModel {
     private(set) var isProcessingCommand = false
     private(set) var hasEventPostingAccess = false
     private(set) var hasKeyboardMonitoringAccess = false
+    private(set) var isClipboardHUDPresented = false
 
 #if DEBUG
     private(set) var debugDiagnostics = DebugPipelineSnapshot()
@@ -28,6 +29,11 @@ final class AppModel {
     @ObservationIgnored private var listeningTransitionTask: Task<Void, Never>?
     @ObservationIgnored private var vocabularyRefreshPending = false
     @ObservationIgnored private var vocabularyRefreshTask: Task<Void, Never>?
+    @ObservationIgnored private var hudPresentationRequestedAtNanoseconds: UInt64?
+    @ObservationIgnored private var pendingHUDRowAppearance: (
+        payloadID: UUID,
+        storedAtNanoseconds: UInt64
+    )?
 
     var isReadyForCommands: Bool {
         speech.microphoneAuthorization == .authorized
@@ -41,8 +47,8 @@ final class AppModel {
             self?.received(result)
         }
 
-        let monitor = RightOptionKeyMonitor { [weak self] in
-            self?.toggleListening()
+        let monitor = RightOptionKeyMonitor { [weak self] gesture in
+            self?.handleRightOptionGesture(gesture)
         }
         rightOptionMonitor = monitor
         hasKeyboardMonitoringAccess = monitor.hasGlobalMonitoringAccess
@@ -50,28 +56,142 @@ final class AppModel {
     }
 
     func toggleListening() {
-        refreshPermissions()
-        let canStopActiveTransition = speech.isActive
-            || listeningTransitionTask != nil
-        guard isReadyForCommands || canStopActiveTransition else {
-            lastError = "Complete the three setup permissions before listening."
-            lastAction = "Setup required"
-            return
+        _ = setListeningDesired(!currentListeningIntent)
+    }
+
+    func setClipboardHUDPresented(_ isPresented: Bool) {
+        if isPresented, !isClipboardHUDPresented {
+            hudPresentationRequestedAtNanoseconds = DispatchTime.now().uptimeNanoseconds
+        }
+        isClipboardHUDPresented = isPresented
+    }
+
+    func handleRightOptionGesture(_ gesture: RightOptionGesture) {
+        let current = RightOptionInteractionState(
+            wantsListening: currentListeningIntent,
+            isHUDPresented: isClipboardHUDPresented
+        )
+        let next = RightOptionInteractionReducer.reduce(
+            current,
+            gesture: gesture,
+            showsHUDWhenListeningStarts: showsHUDWhenRightOptionStartsListening
+        )
+
+        if next.isHUDPresented, !current.isHUDPresented {
+            hudPresentationRequestedAtNanoseconds = DispatchTime.now().uptimeNanoseconds
+        }
+        isClipboardHUDPresented = next.isHUDPresented
+        if next.wantsListening != current.wantsListening {
+            _ = setListeningDesired(next.wantsListening)
         }
 
-        if listeningTransitionTask == nil {
-            desiredListening = !speech.isActive
-        } else {
-            desiredListening.toggle()
-            if !desiredListening {
-                listeningTransitionTask?.cancel()
-            }
-        }
-        startListeningTransitionIfNeeded()
+        Telemetry.commands.info(
+            "Right Option gesture=\(gesture == .tap ? "tap" : "hold", privacy: .public) listening_requested=\(next.wantsListening, privacy: .public) hud=\(next.isHUDPresented, privacy: .public)"
+        )
     }
 
     func submit(_ command: VoiceCommand) {
         enqueueManual(command)
+    }
+
+    func pasteNumberedCopy(_ payload: ClipboardPayload) {
+        enqueueDashboard(
+            .pasteNumbered(payload: payload),
+            target: clipboard.currentCommandTarget()
+        )
+    }
+
+    func deleteNumberedCopy(_ number: Int) {
+        guard slots.removeNumbered(number) != nil else { return }
+        lastError = nil
+        lastAction = "Deleted copy \(number)"
+    }
+
+    func clearNumberedCopies() {
+        guard !slots.numbered.isEmpty else { return }
+        slots.clearNumbered()
+        lastError = nil
+        lastAction = "Cleared numbered copies"
+    }
+
+    func consumeHUDPresentationRequestTimestamp() -> UInt64? {
+        defer { hudPresentationRequestedAtNanoseconds = nil }
+        return hudPresentationRequestedAtNanoseconds
+    }
+
+    func recordHUDRowAppearance(for payloadID: UUID) {
+        guard let pendingHUDRowAppearance,
+              pendingHUDRowAppearance.payloadID == payloadID else {
+            return
+        }
+        self.pendingHUDRowAppearance = nil
+        let milliseconds = Double(
+            DispatchTime.now().uptimeNanoseconds
+                - pendingHUDRowAppearance.storedAtNanoseconds
+        ) / 1_000_000
+        Telemetry.interface.debug(
+            "HUD row appeared store_to_row_ms=\(milliseconds, privacy: .public)"
+        )
+    }
+
+    func pastePermanentCopy(_ payloadID: UUID) {
+        guard let name = slots.name(forPayloadID: payloadID),
+              let payload = slots.payload(named: name) else {
+            return
+        }
+        enqueueDashboard(
+            .pastePermanent(payload: payload),
+            target: clipboard.currentCommandTarget()
+        )
+    }
+
+    func deletePermanentCopy(_ payloadID: UUID) {
+        guard let name = slots.name(forPayloadID: payloadID),
+              slots.removeNamed(name) != nil else {
+            return
+        }
+        scheduleVocabularyRefresh()
+        lastError = nil
+        lastAction = "Deleted permanent copy"
+    }
+
+    @discardableResult
+    func renamePermanentCopy(
+        _ payloadID: UUID,
+        to requestedName: String
+    ) throws -> String {
+        guard let currentName = slots.name(forPayloadID: payloadID) else {
+            throw ClipboardStoreError.missingPermanentCopy
+        }
+        let validation = try slots.validateRenameNamed(
+            from: currentName,
+            to: requestedName
+        )
+        guard validation.payloadID == payloadID else {
+            throw ClipboardStoreError.permanentCopyChanged
+        }
+        let normalizedName = try slots.renameNamed(
+            from: currentName,
+            to: validation.normalizedName,
+            expectedPayloadID: payloadID
+        )
+        scheduleVocabularyRefresh()
+        lastError = nil
+        lastAction = "Renamed permanent copy"
+        return normalizedName
+    }
+
+    func updatePermanentCopyText(_ payloadID: UUID, text: String) throws {
+        guard let name = slots.name(forPayloadID: payloadID) else {
+            throw ClipboardStoreError.missingPermanentCopy
+        }
+        try slots.replaceNamedText(
+            named: name,
+            text: text,
+            expectedPayloadID: payloadID
+        )
+        lastError = nil
+        lastAction = "Updated permanent copy"
     }
 
     func requestEventPostingAccess() {
@@ -95,6 +215,44 @@ final class AppModel {
         speech.refreshMicrophoneAuthorization()
         hasEventPostingAccess = clipboard.hasEventPostingAccess
         hasKeyboardMonitoringAccess = rightOptionMonitor?.refreshGlobalMonitoringAccess() == true
+    }
+
+    private var currentListeningIntent: Bool {
+        if listeningTransitionTask != nil {
+            return desiredListening
+        }
+        return speech.isActive
+    }
+
+    private var showsHUDWhenRightOptionStartsListening: Bool {
+        let defaults = UserDefaults.standard
+        guard defaults.object(
+            forKey: CtrlSayPreferenceKey.showHUDWhenRightOptionStartsListening
+        ) != nil else {
+            return true
+        }
+        return defaults.bool(
+            forKey: CtrlSayPreferenceKey.showHUDWhenRightOptionStartsListening
+        )
+    }
+
+    @discardableResult
+    private func setListeningDesired(_ shouldListen: Bool) -> Bool {
+        refreshPermissions()
+        let canStopActiveTransition = speech.isActive
+            || listeningTransitionTask != nil
+        guard !shouldListen || isReadyForCommands || canStopActiveTransition else {
+            lastError = "Complete the three setup permissions before listening."
+            lastAction = "Setup required"
+            return false
+        }
+
+        desiredListening = shouldListen
+        if !shouldListen {
+            listeningTransitionTask?.cancel()
+        }
+        startListeningTransitionIfNeeded()
+        return true
     }
 
     private func received(_ result: RecognizedSpeechResult) {
@@ -203,7 +361,7 @@ final class AppModel {
                 isFinal: result.isFinal
             )
             let queued = QueuedCommand(
-                command: candidate.command,
+                operation: .voice(candidate.command),
                 speechMetadata: metadata,
                 target: capturedSpeechTargets[identity]?.target
             )
@@ -240,7 +398,7 @@ final class AppModel {
         case .upsert(let utteranceID, let command, let metadata):
             let identity = SpeechCommandIdentity.gated(utteranceID)
             let queued = QueuedCommand(
-                command: command,
+                operation: .voice(command),
                 speechMetadata: metadata,
                 target: command.requiresExternalTarget
                     ? capturedSpeechTargets[identity]?.target
@@ -270,12 +428,31 @@ final class AppModel {
 
     private func enqueueManual(_ command: VoiceCommand) {
         let queued = QueuedCommand(
-            command: command,
+            operation: .voice(command),
             speechMetadata: nil,
             target: command.requiresExternalTarget ? clipboard.currentCommandTarget() : nil
         )
         commandQueue.upsert(
             queued,
+            identity: nil,
+            enqueuedAtNanoseconds: DispatchTime.now().uptimeNanoseconds
+        )
+#if DEBUG
+        debugDiagnostics.queued(depth: commandQueue.count, replacedRevision: false)
+#endif
+        startCommandWorkerIfNeeded()
+    }
+
+    private func enqueueDashboard(
+        _ operation: QueuedOperation,
+        target: CommandTarget? = nil
+    ) {
+        commandQueue.upsert(
+            QueuedCommand(
+                operation: operation,
+                speechMetadata: nil,
+                target: target
+            ),
             identity: nil,
             enqueuedAtNanoseconds: DispatchTime.now().uptimeNanoseconds
         )
@@ -331,58 +508,75 @@ final class AppModel {
         let started = DispatchTime.now().uptimeNanoseconds
         lastError = nil
         var clipboardMilliseconds: Double?
-        var targetStatus: TargetTelemetryStatus = queued.command.requiresExternalTarget
+        var targetStatus: TargetTelemetryStatus = queued.operation.requiresExternalTarget
             ? .notChecked
             : .notRequired
 
         do {
-            switch queued.command {
-            case .copyNumber(let number):
-                let capture = try await clipboard.captureSelection(target: queued.target)
-                slots.set(capture.payload, at: number)
-                clipboardMilliseconds = capture.milliseconds
-                targetStatus = .verified
-                lastAction = "Copied to \(number)"
+            switch queued.operation {
+            case .voice(let command):
+                switch command {
+                case .copyNumber(let number):
+                    let capture = try await clipboard.captureSelection(target: queued.target)
+                    try slots.set(capture.payload, at: number)
+                    markHUDStoreUpdate(for: capture.payload.id)
+                    clipboardMilliseconds = capture.milliseconds
+                    targetStatus = .verified
+                    lastAction = "Copied to \(number)"
 
-            case .pasteNumber(let number):
-                guard let payload = slots.payload(at: number) else {
-                    throw AppModelError.emptyNumberedSlot(number)
+                case .pasteNumber(let number):
+                    guard let payload = slots.payload(at: number) else {
+                        throw AppModelError.emptyNumberedSlot(number)
+                    }
+                    let metrics = try clipboard.paste(payload, target: queued.target)
+                    clipboardMilliseconds = metrics.milliseconds
+                    targetStatus = .verified
+                    lastAction = "Paste sent from \(number)"
+
+                case .saveCurrentClipboard(let number):
+                    let payload = try clipboard.snapshotCurrentClipboard()
+                    try slots.set(payload, at: number)
+                    markHUDStoreUpdate(for: payload.id)
+                    lastAction = "Saved clipboard to \(number)"
+
+                case .permanentCopy(let name):
+                    let capture = try await clipboard.captureSelection(target: queued.target)
+                    try slots.set(capture.payload, named: name)
+                    markHUDStoreUpdate(for: capture.payload.id)
+                    clipboardMilliseconds = capture.milliseconds
+                    targetStatus = .verified
+                    scheduleVocabularyRefresh()
+                    lastAction = "Created permanent copy"
+
+                case .pasteNamed(let name):
+                    guard let payload = slots.payload(named: name) else {
+                        throw AppModelError.missingNamedCopy
+                    }
+                    let metrics = try clipboard.paste(payload, target: queued.target)
+                    clipboardMilliseconds = metrics.milliseconds
+                    targetStatus = .verified
+                    lastAction = "Permanent paste sent"
+
+                case .deleteNamed(let name):
+                    _ = removePermanentCopy(named: name)
+                    lastAction = "Deleted permanent copy"
+
+                case .clearNumbered:
+                    slots.clearNumbered()
+                    lastAction = "Cleared numbered copies"
                 }
+
+            case .pasteNumbered(let payload):
                 let metrics = try clipboard.paste(payload, target: queued.target)
                 clipboardMilliseconds = metrics.milliseconds
                 targetStatus = .verified
-                lastAction = "Paste sent from \(number)"
+                lastAction = "Numbered paste sent"
 
-            case .saveCurrentClipboard(let number):
-                let payload = try clipboard.snapshotCurrentClipboard()
-                slots.set(payload, at: number)
-                lastAction = "Saved clipboard to \(number)"
-
-            case .permanentCopy(let name):
-                let capture = try await clipboard.captureSelection(target: queued.target)
-                slots.set(capture.payload, named: name)
-                clipboardMilliseconds = capture.milliseconds
-                targetStatus = .verified
-                scheduleVocabularyRefresh()
-                lastAction = "Created permanent copy"
-
-            case .pasteNamed(let name):
-                guard let payload = slots.payload(named: name) else {
-                    throw AppModelError.missingNamedCopy
-                }
+            case .pastePermanent(let payload):
                 let metrics = try clipboard.paste(payload, target: queued.target)
                 clipboardMilliseconds = metrics.milliseconds
                 targetStatus = .verified
                 lastAction = "Permanent paste sent"
-
-            case .deleteNamed(let name):
-                slots.removeNamed(name)
-                scheduleVocabularyRefresh()
-                lastAction = "Deleted permanent copy"
-
-            case .clearNumbered:
-                slots.clearNumbered()
-                lastAction = "Cleared numbered copies"
             }
 
             hasEventPostingAccess = clipboard.hasEventPostingAccess
@@ -395,7 +589,7 @@ final class AppModel {
                 targetStatus: targetStatus,
                 succeeded: true
             )
-            Telemetry.commands.info("\(queued.command.telemetryName, privacy: .public) completed in \(milliseconds, privacy: .public) ms")
+            Telemetry.commands.info("\(queued.operation.telemetryName, privacy: .public) completed in \(milliseconds, privacy: .public) ms")
 
 #if DEBUG
             if let clipboardMilliseconds {
@@ -406,7 +600,7 @@ final class AppModel {
             }
 #endif
         } catch {
-            if queued.command.requiresExternalTarget {
+            if queued.operation.requiresExternalTarget {
                 targetStatus = targetFailureStatus(error) ?? targetStatus
             }
             lastError = error.localizedDescription
@@ -421,9 +615,9 @@ final class AppModel {
                 targetStatus: targetStatus,
                 succeeded: false
             )
-            Telemetry.commands.error("\(queued.command.telemetryName, privacy: .public) failed: \(error.localizedDescription, privacy: .private)")
+            Telemetry.commands.error("\(queued.operation.telemetryName, privacy: .public) failed: \(error.localizedDescription, privacy: .private)")
 #if DEBUG
-            if queued.command.requiresExternalTarget {
+            if queued.operation.requiresExternalTarget {
                 debugDiagnostics.targetStatus(targetStatus.debugLabel)
             }
 #endif
@@ -441,7 +635,7 @@ final class AppModel {
         let speechMilliseconds = queued.speechMetadata?.recognitionLatencyMilliseconds ?? -1
         let clipboardMilliseconds = clipboardMilliseconds ?? -1
         Telemetry.performance.info(
-            "\(queued.command.telemetryName, privacy: .public) speech_ms=\(speechMilliseconds, privacy: .public) queue_ms=\(queueWaitMilliseconds, privacy: .public) execute_ms=\(executionMilliseconds, privacy: .public) clipboard_ms=\(clipboardMilliseconds, privacy: .public) target_status=\(targetStatus.rawValue, privacy: .public) success=\(succeeded, privacy: .public)"
+            "\(queued.operation.telemetryName, privacy: .public) speech_ms=\(speechMilliseconds, privacy: .public) queue_ms=\(queueWaitMilliseconds, privacy: .public) execute_ms=\(executionMilliseconds, privacy: .public) clipboard_ms=\(clipboardMilliseconds, privacy: .public) target_status=\(targetStatus.rawValue, privacy: .public) success=\(succeeded, privacy: .public)"
         )
     }
 
@@ -505,6 +699,21 @@ final class AppModel {
         capturedSpeechTargets.removeAll(keepingCapacity: true)
     }
 
+    private func markHUDStoreUpdate(for payloadID: UUID) {
+        guard isClipboardHUDPresented else { return }
+        pendingHUDRowAppearance = (
+            payloadID,
+            DispatchTime.now().uptimeNanoseconds
+        )
+    }
+
+    @discardableResult
+    private func removePermanentCopy(named name: String) -> Bool {
+        guard slots.removeNamed(name) != nil else { return false }
+        scheduleVocabularyRefresh()
+        return true
+    }
+
     private func scheduleVocabularyRefresh() {
         vocabularyRefreshPending = true
         guard vocabularyRefreshTask == nil else { return }
@@ -538,9 +747,30 @@ final class AppModel {
 }
 
 private struct QueuedCommand {
-    let command: VoiceCommand
+    let operation: QueuedOperation
     let speechMetadata: SpeechCommandMetadata?
     let target: CommandTarget?
+}
+
+private enum QueuedOperation {
+    case voice(VoiceCommand)
+    case pasteNumbered(payload: ClipboardPayload)
+    case pastePermanent(payload: ClipboardPayload)
+
+    var telemetryName: String {
+        switch self {
+        case .voice(let command): command.telemetryName
+        case .pasteNumbered: "dashboard-paste-numbered"
+        case .pastePermanent: "dashboard-paste-named"
+        }
+    }
+
+    var requiresExternalTarget: Bool {
+        switch self {
+        case .voice(let command): command.requiresExternalTarget
+        case .pasteNumbered, .pastePermanent: true
+        }
+    }
 }
 
 private struct TargetSnapshot {

@@ -8,7 +8,7 @@ struct CtrlSayApp: App {
 
     var body: some Scene {
         Settings {
-            EmptyView()
+            CtrlSaySettingsView()
         }
     }
 }
@@ -16,10 +16,19 @@ struct CtrlSayApp: App {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let model = AppModel()
+    private let dashboardEditingSession = DashboardEditingSession()
+    private lazy var hudEditingSession = DashboardEditingSession()
+    private lazy var hudPresentationState = ClipboardHUDPresentationState()
+    private lazy var thumbnailProvider = ClipboardThumbnailProvider()
     private lazy var dashboardPanel = DashboardPanelController(
-        rootView: DashboardView(model: model)
+        rootView: DashboardView(
+            model: model,
+            editingSession: dashboardEditingSession
+        ),
+        editingSession: dashboardEditingSession
     )
     private var statusItem: NSStatusItem?
+    private var hudPanel: ClipboardHUDPanelController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -33,6 +42,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         updateStatusItemPresentation()
         observeListeningState()
+        observeHUDPresentation()
+
+#if DEBUG
+        if CommandLine.arguments.contains("-CtrlSaySeedHUDForTesting") {
+            seedHUDForTesting()
+        }
+        if CommandLine.arguments.contains("-CtrlSayShowHUDForTesting") {
+            model.setClipboardHUDPresented(true)
+        }
+#endif
 
         Task { @MainActor [weak self] in
             await Task.yield()
@@ -42,6 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         dashboardPanel.hide()
+        hudPanel?.hide()
         if let statusItem {
             NSStatusBar.system.removeStatusItem(statusItem)
         }
@@ -52,6 +72,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // immediately after the user grants Input Monitoring access.
         model.refreshPermissions()
         updateStatusItemPresentation()
+    }
+
+    func applicationDidChangeScreenParameters(_ notification: Notification) {
+        guard let button = statusItem?.button else { return }
+        dashboardPanel.reposition(relativeTo: button)
+        hudPanel?.screenParametersDidChange()
     }
 
     @objc
@@ -108,6 +134,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         button.imagePosition = .imageLeading
         button.title = title
         button.toolTip = toolTip
+        dashboardPanel.reposition(relativeTo: button)
     }
 
     private func observeListeningState() {
@@ -124,6 +151,85 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
     }
+
+    private func observeHUDPresentation() {
+        withObservationTracking {
+            _ = model.isClipboardHUDPresented
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.updateHUDPresentation()
+                self.observeHUDPresentation()
+            }
+        }
+        updateHUDPresentation()
+    }
+
+    private func updateHUDPresentation() {
+        if model.isClipboardHUDPresented {
+            let hudPanel = hudPanel ?? makeHUDPanel()
+            if !hudPanel.isShown {
+                hudPanel.show()
+            }
+        } else if hudPanel?.isShown == true {
+            hudPanel?.hide()
+        }
+    }
+
+    private func makeHUDPanel() -> ClipboardHUDPanelController {
+        let panel = ClipboardHUDPanelController(
+            model: model,
+            presentationState: hudPresentationState,
+            editingSession: hudEditingSession,
+            thumbnailProvider: thumbnailProvider
+        )
+        hudPanel = panel
+        return panel
+    }
+
+#if DEBUG
+    private func seedHUDForTesting() {
+        for number in 1...10 {
+            let text = "Example clipboard content for slot \(number) with a bounded two-line preview."
+            let data = Data(text.utf8)
+            let payload = ClipboardPayload(
+                items: [
+                    PasteboardItemPayload(
+                        representations: [
+                            PasteboardRepresentation(
+                                typeIdentifier: "public.utf8-plain-text",
+                                data: data
+                            ),
+                        ]
+                    ),
+                ],
+                kind: .text,
+                preview: ClipboardPayload.preview(forText: text),
+                byteCount: data.count
+            )
+            try? model.slots.set(payload, at: number)
+        }
+
+        let permanentText = "123 Example Street, Example City"
+        let permanentData = Data(permanentText.utf8)
+        let permanentPayload = ClipboardPayload(
+            items: [
+                PasteboardItemPayload(
+                    representations: [
+                        PasteboardRepresentation(
+                            typeIdentifier: "public.utf8-plain-text",
+                            data: permanentData
+                        ),
+                    ]
+                ),
+            ],
+            kind: .text,
+            preview: ClipboardPayload.preview(forText: permanentText),
+            byteCount: permanentData.count
+        )
+        try? model.slots.set(permanentPayload, named: "house")
+    }
+#endif
 
     private func presentSetupIfNeeded() {
         model.refreshPermissions()

@@ -1,0 +1,316 @@
+import AppKit
+import CoreGraphics
+import Observation
+import SwiftUI
+
+private final class ClipboardHUDPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
+}
+
+@MainActor
+final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
+    private let panel: ClipboardHUDPanel
+    private let model: AppModel
+    private let presentationState: ClipboardHUDPresentationState
+    private let editingSession: DashboardEditingSession
+    private let positionStore: ClipboardHUDPositionStore
+    private weak var activeScreen: NSScreen?
+    private var isApplyingFrame = false
+
+    var isShown: Bool { panel.isVisible }
+
+    init(
+        model: AppModel,
+        presentationState: ClipboardHUDPresentationState,
+        editingSession: DashboardEditingSession,
+        thumbnailProvider: ClipboardThumbnailProvider,
+        positionStore: ClipboardHUDPositionStore = ClipboardHUDPositionStore()
+    ) {
+        self.model = model
+        self.presentationState = presentationState
+        self.editingSession = editingSession
+        self.positionStore = positionStore
+
+        let initialSize = CGSize(
+            width: ClipboardHUDMetrics.width,
+            height: ClipboardHUDMetrics.idealHeight(
+                itemCount: 0,
+                collection: .numbered
+            )
+        )
+        let panel = ClipboardHUDPanel(
+            contentRect: CGRect(origin: .zero, size: initialSize),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        let rootView = ClipboardHUDView(
+            model: model,
+            presentationState: presentationState,
+            editingSession: editingSession,
+            thumbnailProvider: thumbnailProvider
+        )
+        let hostingController = NSHostingController(rootView: rootView)
+        panel.contentViewController = hostingController
+
+        panel.title = "Ctrl-Say Clipboard HUD"
+        panel.setAccessibilityElement(true)
+        panel.setAccessibilityRole(.window)
+        panel.setAccessibilitySubrole(.floatingWindow)
+        panel.setAccessibilityTitle("Ctrl-Say Clipboard HUD")
+        panel.isFloatingPanel = true
+        panel.becomesKeyOnlyIfNeeded = true
+        panel.hidesOnDeactivate = false
+        panel.isReleasedWhenClosed = false
+        panel.level = .floating
+        panel.collectionBehavior = [
+            .canJoinAllSpaces,
+            .fullScreenAuxiliary,
+            .ignoresCycle,
+        ]
+        panel.animationBehavior = .none
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
+        panel.hasShadow = true
+        panel.isMovable = true
+        panel.isMovableByWindowBackground = false
+
+        hostingController.view.wantsLayer = true
+        hostingController.view.layer?.backgroundColor = NSColor.clear.cgColor
+
+        self.panel = panel
+        super.init()
+        panel.delegate = self
+
+        editingSession.onBeginEditing = { [weak panel] in
+            panel?.makeKey()
+        }
+        editingSession.onEndEditing = { [weak panel] in
+            panel?.makeFirstResponder(nil)
+            if panel?.isVisible == true {
+                panel?.orderFrontRegardless()
+            }
+        }
+
+        observeLayoutInputs()
+    }
+
+    func show() {
+        let requestedAt = model.consumeHUDPresentationRequestTimestamp()
+            ?? DispatchTime.now().uptimeNanoseconds
+        let screen = pointerScreen()
+        activeScreen = screen
+        applyInitialFrame(on: screen)
+
+#if DEBUG
+        let frontmostProcessIdentifier = NSWorkspace.shared.frontmostApplication?
+            .processIdentifier
+#endif
+        panel.orderFrontRegardless()
+        let elapsed = Double(
+            DispatchTime.now().uptimeNanoseconds - requestedAt
+        ) / 1_000_000
+        Telemetry.interface.info(
+            "HUD presented gesture_to_presentation_ms=\(elapsed, privacy: .public)"
+        )
+#if DEBUG
+        Task { @MainActor in
+            await Task.yield()
+            let focusWasPreserved = NSWorkspace.shared.frontmostApplication?
+                .processIdentifier == frontmostProcessIdentifier
+            Telemetry.interface.info(
+                "HUD focus_preserved=\(focusWasPreserved, privacy: .public)"
+            )
+        }
+#endif
+    }
+
+    func hide() {
+        editingSession.prepareForDismissal()
+        panel.orderOut(nil)
+    }
+
+    func screenParametersDidChange() {
+        guard panel.isVisible else { return }
+        let screen = bestScreenForCurrentFrame()
+        activeScreen = screen
+        let count = visibleItemCount
+        let height = ClipboardHUDMetrics.height(
+            itemCount: count,
+            collection: presentationState.selectedCollection,
+            visibleFrame: screen.visibleFrame
+        )
+        let frame: CGRect
+        if let position = positionStore.position(
+            for: displayIdentifier(for: screen)
+        ) {
+            frame = ClipboardHUDPlacement.frame(
+                normalizedPosition: position,
+                size: CGSize(width: ClipboardHUDMetrics.width, height: height),
+                visibleFrame: screen.visibleFrame
+            )
+        } else {
+            frame = ClipboardHUDPlacement.resizedFrame(
+                from: panel.frame,
+                height: height,
+                visibleFrame: screen.visibleFrame
+            )
+        }
+        setFrame(frame, animated: false)
+    }
+
+    func windowDidMove(_ notification: Notification) {
+        guard panel.isVisible, !isApplyingFrame else { return }
+        let screen = bestScreenForCurrentFrame()
+        activeScreen = screen
+        let position = ClipboardHUDPlacement.normalizedPosition(
+            for: panel.frame,
+            visibleFrame: screen.visibleFrame
+        )
+        positionStore.save(position, for: displayIdentifier(for: screen))
+    }
+
+    private func observeLayoutInputs() {
+        withObservationTracking {
+            _ = model.slots.numbered.count
+            _ = model.slots.named.count
+            _ = presentationState.selectedCollection
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.updateHeightForCurrentContent()
+                self.observeLayoutInputs()
+            }
+        }
+    }
+
+    private func updateHeightForCurrentContent() {
+        guard panel.isVisible else { return }
+        let screen = activeScreen ?? bestScreenForCurrentFrame()
+        activeScreen = screen
+        let height = ClipboardHUDMetrics.height(
+            itemCount: visibleItemCount,
+            collection: presentationState.selectedCollection,
+            visibleFrame: screen.visibleFrame
+        )
+        let target = ClipboardHUDPlacement.resizedFrame(
+            from: panel.frame,
+            height: height,
+            visibleFrame: screen.visibleFrame
+        )
+        setFrame(target, animated: true, measuresResize: true)
+    }
+
+    private func applyInitialFrame(on screen: NSScreen) {
+        let height = ClipboardHUDMetrics.height(
+            itemCount: visibleItemCount,
+            collection: presentationState.selectedCollection,
+            visibleFrame: screen.visibleFrame
+        )
+        let size = CGSize(width: ClipboardHUDMetrics.width, height: height)
+        let identifier = displayIdentifier(for: screen)
+        let frame: CGRect
+        if let position = positionStore.position(for: identifier) {
+            frame = ClipboardHUDPlacement.frame(
+                normalizedPosition: position,
+                size: size,
+                visibleFrame: screen.visibleFrame
+            )
+        } else {
+            frame = ClipboardHUDPlacement.defaultFrame(
+                height: height,
+                visibleFrame: screen.visibleFrame
+            )
+        }
+        setFrame(frame, animated: false)
+    }
+
+    private func setFrame(
+        _ frame: CGRect,
+        animated: Bool,
+        measuresResize: Bool = false
+    ) {
+        isApplyingFrame = true
+        defer { isApplyingFrame = false }
+        let startedAt = DispatchTime.now().uptimeNanoseconds
+        let itemCount = visibleItemCount
+        let shouldAnimate = animated
+            && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        if shouldAnimate {
+            NSAnimationContext.runAnimationGroup(
+                { context in
+                    context.duration = 0.18
+                    context.timingFunction = CAMediaTimingFunction(
+                        name: .easeInEaseOut
+                    )
+                    panel.animator().setFrame(frame, display: true)
+                },
+                completionHandler: {
+                    guard measuresResize else { return }
+                    let elapsed = Double(
+                        DispatchTime.now().uptimeNanoseconds - startedAt
+                    ) / 1_000_000
+                    Telemetry.interface.debug(
+                        "HUD layout item_count=\(itemCount, privacy: .public) resize_ms=\(elapsed, privacy: .public)"
+                    )
+                }
+            )
+        } else {
+            panel.setFrame(frame, display: true)
+            if measuresResize {
+                let elapsed = Double(
+                    DispatchTime.now().uptimeNanoseconds - startedAt
+                ) / 1_000_000
+                Telemetry.interface.debug(
+                    "HUD layout item_count=\(itemCount, privacy: .public) resize_ms=\(elapsed, privacy: .public)"
+                )
+            }
+        }
+    }
+
+    private var visibleItemCount: Int {
+        switch presentationState.selectedCollection {
+        case .numbered:
+            model.slots.numbered.count
+        case .permanent:
+            model.slots.named.count
+        }
+    }
+
+    private func pointerScreen() -> NSScreen {
+        let location = NSEvent.mouseLocation
+        return NSScreen.screens.first { $0.frame.contains(location) }
+            ?? NSScreen.main
+            ?? NSScreen.screens[0]
+    }
+
+    private func bestScreenForCurrentFrame() -> NSScreen {
+        let frame = panel.frame
+        return NSScreen.screens.max { first, second in
+            first.frame.intersection(frame).area
+                < second.frame.intersection(frame).area
+        } ?? activeScreen ?? pointerScreen()
+    }
+
+    private func displayIdentifier(for screen: NSScreen) -> String {
+        let screenNumberKey = NSDeviceDescriptionKey("NSScreenNumber")
+        if let number = screen.deviceDescription[screenNumberKey] as? NSNumber,
+           let unmanagedUUID = CGDisplayCreateUUIDFromDisplayID(
+               CGDirectDisplayID(number.uint32Value)
+           ) {
+            let uuid = unmanagedUUID.takeRetainedValue()
+            return CFUUIDCreateString(nil, uuid) as String
+        }
+
+        let frame = screen.frame
+        return "frame:\(frame.minX):\(frame.minY):\(frame.width):\(frame.height)"
+    }
+}
+
+private extension CGRect {
+    var area: CGFloat {
+        guard !isNull else { return 0 }
+        return width * height
+    }
+}
