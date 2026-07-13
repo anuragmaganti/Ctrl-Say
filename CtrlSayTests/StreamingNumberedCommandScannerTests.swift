@@ -49,6 +49,210 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
         )
     }
 
+    func testNamedCopyRemainsPendingAcrossPartialWordRevisions() throws {
+        var scanner = StreamingNumberedCommandScanner()
+        let first = scanner.ingest(
+            StreamingNumberedCommandSegment(
+                range: timeRange(0, 1),
+                tokens: [
+                    token("copy", 0.10, 0.30),
+                    token("G", 0.31, 0.45),
+                ]
+            )
+        )
+        let partial = try XCTUnwrap(upserts(in: first).first)
+
+        XCTAssertEqual(partial.command, .copyNamed("g"))
+        XCTAssertFalse(partial.isReadyForDispatch)
+
+        let revision = scanner.ingest(
+            StreamingNumberedCommandSegment(
+                range: timeRange(0, 1),
+                tokens: [
+                    token("copy", 0.10, 0.30),
+                    token("GitHub", 0.31, 0.90),
+                ]
+            )
+        )
+        let completedWord = try XCTUnwrap(upserts(in: revision).first)
+
+        XCTAssertEqual(completedWord.id, partial.id)
+        XCTAssertEqual(completedWord.command, .copyNamed("github"))
+        XCTAssertFalse(completedWord.isReadyForDispatch)
+
+        let finalized = scanner.advanceFinalization(
+            to: time(1)
+        )
+        let ready = try XCTUnwrap(upserts(in: finalized).first)
+
+        XCTAssertEqual(ready.id, partial.id)
+        XCTAssertEqual(ready.command, .copyNamed("github"))
+        XCTAssertTrue(ready.isReadyForDispatch)
+    }
+
+    func testNamedCopyDoesNotReleaseBeforeEnclosingResultFinalizes() throws {
+        var scanner = StreamingNumberedCommandScanner()
+        let update = scanner.ingest(
+            StreamingNumberedCommandSegment(
+                range: timeRange(0, 1),
+                tokens: [
+                    token("copy", 0.10, 0.30),
+                    token("portfolio", 0.31, 0.90),
+                ],
+                finalizationTime: time(0.60)
+            )
+        )
+
+        XCTAssertFalse(try XCTUnwrap(upserts(in: update).first).isReadyForDispatch)
+    }
+
+    func testShortNamesAreDeferredWhileVolatileButRemainValidWhenFinalized() throws {
+        for partialName in ["G", "GET", "Sum"] {
+            var scanner = StreamingNumberedCommandScanner()
+            let update = scanner.ingest(
+                StreamingNumberedCommandSegment(
+                    range: timeRange(0, 1.20),
+                    tokens: [
+                        token("copy", 0.10, 0.30),
+                        token(partialName, 0.31, 0.55),
+                    ],
+                    finalizationTime: time(0.70)
+                )
+            )
+            let candidate = try XCTUnwrap(upserts(in: update).first)
+
+            XCTAssertFalse(
+                candidate.isReadyForDispatch,
+                "A finalized token alignment must not release \(partialName) while its result remains volatile"
+            )
+
+            let finalizationUpdate = scanner.advanceFinalization(to: time(1.20))
+            let finalized = try XCTUnwrap(upserts(in: finalizationUpdate).first)
+            XCTAssertEqual(finalized.id, candidate.id)
+            XCTAssertEqual(
+                finalized.command,
+                .copyNamed(VoiceCommandParser.normalizeName(partialName))
+            )
+            XCTAssertTrue(finalized.isReadyForDispatch)
+        }
+    }
+
+    func testNamedCopyStabilizationWorksAcrossArbitraryWordShapes() throws {
+        let revisions = [
+            (partial: "port", complete: "portfolio"),
+            (partial: "note", complete: "notebook"),
+            (partial: "auth", complete: "authentication"),
+            (partial: "water", complete: "waterfall"),
+        ]
+
+        for revisionWords in revisions {
+            var scanner = StreamingNumberedCommandScanner()
+            let partialUpdate = scanner.ingest(
+                StreamingNumberedCommandSegment(
+                    range: timeRange(0, 1.20),
+                    tokens: [
+                        token("copy", 0.10, 0.30),
+                        token(revisionWords.partial, 0.31, 0.55),
+                    ],
+                    finalizationTime: time(0.70)
+                )
+            )
+            let partial = try XCTUnwrap(upserts(in: partialUpdate).first)
+            XCTAssertFalse(partial.isReadyForDispatch)
+
+            let completeUpdate = scanner.ingest(
+                StreamingNumberedCommandSegment(
+                    range: timeRange(0, 1.20),
+                    tokens: [
+                        token("copy", 0.10, 0.30),
+                        token(revisionWords.complete, 0.31, 0.95),
+                    ],
+                    finalizationTime: time(0.70)
+                )
+            )
+            let complete = try XCTUnwrap(upserts(in: completeUpdate).first)
+            XCTAssertEqual(complete.id, partial.id)
+            XCTAssertEqual(complete.command, .copyNamed(revisionWords.complete))
+            XCTAssertFalse(complete.isReadyForDispatch)
+
+            let finalizationUpdate = scanner.advanceFinalization(to: time(1.20))
+            let finalized = try XCTUnwrap(upserts(in: finalizationUpdate).first)
+            XCTAssertEqual(finalized.id, partial.id)
+            XCTAssertEqual(finalized.command, .copyNamed(revisionWords.complete))
+            XCTAssertTrue(finalized.isReadyForDispatch)
+        }
+    }
+
+    func testSummaryRemainsPendingUntilFullRevisionAndResultFinalization() throws {
+        var scanner = StreamingNumberedCommandScanner()
+        let partialUpdate = scanner.ingest(
+            StreamingNumberedCommandSegment(
+                range: timeRange(0, 1.20),
+                tokens: [
+                    token("copy", 0.10, 0.30),
+                    token("Sum", 0.31, 0.55),
+                ],
+                finalizationTime: time(0.70)
+            )
+        )
+        let partial = try XCTUnwrap(upserts(in: partialUpdate).first)
+        XCTAssertEqual(partial.command, .copyNamed("sum"))
+        XCTAssertFalse(partial.isReadyForDispatch)
+
+        let revisionUpdate = scanner.ingest(
+            StreamingNumberedCommandSegment(
+                range: timeRange(0, 1.20),
+                tokens: [
+                    token("copy", 0.10, 0.30),
+                    token("Summary", 0.31, 0.95),
+                ],
+                finalizationTime: time(0.70)
+            )
+        )
+        let revision = try XCTUnwrap(upserts(in: revisionUpdate).first)
+        XCTAssertEqual(revision.id, partial.id)
+        XCTAssertEqual(revision.command, .copyNamed("summary"))
+        XCTAssertFalse(revision.isReadyForDispatch)
+
+        let finalizationUpdate = scanner.advanceFinalization(to: time(1.20))
+        let finalized = try XCTUnwrap(upserts(in: finalizationUpdate).first)
+        XCTAssertEqual(finalized.id, partial.id)
+        XCTAssertEqual(finalized.command, .copyNamed("summary"))
+        XCTAssertTrue(finalized.isReadyForDispatch)
+    }
+
+    func testExternalFinalizationCanArriveBeforeTheTextResult() throws {
+        var scanner = StreamingNumberedCommandScanner()
+        XCTAssertTrue(
+            scanner.advanceFinalization(to: time(1)).mutations.isEmpty
+        )
+
+        let update = scanner.ingest(
+            StreamingNumberedCommandSegment(
+                range: timeRange(0, 1),
+                tokens: [
+                    token("copy", 0.10, 0.30),
+                    token("github", 0.31, 0.90),
+                ]
+            )
+        )
+        let candidate = try XCTUnwrap(upserts(in: update).first)
+
+        XCTAssertEqual(candidate.command, .copyNamed("github"))
+        XCTAssertTrue(candidate.isReadyForDispatch)
+    }
+
+    func testFinalNamedResultWithoutTokenRangesIsReady() throws {
+        var scanner = StreamingNumberedCommandScanner()
+        let update = scanner.ingest(
+            segment(0...1, words: ["copy", "summary"], isFinal: true)
+        )
+
+        let candidate = try XCTUnwrap(upserts(in: update).first)
+        XCTAssertEqual(candidate.command, .copyNamed("summary"))
+        XCTAssertTrue(candidate.isReadyForDispatch)
+    }
+
     func testKnownTemporaryOrPermanentNameCanPasteImmediately() throws {
         var scanner = StreamingNumberedCommandScanner()
         let update = scanner.ingest(
@@ -57,6 +261,47 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
         )
 
         XCTAssertEqual(try commands(in: update), [.pasteNamed("house")])
+    }
+
+    func testNamedPasteWaitsForItsArgumentToFinalize() throws {
+        var scanner = StreamingNumberedCommandScanner()
+        let pending = scanner.ingest(
+            StreamingNumberedCommandSegment(
+                range: timeRange(0, 1),
+                tokens: [
+                    token("paste", 0.10, 0.30),
+                    token("house", 0.31, 0.80),
+                ]
+            ),
+            knownNamedCopies: ["house"]
+        )
+        let pendingCandidate = try XCTUnwrap(upserts(in: pending).first)
+        XCTAssertFalse(pendingCandidate.isReadyForDispatch)
+
+        let finalized = scanner.ingest(
+            StreamingNumberedCommandSegment(
+                range: timeRange(0, 1),
+                tokens: [
+                    token("paste", 0.10, 0.30),
+                    token("house", 0.31, 0.80),
+                ],
+                finalizationTime: time(1)
+            ),
+            knownNamedCopies: ["house"]
+        )
+        let readyCandidate = try XCTUnwrap(upserts(in: finalized).first)
+
+        XCTAssertEqual(readyCandidate.id, pendingCandidate.id)
+        XCTAssertTrue(readyCandidate.isReadyForDispatch)
+    }
+
+    func testNumberedCommandKeepsVolatileFastPath() throws {
+        var scanner = StreamingNumberedCommandScanner()
+        let update = scanner.ingest(segment(0...1, words: ["copy", "two"]))
+
+        let candidate = try XCTUnwrap(upserts(in: update).first)
+        XCTAssertEqual(candidate.command, .copyNumber(2))
+        XCTAssertTrue(candidate.isReadyForDispatch)
     }
 
     func testUnknownNamedPasteIsIgnored() {

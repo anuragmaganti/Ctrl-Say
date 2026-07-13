@@ -1,4 +1,5 @@
 import AppKit
+import CoreMedia
 import Foundation
 import Observation
 
@@ -45,6 +46,9 @@ final class AppModel {
         hasEventPostingAccess = clipboard.hasEventPostingAccess
         speech.onResult = { [weak self] result in
             self?.received(result)
+        }
+        speech.onFinalizationTimeChanged = { [weak self] finalizationTime in
+            self?.receivedFinalizationTime(finalizationTime)
         }
 
         let monitor = RightOptionKeyMonitor { [weak self] gesture in
@@ -306,14 +310,16 @@ final class AppModel {
         } ?? false
 
 #if DEBUG
-        let streamedCommand = numberedUpdate.mutations.lazy.compactMap { mutation -> VoiceCommand? in
+        let streamedCandidate = numberedUpdate.mutations.lazy.compactMap {
+            mutation -> StreamingNumberedCommandCandidate? in
             guard case .upsert(let candidate) = mutation else { return nil }
-            return candidate.command
+            return candidate
         }.first
         debugDiagnostics.received(
             result,
-            command: streamedCommand ?? exactCommand,
-            acceptsVolatileResult: streamedCommand != nil || acceptsVolatileResult
+            command: streamedCandidate?.command ?? exactCommand,
+            acceptsVolatileResult: streamedCandidate?.isReadyForDispatch == true
+                || acceptsVolatileResult
         )
 #endif
 
@@ -354,15 +360,49 @@ final class AppModel {
         }
     }
 
+    private func receivedFinalizationTime(_ finalizationTime: CMTime) {
+        let update = numberedCommandScanner.advanceFinalization(
+            to: finalizationTime,
+            knownNamedCopies: slots.allNamedKeys
+        )
+        let receivedAtNanoseconds = DispatchTime.now().uptimeNanoseconds
+        for mutation in update.mutations {
+            apply(
+                mutation,
+                resultReceivedAtNanoseconds: receivedAtNanoseconds,
+                audioEndUptimeNanoseconds: { [speech] range in
+                    speech.audioEndUptimeNanoseconds(for: range)
+                },
+                resultIsFinal: true
+            )
+        }
+    }
+
     private func apply(
         _ mutation: StreamingNumberedCommandMutation,
         from result: RecognizedSpeechResult
+    ) {
+        apply(
+            mutation,
+            resultReceivedAtNanoseconds: result.receivedAtNanoseconds,
+            audioEndUptimeNanoseconds: { range in
+                result.audioEndUptimeNanoseconds(for: range)
+            },
+            resultIsFinal: result.isFinal
+        )
+    }
+
+    private func apply(
+        _ mutation: StreamingNumberedCommandMutation,
+        resultReceivedAtNanoseconds: UInt64,
+        audioEndUptimeNanoseconds: ((SpeechResultRange) -> UInt64?)?,
+        resultIsFinal: Bool
     ) {
         switch mutation {
         case .upsert(let candidate):
 #if DEBUG
             Telemetry.speech.info(
-                "Streaming candidate id=\(candidate.id.rawValue, privacy: .public) command=\(candidate.command.telemetryName, privacy: .public) start=\(candidate.range.start.seconds, privacy: .public) end=\(candidate.range.end.seconds, privacy: .public) final=\(result.isFinal, privacy: .public)"
+                "Streaming candidate id=\(candidate.id.rawValue, privacy: .public) command=\(candidate.command.telemetryName, privacy: .public) ready=\(candidate.isReadyForDispatch, privacy: .public) start=\(candidate.range.start.seconds, privacy: .public) end=\(candidate.range.end.seconds, privacy: .public) final=\(resultIsFinal, privacy: .public)"
             )
 #endif
             let identity = SpeechCommandIdentity.numbered(candidate.id)
@@ -371,13 +411,24 @@ final class AppModel {
                     target: clipboard.currentCommandTarget()
                 )
             }
+            guard candidate.isReadyForDispatch else {
+                // Keep the target snapshot while Apple's volatile named token
+                // remains revisable, but do not expose it to the side-effecting
+                // command worker yet.
+                if commandQueue.revoke(identity: identity) {
+#if DEBUG
+                    debugDiagnostics.revoked(depth: commandQueue.count)
+#endif
+                }
+                return
+            }
             let metadata = SpeechCommandMetadata(
-                resultReceivedAtNanoseconds: result.receivedAtNanoseconds,
-                audioEndUptimeNanoseconds: result.audioEndUptimeNanoseconds(
-                    for: candidate.range
+                resultReceivedAtNanoseconds: resultReceivedAtNanoseconds,
+                audioEndUptimeNanoseconds: audioEndUptimeNanoseconds?(
+                    candidate.range
                 ),
                 minimumConfidence: candidate.minimumConfidence,
-                isFinal: result.isFinal
+                isFinal: resultIsFinal
             )
             let queued = QueuedCommand(
                 operation: .voice(candidate.command),

@@ -187,11 +187,14 @@ enum VolatileCommandAcceptancePolicy {
         knownNamedCopies: Names
     ) -> Bool where Names.Element == String {
         switch command {
-        case .copyNumber, .pasteNumber, .copyNamed:
-            // These are complete, tightly scoped commands once both tokens
-            // arrive. Execute the first parseable volatile result instead of
-            // waiting up to several seconds for finalization or confidence.
+        case .copyNumber, .pasteNumber:
+            // Closed-vocabulary numbered commands keep the fastest path.
             return true
+
+        case .copyNamed:
+            // The streaming scanner owns arbitrary one-word names and releases
+            // them only after Apple's finalization watermark clears the name.
+            return false
 
         case .permanentCopy, .deleteNamed:
             // A new arbitrary name has no known word boundary. The result gate

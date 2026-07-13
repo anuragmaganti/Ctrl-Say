@@ -33,7 +33,7 @@ final class VoiceCommandParserTests: XCTestCase {
             }
         }
 
-        XCTAssertTrue(
+        XCTAssertFalse(
             VolatileCommandAcceptancePolicy.accepts(
                 .copyNamed("house"),
                 confidence: nil,

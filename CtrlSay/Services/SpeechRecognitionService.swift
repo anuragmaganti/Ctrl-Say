@@ -46,6 +46,7 @@ final class SpeechRecognitionService {
     }
 
     @ObservationIgnored var onResult: ((RecognizedSpeechResult) -> Void)?
+    @ObservationIgnored var onFinalizationTimeChanged: ((CMTime) -> Void)?
 
     @ObservationIgnored private let audioEngine = AVAudioEngine()
     @ObservationIgnored private let converter = AudioBufferConverter()
@@ -145,6 +146,13 @@ final class SpeechRecognitionService {
         microphoneAuthorization = AVCaptureDevice.authorizationStatus(for: .audio)
     }
 
+    func audioEndUptimeNanoseconds(for range: SpeechResultRange) -> UInt64? {
+        RecognizedSpeechResult.audioEndUptimeNanoseconds(
+            for: range.end,
+            analysisStartedAtNanoseconds: analysisStartedAtNanoseconds
+        )
+    }
+
     private var isFailure: Bool {
         if case .failed = state { return true }
         return false
@@ -209,7 +217,13 @@ final class SpeechRecognitionService {
             inputSequence: inputSequence,
             modules: [transcriber],
             options: .init(priority: .userInitiated, modelRetention: .whileInUse),
-            analysisContext: context
+            analysisContext: context,
+            volatileRangeChangedHandler: { [weak self] range, changedStart, _ in
+                guard changedStart else { return }
+                Task { @MainActor [weak self] in
+                    self?.onFinalizationTimeChanged?(range.start)
+                }
+            }
         )
         self.analyzer = analyzer
         try await analyzer.prepareToAnalyze(in: analyzerFormat)
@@ -525,7 +539,7 @@ struct RecognizedSpeechResult: Sendable {
         )
     }
 
-    private static func audioEndUptimeNanoseconds(
+    static func audioEndUptimeNanoseconds(
         for audioEnd: CMTime,
         analysisStartedAtNanoseconds: UInt64?
     ) -> UInt64? {

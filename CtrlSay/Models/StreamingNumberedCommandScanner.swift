@@ -45,6 +45,7 @@ struct StreamingNumberedCommandCandidate: Equatable, Sendable {
     let command: VoiceCommand
     let range: SpeechResultRange
     let minimumConfidence: Double?
+    let isReadyForDispatch: Bool
 }
 
 enum StreamingNumberedCommandMutation: Equatable, Sendable {
@@ -85,7 +86,9 @@ struct StreamingNumberedCommandScanner {
         let anchor: TokenAnchor
         let segmentID: SegmentID
         let range: SpeechResultRange
+        let segmentRange: SpeechResultRange
         let confidence: Double?
+        let isFinalized: Bool
     }
 
     private struct CandidateSnapshot {
@@ -94,6 +97,7 @@ struct StreamingNumberedCommandScanner {
         let command: VoiceCommand
         let range: SpeechResultRange
         let minimumConfidence: Double?
+        let isReadyForDispatch: Bool
         let order: Int
     }
 
@@ -104,6 +108,7 @@ struct StreamingNumberedCommandScanner {
         var command: VoiceCommand
         var range: SpeechResultRange
         var minimumConfidence: Double?
+        var isReadyForDispatch: Bool
         var order: Int
         var isPresent: Bool
         var isQueued: Bool
@@ -117,6 +122,7 @@ struct StreamingNumberedCommandScanner {
     private var segments: [SegmentState] = []
     private var candidates: [CandidateState] = []
     private var finalizedThrough: CMTime = .invalid
+    private var resultStreamFinalizedThrough: CMTime = .invalid
     private var latestObservedEnd: CMTime = .invalid
 
     init(maximumCrossSegmentGap: TimeInterval = 0.8) {
@@ -131,8 +137,8 @@ struct StreamingNumberedCommandScanner {
         _ segment: StreamingNumberedCommandSegment,
         knownNamedCopies: Set<String> = []
     ) -> StreamingNumberedCommandScannerUpdate {
-        let rangeWasAlreadyFinalized = isNumeric(finalizedThrough)
-            && CMTimeCompare(segment.range.end, finalizedThrough) <= 0
+        let rangeWasAlreadyFinalized = isNumeric(resultStreamFinalizedThrough)
+            && CMTimeCompare(segment.range.end, resultStreamFinalizedThrough) <= 0
 
         updateLatestObservedEnd(segment.range.end)
 
@@ -140,6 +146,7 @@ struct StreamingNumberedCommandScanner {
         // echoes. The first result that advances the watermark is still
         // processed before that watermark takes effect.
         guard !rangeWasAlreadyFinalized else {
+            advanceResultStreamFinalizationWatermark(to: segment.finalizationTime)
             advanceFinalizationWatermark(to: segment.finalizationTime)
             pruneFinishedState()
             return StreamingNumberedCommandScannerUpdate(mutations: [])
@@ -152,6 +159,7 @@ struct StreamingNumberedCommandScanner {
         segments[segmentIndex].isFinalized = segments[segmentIndex].isFinalized
             || segment.isFinal
 
+        advanceResultStreamFinalizationWatermark(to: segment.finalizationTime)
         advanceFinalizationWatermark(to: segment.finalizationTime)
         let mutations = reconcile(
             with: extractedCandidates(knownNamedCopies: knownNamedCopies)
@@ -169,10 +177,23 @@ struct StreamingNumberedCommandScanner {
         pruneFinishedState()
     }
 
+    mutating func advanceFinalization(
+        to watermark: CMTime,
+        knownNamedCopies: Set<String> = []
+    ) -> StreamingNumberedCommandScannerUpdate {
+        advanceFinalizationWatermark(to: watermark)
+        let mutations = reconcile(
+            with: extractedCandidates(knownNamedCopies: knownNamedCopies)
+        )
+        pruneFinishedState()
+        return StreamingNumberedCommandScannerUpdate(mutations: mutations)
+    }
+
     mutating func reset() {
         segments.removeAll(keepingCapacity: true)
         candidates.removeAll(keepingCapacity: true)
         finalizedThrough = .invalid
+        resultStreamFinalizedThrough = .invalid
         latestObservedEnd = .invalid
     }
 
@@ -218,6 +239,16 @@ struct StreamingNumberedCommandScanner {
         }
     }
 
+    private mutating func advanceResultStreamFinalizationWatermark(
+        to watermark: CMTime
+    ) {
+        guard isNumeric(watermark) else { return }
+        if !isNumeric(resultStreamFinalizedThrough)
+            || CMTimeCompare(watermark, resultStreamFinalizedThrough) > 0 {
+            resultStreamFinalizedThrough = watermark
+        }
+    }
+
     private mutating func updateLatestObservedEnd(_ end: CMTime) {
         guard isNumeric(end) else { return }
         if !isNumeric(latestObservedEnd)
@@ -250,7 +281,9 @@ struct StreamingNumberedCommandScanner {
                             ),
                             segmentID: segment.id,
                             range: token.range ?? segment.range,
-                            confidence: token.confidence
+                            segmentRange: segment.range,
+                            confidence: token.confidence,
+                            isFinalized: segment.isFinalized
                         )
                     )
                 }
@@ -320,11 +353,38 @@ struct StreamingNumberedCommandScanner {
                     command: command,
                     range: verb.range.union(argument.range),
                     minimumConfidence: minimumConfidence,
+                    isReadyForDispatch: isReadyForDispatch(
+                        command,
+                        argument: argument
+                    ),
                     order: snapshots.count
                 )
             )
         }
         return snapshots
+    }
+
+    private func isReadyForDispatch(
+        _ command: VoiceCommand,
+        argument: ResolvedToken
+    ) -> Bool {
+        switch command {
+        case .copyNamed, .pasteNamed:
+            // Any arbitrary name can arrive as a partial volatile token. Do
+            // not let a parseable prefix escape the revisable timeline. A
+            // token's audio range is alignment data, not a promise that its
+            // text cannot grow. Only the enclosing result's finalization makes
+            // that safe, regardless of the word's spelling or syllable count.
+            return argument.isFinalized
+                || argument.segmentRange.isFinalized(through: finalizedThrough)
+
+        case .copyNumber, .pasteNumber:
+            // Preserve the latency-first closed-vocabulary path.
+            return true
+
+        default:
+            return false
+        }
     }
 
     private func canBridge(_ verb: ResolvedToken, to argument: ResolvedToken) -> Bool {
@@ -378,6 +438,7 @@ struct StreamingNumberedCommandScanner {
             let snapshot = assignment.snapshot
             let index = assignment.stateIndex
             let priorCommand = candidates[index].command
+            let wasReadyForDispatch = candidates[index].isReadyForDispatch
             let wasPresent = candidates[index].isPresent
 
             candidates[index].anchors = snapshot.anchors
@@ -388,13 +449,15 @@ struct StreamingNumberedCommandScanner {
             // final word partition and could hide a real repeated command.
             candidates[index].range = snapshot.range
             candidates[index].minimumConfidence = snapshot.minimumConfidence
+            candidates[index].isReadyForDispatch = snapshot.isReadyForDispatch
             candidates[index].order = snapshot.order
             candidates[index].isPresent = true
 
             guard !candidates[index].isCommitted else { continue }
             guard !candidates[index].isQueued
                     || !wasPresent
-                    || priorCommand != snapshot.command else {
+                    || priorCommand != snapshot.command
+                    || wasReadyForDispatch != snapshot.isReadyForDispatch else {
                 continue
             }
 
@@ -403,7 +466,8 @@ struct StreamingNumberedCommandScanner {
                 id: candidates[index].id,
                 command: snapshot.command,
                 range: candidates[index].range,
-                minimumConfidence: snapshot.minimumConfidence
+                minimumConfidence: snapshot.minimumConfidence,
+                isReadyForDispatch: snapshot.isReadyForDispatch
             )
             stagedMutations.append((snapshot.order, .upsert(candidate)))
         }
@@ -480,6 +544,7 @@ struct StreamingNumberedCommandScanner {
                 command: snapshot.command,
                 range: snapshot.range,
                 minimumConfidence: snapshot.minimumConfidence,
+                isReadyForDispatch: snapshot.isReadyForDispatch,
                 order: snapshot.order,
                 isPresent: false,
                 isQueued: false,
