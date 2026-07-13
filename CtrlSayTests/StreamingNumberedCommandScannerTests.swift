@@ -253,14 +253,61 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
         XCTAssertTrue(candidate.isReadyForDispatch)
     }
 
-    func testKnownTemporaryOrPermanentNameCanPasteImmediately() throws {
+    func testHighConfidenceKnownNameUsesVolatilePasteFastPath() throws {
         var scanner = StreamingNumberedCommandScanner()
         let update = scanner.ingest(
-            segment(0...2, words: ["please", "paste", "house"]),
+            StreamingNumberedCommandSegment(
+                range: timeRange(0, 1),
+                tokens: [
+                    token("paste", 0.10, 0.30, confidence: 0.9),
+                    token("house", 0.31, 0.80, confidence: 0.9),
+                ]
+            ),
             knownNamedCopies: ["house"]
         )
+        let candidate = try XCTUnwrap(upserts(in: update).first)
 
-        XCTAssertEqual(try commands(in: update), [.pasteNamed("house")])
+        XCTAssertEqual(candidate.command, .pasteNamed("house"))
+        XCTAssertTrue(candidate.isReadyForDispatch)
+    }
+
+    func testVolatileNamedPasteWaitsWhenStoredNameHasLongerPrefix() throws {
+        var scanner = StreamingNumberedCommandScanner()
+        let update = scanner.ingest(
+            StreamingNumberedCommandSegment(
+                range: timeRange(0, 1),
+                tokens: [
+                    token("paste", 0.10, 0.30, confidence: 0.9),
+                    token("sum", 0.31, 0.80, confidence: 0.9),
+                ]
+            ),
+            knownNamedCopies: ["sum", "summary"]
+        )
+        let candidate = try XCTUnwrap(upserts(in: update).first)
+
+        XCTAssertEqual(candidate.command, .pasteNamed("sum"))
+        XCTAssertFalse(candidate.isReadyForDispatch)
+    }
+
+    func testVolatilePasteWaitsForEarlierCopyOfPreviouslyUnknownName() throws {
+        var scanner = StreamingNumberedCommandScanner()
+        let update = scanner.ingest(
+            StreamingNumberedCommandSegment(
+                range: timeRange(0, 2),
+                tokens: [
+                    token("copy", 0.10, 0.30, confidence: 0.9),
+                    token("house", 0.31, 0.70, confidence: 0.9),
+                    token("paste", 1.00, 1.20, confidence: 0.9),
+                    token("house", 1.21, 1.60, confidence: 0.9),
+                ]
+            )
+        )
+        let candidates = upserts(in: update)
+        let paste = try XCTUnwrap(
+            candidates.first { $0.command == .pasteNamed("house") }
+        )
+
+        XCTAssertFalse(paste.isReadyForDispatch)
     }
 
     func testNamedPasteWaitsForItsArgumentToFinalize() throws {
@@ -344,22 +391,31 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
         }
     }
 
-    func testPermanentNamedCopyDoesNotEmitTemporaryNamedCopy() {
+    func testPermanentNamedCopyUsesResultFinalizationWithoutBecomingTemporary() throws {
         var scanner = StreamingNumberedCommandScanner()
-        let update = scanner.ingest(
-            segment(0...2, words: ["permanent", "copy", "house"])
+        let pending = scanner.ingest(
+            StreamingNumberedCommandSegment(
+                range: timeRange(0, 1.2),
+                tokens: [
+                    token("permanent", 0.10, 0.35),
+                    token("copy", 0.36, 0.60),
+                    token("house", 0.61, 1.05),
+                ]
+            )
         )
+        let pendingCandidate = try XCTUnwrap(upserts(in: pending).first)
+        XCTAssertEqual(pendingCandidate.command, .permanentCopy("house"))
+        XCTAssertFalse(pendingCandidate.isReadyForDispatch)
 
-        XCTAssertTrue(update.mutations.isEmpty)
+        let finalized = scanner.advanceFinalization(to: time(1.20))
+        let readyCandidate = try XCTUnwrap(upserts(in: finalized).first)
+        XCTAssertEqual(readyCandidate.id, pendingCandidate.id)
+        XCTAssertEqual(readyCandidate.command, .permanentCopy("house"))
+        XCTAssertTrue(readyCandidate.isReadyForDispatch)
     }
 
-    func testPermanentFinalWordPartitionsDoNotEmitTemporaryNamedCopy() {
+    func testPermanentFinalWordPartitionReleasesWithoutWholePhraseResult() throws {
         var scanner = StreamingNumberedCommandScanner()
-        XCTAssertTrue(
-            scanner.ingest(
-                segment(0...1.2, words: ["permanent", "copy", "house"])
-            ).mutations.isEmpty
-        )
         XCTAssertTrue(
             scanner.ingest(
                 segment(
@@ -380,16 +436,48 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
                 )
             ).mutations.isEmpty
         )
-        XCTAssertTrue(
-            scanner.ingest(
+
+        let namePartition = scanner.ingest(
+            segment(
+                0.8...1.2,
+                words: ["house"],
+                finalizationTime: 1.2,
+                isFinal: true
+            )
+        )
+        let candidate = try XCTUnwrap(upserts(in: namePartition).first)
+
+        XCTAssertEqual(candidate.command, .permanentCopy("house"))
+        XCTAssertTrue(candidate.isReadyForDispatch)
+    }
+
+    func testPermanentModifierAliasesUsePermanentTokenPath() throws {
+        for modifier in ["permanent", "permanently", "permanny"] {
+            var scanner = StreamingNumberedCommandScanner()
+            let update = scanner.ingest(
                 segment(
-                    0.8...1.2,
-                    words: ["house"],
-                    finalizationTime: 1.2,
+                    0...1.2,
+                    words: [modifier, "copy", "house"],
                     isFinal: true
                 )
-            ).mutations.isEmpty
+            )
+            let candidate = try XCTUnwrap(upserts(in: update).first)
+            XCTAssertEqual(candidate.command, .permanentCopy("house"))
+            XCTAssertTrue(candidate.isReadyForDispatch)
+        }
+    }
+
+    func testPermanentMultiwordNameDoesNotCommitOneWordPrefix() {
+        var scanner = StreamingNumberedCommandScanner()
+        let update = scanner.ingest(
+            segment(
+                0...1.6,
+                words: ["permanent", "copy", "shipping", "address"],
+                isFinal: true
+            )
         )
+
+        XCTAssertTrue(update.mutations.isEmpty)
     }
 
     func testRecognizesScopedNumberAliasesAndAllSlots() throws {
@@ -816,9 +904,14 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
     private func token(
         _ text: String,
         _ start: Double,
-        _ end: Double
+        _ end: Double,
+        confidence: Double? = nil
     ) -> StreamingNumberedCommandToken {
-        StreamingNumberedCommandToken(text, range: timeRange(start, end))
+        StreamingNumberedCommandToken(
+            text,
+            range: timeRange(start, end),
+            confidence: confidence
+        )
     }
 
     private func time(_ seconds: Double) -> CMTime {

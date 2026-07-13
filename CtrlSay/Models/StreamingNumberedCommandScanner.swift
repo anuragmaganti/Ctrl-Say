@@ -57,8 +57,8 @@ struct StreamingNumberedCommandScannerUpdate: Equatable, Sendable {
     let mutations: [StreamingNumberedCommandMutation]
 }
 
-/// Extracts numbered and one-word named working-copy commands from a revisable
-/// speech timeline.
+/// Extracts numbered, one-word named, and one-word permanent-copy commands
+/// from a revisable speech timeline.
 ///
 /// A candidate stays mutable until `markCommitted(_:)` is called. A committed
 /// candidate becomes a tombstone, so Apple's final-result echo or a later text
@@ -292,11 +292,21 @@ struct StreamingNumberedCommandScanner {
 
         guard resolvedTokens.count >= 2 else { return [] }
         var snapshots: [CandidateSnapshot] = []
-        var availableNamedCopies = Set(
+        let storedNamedCopies = Set(
             knownNamedCopies.map(VoiceCommandParser.normalizeName)
         )
+        var availableNamedCopies = storedNamedCopies
 
         for index in 0..<(resolvedTokens.count - 1) {
+            if let permanentCopy = permanentCopyCandidate(
+                startingAt: index,
+                in: resolvedTokens,
+                order: snapshots.count
+            ) {
+                snapshots.append(permanentCopy)
+                continue
+            }
+
             let verb = resolvedTokens[index]
             let argument = resolvedTokens[index + 1]
             guard let canonicalVerb = VoiceCommandParser.canonicalNumberedCommandVerb(
@@ -355,7 +365,9 @@ struct StreamingNumberedCommandScanner {
                     minimumConfidence: minimumConfidence,
                     isReadyForDispatch: isReadyForDispatch(
                         command,
-                        argument: argument
+                        argument: argument,
+                        minimumConfidence: minimumConfidence,
+                        knownNamedCopies: storedNamedCopies
                     ),
                     order: snapshots.count
                 )
@@ -364,19 +376,102 @@ struct StreamingNumberedCommandScanner {
         return snapshots
     }
 
+    private func permanentCopyCandidate(
+        startingAt index: Int,
+        in tokens: [ResolvedToken],
+        order: Int
+    ) -> CandidateSnapshot? {
+        guard index + 2 < tokens.count else { return nil }
+        let modifier = tokens[index]
+        let verb = tokens[index + 1]
+        let argument = tokens[index + 2]
+
+        guard VoiceCommandParser.isPotentialPermanentModifier(modifier.text),
+              VoiceCommandParser.canonicalNumberedCommandVerb(
+                  verb.text
+              ) == "copy",
+              canBridge(modifier, to: verb),
+              canBridge(verb, to: argument),
+              let name = VoiceCommandParser.validNormalizedPermanentName(
+                  argument.text
+              ) else {
+            return nil
+        }
+
+        // If Apple has already supplied another ordinary word in the same
+        // result, the permanent name may be multiword. Leave that case on the
+        // whole-phrase gate instead of prematurely capturing only its prefix.
+        if index + 3 < tokens.count {
+            let following = tokens[index + 3]
+            if canBridge(argument, to: following),
+               !isExplicitCommandBoundary(following.text) {
+                return nil
+            }
+        }
+
+        let command = VoiceCommand.permanentCopy(name)
+        let range = modifier.range.union(verb.range).union(argument.range)
+        let confidences = [
+            modifier.confidence,
+            verb.confidence,
+            argument.confidence,
+        ]
+        let minimumConfidence = confidences.allSatisfy { $0 != nil }
+            ? confidences.compactMap { $0 }.min()
+            : nil
+
+        return CandidateSnapshot(
+            anchors: [modifier.anchor, verb.anchor, argument.anchor],
+            sourceSegmentIDs: [
+                modifier.segmentID,
+                verb.segmentID,
+                argument.segmentID,
+            ],
+            command: command,
+            range: range,
+            minimumConfidence: minimumConfidence,
+            isReadyForDispatch: isReadyForDispatch(
+                command,
+                argument: argument
+            ),
+            order: order
+        )
+    }
+
+    private func isExplicitCommandBoundary(_ token: String) -> Bool {
+        VoiceCommandParser.canonicalNumberedCommandVerb(token) != nil
+            || VoiceCommandParser.isPotentialPermanentModifier(token)
+            || ["clear", "delete", "save"].contains(token)
+    }
+
     private func isReadyForDispatch(
         _ command: VoiceCommand,
-        argument: ResolvedToken
+        argument: ResolvedToken,
+        minimumConfidence: Double? = nil,
+        knownNamedCopies: Set<String> = []
     ) -> Bool {
+        let isFinalized = argument.isFinalized
+            || argument.segmentRange.isFinalized(through: finalizedThrough)
+
         switch command {
-        case .copyNamed, .pasteNamed:
+        case .copyNamed, .permanentCopy:
             // Any arbitrary name can arrive as a partial volatile token. Do
             // not let a parseable prefix escape the revisable timeline. A
             // token's audio range is alignment data, not a promise that its
             // text cannot grow. Only the enclosing result's finalization makes
             // that safe, regardless of the word's spelling or syllable count.
-            return argument.isFinalized
-                || argument.segmentRange.isFinalized(through: finalizedThrough)
+            return isFinalized
+
+        case .pasteNamed:
+            // Pasting can use the guarded volatile fast path because its name
+            // must already exist. Prefix collisions and low/missing confidence
+            // remain pending until Apple finalizes the result.
+            return isFinalized
+                || VolatileCommandAcceptancePolicy.accepts(
+                    command,
+                    confidence: minimumConfidence,
+                    knownNamedCopies: knownNamedCopies
+                )
 
         case .copyNumber, .pasteNumber:
             // Preserve the latency-first closed-vocabulary path.

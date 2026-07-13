@@ -209,7 +209,8 @@ enum VolatileCommandAcceptancePolicy {
             for knownName in knownNamedCopies {
                 nameExists = nameExists || knownName == normalizedName
                 hasLongerPrefixMatch = hasLongerPrefixMatch
-                    || knownName.hasPrefix(normalizedName + " ")
+                    || (knownName != normalizedName
+                        && knownName.hasPrefix(normalizedName))
             }
             return nameExists && !hasLongerPrefixMatch
 

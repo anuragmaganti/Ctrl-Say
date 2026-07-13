@@ -140,6 +140,22 @@ final class ClipboardStoreMutationTests: XCTestCase {
     }
 
     @MainActor
+    func testLiveNamedCommandVocabularyIncludesPermanentAndTemporaryNames() throws {
+        let store = ClipboardStore()
+        try store.setTemporaryNamed(
+            makeTextPayload("Temporary"),
+            named: "draft"
+        )
+        try store.set(
+            makeTextPayload("Permanent"),
+            named: "house"
+        )
+
+        XCTAssertEqual(store.allNamedKeys, ["draft", "house"])
+        XCTAssertNotNil(store.payload(resolvingNamed: "house"))
+    }
+
+    @MainActor
     func testClearTemporaryRemovesNumberedAndNamedButKeepsPermanent() throws {
         let store = ClipboardStore()
         let numbered = makeTextPayload("Numbered")

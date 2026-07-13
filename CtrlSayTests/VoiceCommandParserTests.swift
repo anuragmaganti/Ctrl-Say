@@ -104,6 +104,13 @@ final class VoiceCommandParserTests: XCTestCase {
                 knownNamedCopies: ["home", "home office"]
             )
         )
+        XCTAssertFalse(
+            VolatileCommandAcceptancePolicy.accepts(
+                .pasteNamed("sum"),
+                confidence: 0.9,
+                knownNamedCopies: ["sum", "summary"]
+            )
+        )
         XCTAssertTrue(
             VolatileCommandAcceptancePolicy.accepts(
                 .pasteNamed("house"),

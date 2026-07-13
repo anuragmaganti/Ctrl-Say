@@ -296,6 +296,12 @@ final class AppModel {
             // Sending an exact match through both paths would execute final
             // echoes twice.
             gatedCommand = nil
+        case .permanentCopy(let name) where !name.contains(" "):
+            // The timeline scanner owns one-word permanent copies so it can
+            // release them as soon as Apple's result containing the name
+            // finalizes. Multiword permanent names keep the whole-phrase gate
+            // because their end is otherwise ambiguous.
+            gatedCommand = nil
         case .pasteNamed(let name) where !name.contains(" "):
             gatedCommand = nil
         default:
