@@ -32,6 +32,42 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
         )
     }
 
+    func testFindsTemporaryNamedCopyAndPasteAmidFiller() throws {
+        var scanner = StreamingNumberedCommandScanner()
+        let update = scanner.ingest(
+            segment(
+                0...4,
+                words: [
+                    "hmm", "copy", "house", "and", "paste", "house", "please",
+                ]
+            )
+        )
+
+        XCTAssertEqual(
+            try commands(in: update),
+            [.copyNamed("house"), .pasteNamed("house")]
+        )
+    }
+
+    func testKnownTemporaryOrPermanentNameCanPasteImmediately() throws {
+        var scanner = StreamingNumberedCommandScanner()
+        let update = scanner.ingest(
+            segment(0...2, words: ["please", "paste", "house"]),
+            knownNamedCopies: ["house"]
+        )
+
+        XCTAssertEqual(try commands(in: update), [.pasteNamed("house")])
+    }
+
+    func testUnknownNamedPasteIsIgnored() {
+        var scanner = StreamingNumberedCommandScanner()
+        let update = scanner.ingest(
+            segment(0...2, words: ["please", "paste", "unknown"])
+        )
+
+        XCTAssertTrue(update.mutations.isEmpty)
+    }
+
     func testRecognizesPasteVerbAliasesWithCaseAndPunctuation() throws {
         let aliases = [
             "pasting", "peace", "Pace", "hase", "pase", "pay", "pae", "Taste",
@@ -47,6 +83,67 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
         XCTAssertEqual(
             try commands(in: update),
             Array(repeating: VoiceCommand.pasteNumber(2), count: aliases.count)
+        )
+    }
+
+    func testPermanentCopyNumberDoesNotFallThroughToTemporaryCopy() {
+        for modifier in ["permanent", "permanently", "permanny"] {
+            var scanner = StreamingNumberedCommandScanner()
+            let update = scanner.ingest(
+                segment(0...2, words: [modifier, "copy", "one"])
+            )
+            XCTAssertTrue(
+                update.mutations.isEmpty,
+                "Expected \(modifier) copy one to avoid temporary slot 1"
+            )
+        }
+    }
+
+    func testPermanentNamedCopyDoesNotEmitTemporaryNamedCopy() {
+        var scanner = StreamingNumberedCommandScanner()
+        let update = scanner.ingest(
+            segment(0...2, words: ["permanent", "copy", "house"])
+        )
+
+        XCTAssertTrue(update.mutations.isEmpty)
+    }
+
+    func testPermanentFinalWordPartitionsDoNotEmitTemporaryNamedCopy() {
+        var scanner = StreamingNumberedCommandScanner()
+        XCTAssertTrue(
+            scanner.ingest(
+                segment(0...1.2, words: ["permanent", "copy", "house"])
+            ).mutations.isEmpty
+        )
+        XCTAssertTrue(
+            scanner.ingest(
+                segment(
+                    0...0.4,
+                    words: ["permanent"],
+                    finalizationTime: 0.4,
+                    isFinal: true
+                )
+            ).mutations.isEmpty
+        )
+        XCTAssertTrue(
+            scanner.ingest(
+                segment(
+                    0.4...0.8,
+                    words: ["copy"],
+                    finalizationTime: 0.8,
+                    isFinal: true
+                )
+            ).mutations.isEmpty
+        )
+        XCTAssertTrue(
+            scanner.ingest(
+                segment(
+                    0.8...1.2,
+                    words: ["house"],
+                    finalizationTime: 1.2,
+                    isFinal: true
+                )
+            ).mutations.isEmpty
         )
     }
 

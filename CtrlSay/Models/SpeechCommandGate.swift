@@ -20,6 +20,11 @@ struct SpeechResultRange: Hashable, Sendable {
             && CMTimeCompare(other.start, end) < 0
     }
 
+    func contains(_ other: SpeechResultRange) -> Bool {
+        CMTimeCompare(start, other.start) <= 0
+            && CMTimeCompare(end, other.end) >= 0
+    }
+
     func union(_ other: SpeechResultRange) -> SpeechResultRange {
         SpeechResultRange(
             start: CMTimeCompare(start, other.start) <= 0 ? start : other.start,
@@ -87,6 +92,7 @@ struct SpeechCommandGate {
         let id: SpeechUtteranceID
         var range: SpeechResultRange
         var command: VoiceCommand?
+        var commandRange: SpeechResultRange?
         var isPotentialCommand: Bool
         var metadata: SpeechCommandMetadata
         var acceptsVolatileResult: Bool
@@ -110,12 +116,24 @@ struct SpeechCommandGate {
         var state = states[stateIndex]
 
         state.range = state.range.union(observation.range)
+        let finalResultCoversState = observation.isFinal
+            && observation.range.contains(state.range)
         state.isFinalized = state.isFinalized
-            || observation.isFinal
+            || finalResultCoversState
             || state.range.isFinalized(through: observation.finalizationTime)
 
         if !state.isCommitted {
-            state.command = observation.command
+            if let command = observation.command {
+                state.command = command
+                state.commandRange = observation.range
+            } else if let commandRange = state.commandRange,
+                      observation.range.contains(commandRange) {
+                // A whole-range revision invalidates the prior parse. Final
+                // word partitions only cover part of Apple's earlier volatile
+                // phrase and must not erase the complete pending command.
+                state.command = nil
+                state.commandRange = nil
+            }
             // Apple may replace any volatile text until the range finalizes.
             // Once a range has looked command-like, keep it as an audio-order
             // barrier even if an intermediate revision does not parse.
@@ -166,6 +184,7 @@ struct SpeechCommandGate {
                 id: id,
                 range: observation.range,
                 command: nil,
+                commandRange: nil,
                 isPotentialCommand: observation.isPotentialCommand,
                 metadata: observation.metadata,
                 acceptsVolatileResult: observation.acceptsVolatileResult,

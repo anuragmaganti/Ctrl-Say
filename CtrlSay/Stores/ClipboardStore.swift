@@ -8,6 +8,7 @@ final class ClipboardStore {
     static let maximumTotalStoredBytes = 256 * 1_024 * 1_024
 
     private(set) var numbered: [Int: ClipboardPayload] = [:]
+    private(set) var temporaryNamed: [String: ClipboardPayload] = [:]
     private(set) var named: [String: ClipboardPayload] = [:]
     private(set) var totalByteCount = 0
 
@@ -23,6 +24,24 @@ final class ClipboardStore {
         }
     }
 
+    var temporaryNamedSlots: [(name: String, payload: ClipboardPayload)] {
+        temporaryNamed.keys.sorted().compactMap { name in
+            temporaryNamed[name].map { (name, $0) }
+        }
+    }
+
+    var temporaryCopyCount: Int {
+        numbered.count + temporaryNamed.count
+    }
+
+    var hasTemporaryCopies: Bool {
+        !numbered.isEmpty || !temporaryNamed.isEmpty
+    }
+
+    var allNamedKeys: Set<String> {
+        Set(named.keys).union(temporaryNamed.keys)
+    }
+
     func set(_ payload: ClipboardPayload, at number: Int) throws {
         try ensureCapacity(
             replacingBytes: numbered[number]?.byteCount ?? 0,
@@ -33,13 +52,46 @@ final class ClipboardStore {
     }
 
     func set(_ payload: ClipboardPayload, named name: String) throws {
-        let normalizedName = VoiceCommandParser.normalizeName(name)
+        guard let normalizedName = VoiceCommandParser.validNormalizedPermanentName(
+            name
+        ) else {
+            throw ClipboardStoreError.invalidPermanentName
+        }
+        let replacedBytes = (named[normalizedName]?.byteCount ?? 0)
+            + (temporaryNamed[normalizedName]?.byteCount ?? 0)
         try ensureCapacity(
-            replacingBytes: named[normalizedName]?.byteCount ?? 0,
+            replacingBytes: replacedBytes,
             with: payload
         )
-        totalByteCount += payload.byteCount - (named[normalizedName]?.byteCount ?? 0)
+        totalByteCount += payload.byteCount - replacedBytes
+        temporaryNamed.removeValue(forKey: normalizedName)
         named[normalizedName] = payload
+    }
+
+    func validateTemporaryNameAvailable(_ name: String) throws -> String {
+        guard let normalizedName = VoiceCommandParser.validNormalizedTemporaryName(
+            name
+        ) else {
+            throw ClipboardStoreError.invalidTemporaryName
+        }
+        guard named[normalizedName] == nil else {
+            throw ClipboardStoreError.nameProtectedByPermanentCopy(normalizedName)
+        }
+        return normalizedName
+    }
+
+    func setTemporaryNamed(
+        _ payload: ClipboardPayload,
+        named name: String
+    ) throws {
+        let normalizedName = try validateTemporaryNameAvailable(name)
+        try ensureCapacity(
+            replacingBytes: temporaryNamed[normalizedName]?.byteCount ?? 0,
+            with: payload
+        )
+        totalByteCount += payload.byteCount
+            - (temporaryNamed[normalizedName]?.byteCount ?? 0)
+        temporaryNamed[normalizedName] = payload
     }
 
     func payload(at number: Int) -> ClipboardPayload? {
@@ -48,6 +100,15 @@ final class ClipboardStore {
 
     func payload(named name: String) -> ClipboardPayload? {
         named[VoiceCommandParser.normalizeName(name)]
+    }
+
+    func payload(temporaryNamed name: String) -> ClipboardPayload? {
+        temporaryNamed[VoiceCommandParser.normalizeName(name)]
+    }
+
+    func payload(resolvingNamed name: String) -> ClipboardPayload? {
+        let normalizedName = VoiceCommandParser.normalizeName(name)
+        return temporaryNamed[normalizedName] ?? named[normalizedName]
     }
 
     func name(forPayloadID payloadID: UUID) -> String? {
@@ -69,6 +130,18 @@ final class ClipboardStore {
         return removed
     }
 
+    @discardableResult
+    func removeTemporaryNamed(_ name: String) -> ClipboardPayload? {
+        let normalizedName = VoiceCommandParser.normalizeName(name)
+        guard let removed = temporaryNamed.removeValue(
+            forKey: normalizedName
+        ) else {
+            return nil
+        }
+        totalByteCount = max(0, totalByteCount - removed.byteCount)
+        return removed
+    }
+
     func validateRenameNamed(
         from currentName: String,
         to requestedName: String
@@ -83,6 +156,9 @@ final class ClipboardStore {
         }
         guard newName == oldName || named[newName] == nil else {
             throw ClipboardStoreError.permanentNameAlreadyExists(newName)
+        }
+        guard temporaryNamed[newName] == nil else {
+            throw ClipboardStoreError.temporaryNameAlreadyExists(newName)
         }
         return (newName, payload.id)
     }
@@ -146,9 +222,11 @@ final class ClipboardStore {
         named[normalizedName] = replacement
     }
 
-    func clearNumbered() {
+    func clearTemporary() {
         let removedBytes = numbered.values.reduce(0) { $0 + $1.byteCount }
+            + temporaryNamed.values.reduce(0) { $0 + $1.byteCount }
         numbered.removeAll(keepingCapacity: true)
+        temporaryNamed.removeAll(keepingCapacity: true)
         totalByteCount = max(0, totalByteCount - removedBytes)
     }
 
@@ -168,7 +246,10 @@ final class ClipboardStore {
 }
 
 enum ClipboardStoreError: LocalizedError, Equatable {
+    case invalidTemporaryName
     case invalidPermanentName
+    case nameProtectedByPermanentCopy(String)
+    case temporaryNameAlreadyExists(String)
     case permanentNameAlreadyExists(String)
     case missingPermanentCopy
     case permanentCopyChanged
@@ -180,8 +261,14 @@ enum ClipboardStoreError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
+        case .invalidTemporaryName:
+            "Use a one-word name that is not a number."
         case .invalidPermanentName:
             "Use a name of one to three words that does not begin with a number."
+        case .nameProtectedByPermanentCopy(let name):
+            "“\(name)” is a permanent copy. Delete it or use a different temporary name."
+        case .temporaryNameAlreadyExists(let name):
+            "A temporary copy named “\(name)” already exists."
         case .permanentNameAlreadyExists(let name):
             "A permanent copy named “\(name)” already exists."
         case .missingPermanentCopy:

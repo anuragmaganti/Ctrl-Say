@@ -20,6 +20,96 @@ final class ClipboardStoreMutationTests: XCTestCase {
     }
 
     @MainActor
+    func testTemporaryNamedCopyNormalizesReplacesAndRemoves() throws {
+        let store = ClipboardStore()
+        let first = makeTextPayload("First")
+        let replacement = makeTextPayload("Replacement")
+
+        try store.setTemporaryNamed(first, named: " HOUSE! ")
+        XCTAssertEqual(store.payload(temporaryNamed: "house"), first)
+        XCTAssertEqual(store.payload(resolvingNamed: "HOUSE"), first)
+
+        try store.setTemporaryNamed(replacement, named: "house")
+        XCTAssertEqual(store.payload(temporaryNamed: "house"), replacement)
+        XCTAssertEqual(store.totalByteCount, replacement.byteCount)
+        XCTAssertEqual(store.removeTemporaryNamed("HOUSE!"), replacement)
+        XCTAssertEqual(store.totalByteCount, 0)
+    }
+
+    @MainActor
+    func testTemporaryNamedCopyRejectsNumbersAndMultipleWords() {
+        let store = ClipboardStore()
+        let payload = makeTextPayload("Temporary")
+
+        for name in ["", "1", "one", "too", "home office"] {
+            XCTAssertThrowsError(
+                try store.setTemporaryNamed(payload, named: name)
+            ) { error in
+                XCTAssertEqual(
+                    error as? ClipboardStoreError,
+                    .invalidTemporaryName
+                )
+            }
+        }
+        XCTAssertTrue(store.temporaryNamed.isEmpty)
+        XCTAssertEqual(store.totalByteCount, 0)
+    }
+
+    @MainActor
+    func testTemporaryCopyCannotOverwritePermanentName() throws {
+        let store = ClipboardStore()
+        let permanent = makeTextPayload("Permanent")
+        try store.set(permanent, named: "house")
+
+        XCTAssertThrowsError(
+            try store.setTemporaryNamed(
+                makeTextPayload("Temporary"),
+                named: "HOUSE!"
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? ClipboardStoreError,
+                .nameProtectedByPermanentCopy("house")
+            )
+        }
+        XCTAssertEqual(store.payload(resolvingNamed: "house"), permanent)
+        XCTAssertNil(store.payload(temporaryNamed: "house"))
+    }
+
+    @MainActor
+    func testPermanentCopyPromotesAndReplacesTemporaryName() throws {
+        let store = ClipboardStore()
+        let temporary = makeTextPayload("Temporary")
+        let permanent = makeTextPayload("Permanent")
+        try store.setTemporaryNamed(temporary, named: "house")
+
+        try store.set(permanent, named: "house")
+
+        XCTAssertNil(store.payload(temporaryNamed: "house"))
+        XCTAssertEqual(store.payload(named: "house"), permanent)
+        XCTAssertEqual(store.payload(resolvingNamed: "house"), permanent)
+        XCTAssertEqual(store.totalByteCount, permanent.byteCount)
+    }
+
+    @MainActor
+    func testClearTemporaryRemovesNumberedAndNamedButKeepsPermanent() throws {
+        let store = ClipboardStore()
+        let numbered = makeTextPayload("Numbered")
+        let temporaryNamed = makeTextPayload("Temporary named")
+        let permanent = makeTextPayload("Permanent")
+        try store.set(numbered, at: 1)
+        try store.setTemporaryNamed(temporaryNamed, named: "house")
+        try store.set(permanent, named: "office")
+
+        store.clearTemporary()
+
+        XCTAssertTrue(store.numbered.isEmpty)
+        XCTAssertTrue(store.temporaryNamed.isEmpty)
+        XCTAssertEqual(store.payload(named: "office"), permanent)
+        XCTAssertEqual(store.totalByteCount, permanent.byteCount)
+    }
+
+    @MainActor
     func testRemoveNamedNormalizesLookupAndReturnsPayload() throws {
         let store = ClipboardStore()
         let payload = makeTextPayload("Home")
@@ -98,6 +188,26 @@ final class ClipboardStoreMutationTests: XCTestCase {
             )
         }
         XCTAssertEqual(store.named, originalSlots)
+    }
+
+    @MainActor
+    func testPermanentRenameRejectsTemporaryNameCollision() throws {
+        let store = ClipboardStore()
+        let permanent = makeTextPayload("Permanent")
+        let temporary = makeTextPayload("Temporary")
+        try store.set(permanent, named: "house")
+        try store.setTemporaryNamed(temporary, named: "office")
+
+        XCTAssertThrowsError(
+            try store.renameNamed(from: "house", to: "office")
+        ) { error in
+            XCTAssertEqual(
+                error as? ClipboardStoreError,
+                .temporaryNameAlreadyExists("office")
+            )
+        }
+        XCTAssertEqual(store.payload(named: "house"), permanent)
+        XCTAssertEqual(store.payload(temporaryNamed: "office"), temporary)
     }
 
     @MainActor
@@ -477,7 +587,7 @@ final class ClipboardStoreMutationTests: XCTestCase {
         XCTAssertEqual(store.removeNumbered(2), second)
         XCTAssertEqual(store.totalByteCount, 45)
 
-        store.clearNumbered()
+        store.clearTemporary()
         XCTAssertEqual(store.totalByteCount, 30)
 
         XCTAssertEqual(store.removeNamed("archive"), permanent)
@@ -536,6 +646,29 @@ final class ClipboardStoreMutationTests: XCTestCase {
             store.totalByteCount,
             ClipboardStore.maximumPayloadBytes + 1
         )
+    }
+
+    @MainActor
+    func testAggregateLimitIncludesTemporaryNamedCopies() throws {
+        let store = ClipboardStore()
+        let first = makeAccountingPayload(
+            byteCount: ClipboardStore.maximumPayloadBytes
+        )
+        let second = makeAccountingPayload(
+            byteCount: ClipboardStore.maximumPayloadBytes
+        )
+        try store.set(first, at: 1)
+        try store.setTemporaryNamed(second, named: "house")
+        XCTAssertEqual(
+            store.totalByteCount,
+            ClipboardStore.maximumTotalStoredBytes
+        )
+
+        XCTAssertThrowsError(
+            try store.set(makeAccountingPayload(byteCount: 1), named: "office")
+        ) { error in
+            XCTAssertEqual(error as? ClipboardStoreError, .storageLimitExceeded)
+        }
     }
 
     private func makeTextPayload(

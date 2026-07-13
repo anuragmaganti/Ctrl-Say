@@ -142,6 +142,55 @@ final class SpeechCommandGateTests: XCTestCase {
         XCTAssertEqual(mutations.upsertCommand, .permanentCopy("house"))
     }
 
+    func testFinalWordPartitionsPreservePendingPermanentCommand() {
+        var gate = SpeechCommandGate()
+        XCTAssertTrue(
+            gate.ingest(
+                observation(
+                    range: makeRange(start: 0, end: 1.2),
+                    finalizationTime: 0,
+                    command: .permanentCopy("house"),
+                    acceptsVolatile: false
+                )
+            ).mutations.isEmpty
+        )
+
+        XCTAssertTrue(
+            gate.ingest(
+                observation(
+                    range: makeRange(start: 0, end: 0.4),
+                    finalizationTime: 0.4,
+                    isFinal: true,
+                    command: nil,
+                    acceptsVolatile: false
+                )
+            ).mutations.isEmpty
+        )
+        XCTAssertTrue(
+            gate.ingest(
+                observation(
+                    range: makeRange(start: 0.4, end: 0.8),
+                    finalizationTime: 0.8,
+                    isFinal: true,
+                    command: nil,
+                    acceptsVolatile: false
+                )
+            ).mutations.isEmpty
+        )
+
+        let finalPartition = gate.ingest(
+            observation(
+                range: makeRange(start: 0.8, end: 1.2),
+                finalizationTime: 1.2,
+                isFinal: true,
+                command: nil,
+                acceptsVolatile: false
+            )
+        ).mutations
+
+        XCTAssertEqual(finalPartition.upsertCommands, [.permanentCopy("house")])
+    }
+
     func testCommittedCommandIgnoresLaterRevision() throws {
         var gate = SpeechCommandGate()
         let range = makeRange(start: 0, end: 1)

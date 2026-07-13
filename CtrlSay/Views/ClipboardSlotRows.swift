@@ -133,6 +133,126 @@ struct NumberedCopyRow: View {
     }
 }
 
+struct TemporaryNamedCopyRow: View {
+    let name: String
+    let payload: ClipboardPayload
+    let paste: () -> Void
+    let delete: () -> Void
+    let style: ClipboardSlotRowStyle
+    let thumbnailProvider: ClipboardThumbnailProvider?
+
+    @State private var isHovered = false
+
+    init(
+        name: String,
+        payload: ClipboardPayload,
+        paste: @escaping () -> Void,
+        delete: @escaping () -> Void,
+        style: ClipboardSlotRowStyle = .dashboard,
+        thumbnailProvider: ClipboardThumbnailProvider? = nil
+    ) {
+        self.name = name
+        self.payload = payload
+        self.paste = paste
+        self.delete = delete
+        self.style = style
+        self.thumbnailProvider = thumbnailProvider
+    }
+
+    var body: some View {
+        row
+            .contextMenu { menuItems }
+            .accessibilityElement(children: .contain)
+            .accessibilityAction(named: "Paste copy \(name)") {
+                paste()
+            }
+            .accessibilityAction(named: "Delete copy \(name)") {
+                delete()
+            }
+    }
+
+    private var row: some View {
+        HStack(spacing: 10) {
+            leadingView
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Copy \(displayName)")
+                    .font(.callout.weight(.medium))
+                    .lineLimit(1)
+                Text(payload.preview)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(style.previewLineLimit)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button("Paste", action: paste)
+                .font(.caption.weight(.semibold))
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Paste copy \(name)")
+                .help("Paste copy \(name)")
+
+            optionsMenu
+        }
+        .padding(.leading, 10)
+        .padding(.trailing, 5)
+        .frame(minHeight: style.minimumHeight)
+        .contentShape(.rect(cornerRadius: 11))
+        .background(
+            isHovered ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear),
+            in: .rect(cornerRadius: 11)
+        )
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.12)) {
+                isHovered = hovering
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var leadingView: some View {
+        if style.showsThumbnail, let thumbnailProvider {
+            ClipboardPayloadThumbnailView(
+                payload: payload,
+                provider: thumbnailProvider
+            )
+        } else {
+            Image(systemName: "tag.fill")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 30, height: 30)
+                .background(.quaternary, in: .rect(cornerRadius: 8))
+                .accessibilityHidden(true)
+        }
+    }
+
+    private var optionsMenu: some View {
+        Menu { menuItems } label: {
+            Image(systemName: "ellipsis")
+                .frame(width: 24, height: 28)
+                .contentShape(.rect)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .accessibilityLabel("Copy \(name) options")
+        .help("Copy \(name) options")
+    }
+
+    @ViewBuilder
+    private var menuItems: some View {
+        Button("Paste", systemImage: "doc.on.clipboard", action: paste)
+        Divider()
+        Button("Delete Copy", systemImage: "trash", role: .destructive) {
+            delete()
+        }
+    }
+
+    private var displayName: String {
+        name.prefix(1).uppercased() + String(name.dropFirst())
+    }
+}
+
 struct PermanentCopyRow: View {
     private enum EditingField: Hashable {
         case name

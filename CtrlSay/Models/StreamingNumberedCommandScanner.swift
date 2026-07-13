@@ -56,7 +56,8 @@ struct StreamingNumberedCommandScannerUpdate: Equatable, Sendable {
     let mutations: [StreamingNumberedCommandMutation]
 }
 
-/// Extracts numbered copy and paste commands from a revisable speech timeline.
+/// Extracts numbered and one-word named working-copy commands from a revisable
+/// speech timeline.
 ///
 /// A candidate stays mutable until `markCommitted(_:)` is called. A committed
 /// candidate becomes a tombstone, so Apple's final-result echo or a later text
@@ -127,7 +128,8 @@ struct StreamingNumberedCommandScanner {
     }
 
     mutating func ingest(
-        _ segment: StreamingNumberedCommandSegment
+        _ segment: StreamingNumberedCommandSegment,
+        knownNamedCopies: Set<String> = []
     ) -> StreamingNumberedCommandScannerUpdate {
         let rangeWasAlreadyFinalized = isNumeric(finalizedThrough)
             && CMTimeCompare(segment.range.end, finalizedThrough) <= 0
@@ -151,7 +153,9 @@ struct StreamingNumberedCommandScanner {
             || segment.isFinal
 
         advanceFinalizationWatermark(to: segment.finalizationTime)
-        let mutations = reconcile(with: extractedCandidates())
+        let mutations = reconcile(
+            with: extractedCandidates(knownNamedCopies: knownNamedCopies)
+        )
         pruneFinishedState()
         return StreamingNumberedCommandScannerUpdate(mutations: mutations)
     }
@@ -222,7 +226,9 @@ struct StreamingNumberedCommandScanner {
         }
     }
 
-    private func extractedCandidates() -> [CandidateSnapshot] {
+    private func extractedCandidates(
+        knownNamedCopies: Set<String>
+    ) -> [CandidateSnapshot] {
         let orderedSegments = segments.sorted { lhs, rhs in
             let comparison = CMTimeCompare(lhs.range.start, rhs.range.start)
             if comparison != 0 { return comparison < 0 }
@@ -253,6 +259,9 @@ struct StreamingNumberedCommandScanner {
 
         guard resolvedTokens.count >= 2 else { return [] }
         var snapshots: [CandidateSnapshot] = []
+        var availableNamedCopies = Set(
+            knownNamedCopies.map(VoiceCommandParser.normalizeName)
+        )
 
         for index in 0..<(resolvedTokens.count - 1) {
             let verb = resolvedTokens[index]
@@ -261,6 +270,17 @@ struct StreamingNumberedCommandScanner {
                 verb.text
             ) else {
                 continue
+            }
+            if canonicalVerb == "copy", index > 0 {
+                let precedingToken = resolvedTokens[index - 1]
+                if VoiceCommandParser.isPotentialPermanentModifier(
+                    precedingToken.text
+                ), canBridge(precedingToken, to: verb) {
+                    // Never reinterpret `permanent copy N` as temporary
+                    // `copy N`. Numeric permanent names are invalid and the
+                    // safe result is no command, not a different command.
+                    continue
+                }
             }
             guard canBridge(verb, to: argument) else { continue }
             guard let command = VoiceCommandParser.parse(
@@ -271,6 +291,16 @@ struct StreamingNumberedCommandScanner {
             switch command {
             case .copyNumber, .pasteNumber:
                 break
+            case .copyNamed(let name):
+                availableNamedCopies.insert(
+                    VoiceCommandParser.normalizeName(name)
+                )
+            case .pasteNamed(let name):
+                guard availableNamedCopies.contains(
+                    VoiceCommandParser.normalizeName(name)
+                ) else {
+                    continue
+                }
             default:
                 continue
             }

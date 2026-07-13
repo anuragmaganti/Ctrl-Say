@@ -32,6 +32,14 @@ final class VoiceCommandParserTests: XCTestCase {
                 )
             }
         }
+
+        XCTAssertTrue(
+            VolatileCommandAcceptancePolicy.accepts(
+                .copyNamed("house"),
+                confidence: nil,
+                knownNamedCopies: []
+            )
+        )
     }
 
     func testNonCoreVolatileCommandsStillRequireMeasuredConfidence() {
@@ -126,6 +134,14 @@ final class VoiceCommandParserTests: XCTestCase {
 
         XCTAssertEqual(VoiceCommandParser.parse("copy 10"), .copyNumber(10))
         XCTAssertEqual(VoiceCommandParser.parse("paste ten"), .pasteNumber(10))
+        XCTAssertEqual(
+            VoiceCommandParser.parse("copy house"),
+            .copyNamed("house")
+        )
+        XCTAssertEqual(
+            VoiceCommandParser.parse("permanent copy house"),
+            .permanentCopy("house")
+        )
         XCTAssertNil(VoiceCommandParser.parse("permanent copy ten"))
     }
 
@@ -167,6 +183,7 @@ final class VoiceCommandParserTests: XCTestCase {
             ("PASTE... too?!", .pasteNumber(2)),
             ("Pace!!! THREE.", .pasteNumber(3)),
             ("pase, four…", .pasteNumber(4)),
+            ("COPY... House?!", .copyNamed("house")),
         ]
 
         for (transcript, expected) in cases {
@@ -200,7 +217,10 @@ final class VoiceCommandParserTests: XCTestCase {
             VoiceCommandParser.validNormalizedPermanentName("peace treaty"),
             "peace treaty"
         )
-        XCTAssertNil(VoiceCommandParser.parse("copy peace"))
+        XCTAssertEqual(
+            VoiceCommandParser.parse("copy peace"),
+            .copyNamed("peace")
+        )
     }
 
     func testPermanentNameValidationNormalizesUsingVoiceGrammar() {
@@ -228,6 +248,23 @@ final class VoiceCommandParserTests: XCTestCase {
             XCTAssertNil(
                 VoiceCommandParser.validNormalizedPermanentName(invalidName),
                 "Expected \(invalidName.debugDescription) to be rejected"
+            )
+        }
+    }
+
+    func testTemporaryNamesAreOneWordAndCannotUseNumberAliases() {
+        XCTAssertEqual(
+            VoiceCommandParser.validNormalizedTemporaryName(" HOUSE! "),
+            "house"
+        )
+        XCTAssertEqual(
+            VoiceCommandParser.parse("paste house"),
+            .pasteNamed("house")
+        )
+
+        for invalidName in ["", "2", "two", "too", "home office"] {
+            XCTAssertNil(
+                VoiceCommandParser.validNormalizedTemporaryName(invalidName)
             )
         }
     }

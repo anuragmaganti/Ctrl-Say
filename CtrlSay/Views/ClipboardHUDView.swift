@@ -29,7 +29,7 @@ struct ClipboardHUDView: View {
         .frame(width: ClipboardHUDMetrics.width)
         .containerShape(.rect(cornerRadius: ClipboardHUDMetrics.cornerRadius))
         .glassEffect(
-            .regular,
+            .clear,
             in: .rect(cornerRadius: ClipboardHUDMetrics.cornerRadius)
         )
         .glassEffectTransition(.materialize)
@@ -119,16 +119,17 @@ struct ClipboardHUDView: View {
 
     @ViewBuilder
     private var numberedCopies: some View {
-        let slots = model.slots.numberedSlots
-        if slots.isEmpty {
+        let numberedSlots = model.slots.numberedSlots
+        let namedSlots = model.slots.temporaryNamedSlots
+        if numberedSlots.isEmpty && namedSlots.isEmpty {
             emptyState(
                 icon: "square.stack",
-                title: "No numbered copies",
-                detail: "Say “copy 1” with something selected."
+                title: "No temporary copies",
+                detail: "Say “copy 1” or “copy house”."
             )
         } else {
             LazyVStack(spacing: 0) {
-                ForEach(slots, id: \.number) { slot in
+                ForEach(numberedSlots, id: \.number) { slot in
                     NumberedCopyRow(
                         number: slot.number,
                         payload: slot.payload,
@@ -137,6 +138,25 @@ struct ClipboardHUDView: View {
                         },
                         delete: {
                             model.deleteNumberedCopy(slot.number)
+                        },
+                        style: .hud,
+                        thumbnailProvider: thumbnailProvider
+                    )
+                    .id(slot.payload.id)
+                    .onAppear {
+                        model.recordHUDRowAppearance(for: slot.payload.id)
+                    }
+                }
+
+                ForEach(namedSlots, id: \.name) { slot in
+                    TemporaryNamedCopyRow(
+                        name: slot.name,
+                        payload: slot.payload,
+                        paste: {
+                            model.pasteTemporaryNamedCopy(slot.payload)
+                        },
+                        delete: {
+                            model.deleteTemporaryNamedCopy(slot.name)
                         },
                         style: .hud,
                         thumbnailProvider: thumbnailProvider
@@ -223,12 +243,12 @@ struct ClipboardHUDView: View {
         HStack {
             Spacer()
             Button("Clear All", systemImage: "trash") {
-                model.clearNumberedCopies()
+                model.clearTemporaryCopies()
             }
             .font(.caption)
             .buttonStyle(.borderless)
-            .disabled(model.slots.numberedSlots.isEmpty)
-            .accessibilityLabel("Clear all numbered copies")
+            .disabled(!model.slots.hasTemporaryCopies)
+            .accessibilityLabel("Clear all temporary copies")
         }
         .padding(.horizontal, 14)
         .overlay(alignment: .top) {

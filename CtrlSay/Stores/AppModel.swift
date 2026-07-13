@@ -96,7 +96,14 @@ final class AppModel {
 
     func pasteNumberedCopy(_ payload: ClipboardPayload) {
         enqueueDashboard(
-            .pasteNumbered(payload: payload),
+            .pasteTemporary(payload: payload),
+            target: clipboard.currentCommandTarget()
+        )
+    }
+
+    func pasteTemporaryNamedCopy(_ payload: ClipboardPayload) {
+        enqueueDashboard(
+            .pasteTemporary(payload: payload),
             target: clipboard.currentCommandTarget()
         )
     }
@@ -107,11 +114,19 @@ final class AppModel {
         lastAction = "Deleted copy \(number)"
     }
 
-    func clearNumberedCopies() {
-        guard !slots.numbered.isEmpty else { return }
-        slots.clearNumbered()
+    func deleteTemporaryNamedCopy(_ name: String) {
+        guard slots.removeTemporaryNamed(name) != nil else { return }
+        scheduleVocabularyRefresh()
         lastError = nil
-        lastAction = "Cleared numbered copies"
+        lastAction = "Deleted temporary copy"
+    }
+
+    func clearTemporaryCopies() {
+        guard slots.hasTemporaryCopies else { return }
+        slots.clearTemporary()
+        scheduleVocabularyRefresh()
+        lastError = nil
+        lastAction = "Cleared temporary copies"
     }
 
     func consumeHUDPresentationRequestTimestamp() -> UInt64? {
@@ -262,7 +277,8 @@ final class AppModel {
                 tokens: result.tokens,
                 finalizationTime: result.finalizationTime,
                 isFinal: result.isFinal
-            )
+            ),
+            knownNamedCopies: slots.allNamedKeys
         )
         for mutation in numberedUpdate.mutations {
             apply(mutation, from: result)
@@ -271,9 +287,12 @@ final class AppModel {
         let exactCommand = VoiceCommandParser.parse(result.text)
         let gatedCommand: VoiceCommand?
         switch exactCommand {
-        case .copyNumber, .pasteNumber:
-            // Numbered commands are owned by the timeline scanner. Sending an
-            // exact match through both paths would execute final echoes twice.
+        case .copyNumber, .pasteNumber, .copyNamed:
+            // Fast two-token commands are owned by the timeline scanner.
+            // Sending an exact match through both paths would execute final
+            // echoes twice.
+            gatedCommand = nil
+        case .pasteNamed(let name) where !name.contains(" "):
             gatedCommand = nil
         default:
             gatedCommand = exactCommand
@@ -282,7 +301,7 @@ final class AppModel {
             VolatileCommandAcceptancePolicy.accepts(
                 $0,
                 confidence: result.minimumConfidence,
-                knownNamedCopies: slots.named.keys
+                knownNamedCopies: slots.allNamedKeys
             )
         } ?? false
 
@@ -343,7 +362,7 @@ final class AppModel {
         case .upsert(let candidate):
 #if DEBUG
             Telemetry.speech.info(
-                "Numbered candidate id=\(candidate.id.rawValue, privacy: .public) command=\(candidate.command.telemetryName, privacy: .public) start=\(candidate.range.start.seconds, privacy: .public) end=\(candidate.range.end.seconds, privacy: .public) final=\(result.isFinal, privacy: .public)"
+                "Streaming candidate id=\(candidate.id.rawValue, privacy: .public) command=\(candidate.command.telemetryName, privacy: .public) start=\(candidate.range.start.seconds, privacy: .public) end=\(candidate.range.end.seconds, privacy: .public) final=\(result.isFinal, privacy: .public)"
             )
 #endif
             let identity = SpeechCommandIdentity.numbered(candidate.id)
@@ -381,7 +400,7 @@ final class AppModel {
         case .revoke(let candidateID):
 #if DEBUG
             Telemetry.speech.info(
-                "Numbered candidate revoked id=\(candidateID.rawValue, privacy: .public)"
+                "Streaming candidate revoked id=\(candidateID.rawValue, privacy: .public)"
             )
 #endif
             let identity = SpeechCommandIdentity.numbered(candidateID)
@@ -533,6 +552,23 @@ final class AppModel {
                     targetStatus = .verified
                     lastAction = "Paste sent from \(number)"
 
+                case .copyNamed(let name):
+                    let normalizedName = try slots.validateTemporaryNameAvailable(
+                        name
+                    )
+                    let capture = try await clipboard.captureSelection(
+                        target: queued.target
+                    )
+                    try slots.setTemporaryNamed(
+                        capture.payload,
+                        named: normalizedName
+                    )
+                    markHUDStoreUpdate(for: capture.payload.id)
+                    clipboardMilliseconds = capture.milliseconds
+                    targetStatus = .verified
+                    scheduleVocabularyRefresh()
+                    lastAction = "Copied to \(normalizedName)"
+
                 case .saveCurrentClipboard(let number):
                     let payload = try clipboard.snapshotCurrentClipboard()
                     try slots.set(payload, at: number)
@@ -549,28 +585,29 @@ final class AppModel {
                     lastAction = "Created permanent copy"
 
                 case .pasteNamed(let name):
-                    guard let payload = slots.payload(named: name) else {
+                    guard let payload = slots.payload(resolvingNamed: name) else {
                         throw AppModelError.missingNamedCopy
                     }
                     let metrics = try clipboard.paste(payload, target: queued.target)
                     clipboardMilliseconds = metrics.milliseconds
                     targetStatus = .verified
-                    lastAction = "Permanent paste sent"
+                    lastAction = "Named paste sent"
 
                 case .deleteNamed(let name):
                     _ = removePermanentCopy(named: name)
                     lastAction = "Deleted permanent copy"
 
                 case .clearNumbered:
-                    slots.clearNumbered()
-                    lastAction = "Cleared numbered copies"
+                    slots.clearTemporary()
+                    scheduleVocabularyRefresh()
+                    lastAction = "Cleared temporary copies"
                 }
 
-            case .pasteNumbered(let payload):
+            case .pasteTemporary(let payload):
                 let metrics = try clipboard.paste(payload, target: queued.target)
                 clipboardMilliseconds = metrics.milliseconds
                 targetStatus = .verified
-                lastAction = "Numbered paste sent"
+                lastAction = "Temporary paste sent"
 
             case .pastePermanent(let payload):
                 let metrics = try clipboard.paste(payload, target: queued.target)
@@ -668,7 +705,7 @@ final class AppModel {
         while desiredListening != speech.isListening {
             if desiredListening {
                 resetSpeechSessionTracking()
-                await speech.start(vocabulary: Array(slots.named.keys))
+                await speech.start(vocabulary: Array(slots.allNamedKeys))
                 if Task.isCancelled {
                     if speech.isActive {
                         await speech.stop()
@@ -731,11 +768,11 @@ final class AppModel {
             }
 
             guard speech.isListening else { continue }
-            let vocabulary = Array(slots.named.keys)
+            let vocabulary = Array(slots.allNamedKeys)
             if !(await speech.updateVocabulary(vocabulary)) {
                 try? await Task.sleep(for: .milliseconds(50))
                 guard speech.isListening else { continue }
-                _ = await speech.updateVocabulary(Array(slots.named.keys))
+                _ = await speech.updateVocabulary(Array(slots.allNamedKeys))
             }
         }
         vocabularyRefreshTask = nil
@@ -754,13 +791,13 @@ private struct QueuedCommand {
 
 private enum QueuedOperation {
     case voice(VoiceCommand)
-    case pasteNumbered(payload: ClipboardPayload)
+    case pasteTemporary(payload: ClipboardPayload)
     case pastePermanent(payload: ClipboardPayload)
 
     var telemetryName: String {
         switch self {
         case .voice(let command): command.telemetryName
-        case .pasteNumbered: "dashboard-paste-numbered"
+        case .pasteTemporary: "dashboard-paste-temporary"
         case .pastePermanent: "dashboard-paste-named"
         }
     }
@@ -768,7 +805,7 @@ private enum QueuedOperation {
     var requiresExternalTarget: Bool {
         switch self {
         case .voice(let command): command.requiresExternalTarget
-        case .pasteNumbered, .pastePermanent: true
+        case .pasteTemporary, .pastePermanent: true
         }
     }
 }
@@ -809,7 +846,7 @@ enum AppModelError: LocalizedError {
         case .emptyNumberedSlot(let number):
             "Nothing has been copied to slot \(number)."
         case .missingNamedCopy:
-            "That permanent copy does not exist."
+            "That named copy does not exist."
         }
     }
 }

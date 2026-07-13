@@ -6,7 +6,7 @@
 
 ## Product invariants
 
-- Ctrl-Say is a voice-controlled set of numbered and named clipboard slots. Commands include `copy 1`, `paste 1`, `permanent copy house`, and `paste house`.
+- Ctrl-Say is a voice-controlled set of numbered and named clipboard slots. Commands include `copy 1`, `paste 1`, `copy house`, `paste house`, and `permanent copy house`.
 - End-to-end perceived latency is the primary product requirement. Optimize the speech-to-command-to-paste path before dashboard polish or additional features.
 - Use Apple's on-device transcription. Act on a confidently recognized complete command from partial results instead of waiting for utterance finalization when safe.
 - Keep the transcription pipeline warm only while an explicit Listening mode is enabled. Do not require network access for commands.
@@ -23,8 +23,8 @@
 
 ## Slot lifetime
 
-- Numbered slots are temporary, memory-only working slots. Reusing a number replaces it, and all numbered slots are cleared when the app quits or the user clears them.
-- Named "permanent copies" use normalized names in a separate protected namespace. Regular numbered commands cannot overwrite them. For the current scope, they remain until explicitly deleted or the app quits; do not persist them to disk unless persistence is intentionally added later.
+- Numbered slots and unprefixed one-word named slots are temporary, memory-only working slots. Reusing a number or name replaces it, and all temporary slots are cleared when the app quits or the user clears them.
+- `permanent copy <name>` stores a normalized one-to-three-word permanent name in a protected namespace. A temporary command cannot overwrite the same permanent name; an explicit permanent copy may replace and promote a temporary name. Permanent copies remain until explicitly deleted or app quit; do not persist them to disk unless intentionally added later.
 
 ## Interaction and UI
 

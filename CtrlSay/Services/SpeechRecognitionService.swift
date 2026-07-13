@@ -463,7 +463,9 @@ final class SpeechRecognitionService {
             ["copy \($0)", "paste \($0)"]
         }
         vocabulary += ["permanent copy", "clear copies", "save clipboard"]
-        vocabulary += namedCopies.flatMap { ["paste \($0)", "permanent copy \($0)"] }
+        vocabulary += namedCopies.flatMap {
+            ["copy \($0)", "paste \($0)", "permanent copy \($0)"]
+        }
         return vocabulary
     }
 }

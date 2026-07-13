@@ -174,6 +174,7 @@ final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
     private func observeLayoutInputs() {
         withObservationTracking {
             _ = model.slots.numbered.count
+            _ = model.slots.temporaryNamed.count
             _ = model.slots.named.count
             _ = presentationState.selectedCollection
         } onChange: { [weak self] in
@@ -272,7 +273,7 @@ final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
     private var visibleItemCount: Int {
         switch presentationState.selectedCollection {
         case .numbered:
-            model.slots.numbered.count
+            model.slots.temporaryCopyCount
         case .permanent:
             model.slots.named.count
         }

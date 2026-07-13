@@ -3,7 +3,7 @@ import SwiftUI
 
 struct DashboardView: View {
     private enum CopyCollection: String, CaseIterable, Identifiable {
-        case numbered = "Numbered"
+        case numbered = "Temporary"
         case permanent = "Permanent"
 
         var id: Self { self }
@@ -96,10 +96,10 @@ struct DashboardView: View {
                     Label("Settings…", systemImage: "gearshape")
                 }
 
-                if !model.slots.numberedSlots.isEmpty {
+                if model.slots.hasTemporaryCopies {
                     Divider()
-                    Button("Clear Numbered Copies", systemImage: "trash") {
-                        model.clearNumberedCopies()
+                    Button("Clear Temporary Copies", systemImage: "trash") {
+                        model.clearTemporaryCopies()
                     }
                     Divider()
                 }
@@ -295,16 +295,17 @@ struct DashboardView: View {
 
     @ViewBuilder
     private var numberedCopies: some View {
-        let slots = model.slots.numberedSlots
-        if slots.isEmpty {
+        let numberedSlots = model.slots.numberedSlots
+        let namedSlots = model.slots.temporaryNamedSlots
+        if numberedSlots.isEmpty && namedSlots.isEmpty {
             emptyState(
                 icon: "square.stack.3d.up",
-                title: "No numbered copies",
-                instruction: "Say “copy one” to create your first slot."
+                title: "No temporary copies",
+                instruction: "Say “copy one” or “copy house” with something selected."
             )
         } else {
             LazyVStack(spacing: 2) {
-                ForEach(slots, id: \.number) { slot in
+                ForEach(numberedSlots, id: \.number) { slot in
                     NumberedCopyRow(
                         number: slot.number,
                         payload: slot.payload,
@@ -313,6 +314,19 @@ struct DashboardView: View {
                         },
                         delete: {
                             model.deleteNumberedCopy(slot.number)
+                        }
+                    )
+                }
+
+                ForEach(namedSlots, id: \.name) { slot in
+                    TemporaryNamedCopyRow(
+                        name: slot.name,
+                        payload: slot.payload,
+                        paste: {
+                            model.pasteTemporaryNamedCopy(slot.payload)
+                        },
+                        delete: {
+                            model.deleteTemporaryNamedCopy(slot.name)
                         }
                     )
                 }
@@ -551,7 +565,7 @@ struct DashboardView: View {
         let count: Int
         switch selectedCollection {
         case .numbered:
-            count = model.slots.numberedSlots.count
+            count = model.slots.temporaryCopyCount
         case .permanent:
             count = model.slots.namedSlots.count
         }

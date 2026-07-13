@@ -210,6 +210,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             try? model.slots.set(payload, at: number)
         }
 
+        let temporaryText = "Session-only content stored under a memorable spoken name."
+        let temporaryData = Data(temporaryText.utf8)
+        let temporaryPayload = ClipboardPayload(
+            items: [
+                PasteboardItemPayload(
+                    representations: [
+                        PasteboardRepresentation(
+                            typeIdentifier: "public.utf8-plain-text",
+                            data: temporaryData
+                        ),
+                    ]
+                ),
+            ],
+            kind: .text,
+            preview: ClipboardPayload.preview(forText: temporaryText),
+            byteCount: temporaryData.count
+        )
+        try? model.slots.setTemporaryNamed(temporaryPayload, named: "house")
+
         let permanentText = "123 Example Street, Example City"
         let permanentData = Data(permanentText.utf8)
         let permanentPayload = ClipboardPayload(
@@ -227,7 +246,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             preview: ClipboardPayload.preview(forText: permanentText),
             byteCount: permanentData.count
         )
-        try? model.slots.set(permanentPayload, named: "house")
+        try? model.slots.set(permanentPayload, named: "address")
     }
 #endif
 

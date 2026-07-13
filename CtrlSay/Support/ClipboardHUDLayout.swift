@@ -2,7 +2,7 @@ import CoreGraphics
 import Foundation
 
 enum ClipboardHUDCollection: String, CaseIterable, Identifiable, Sendable {
-    case numbered = "Numbered"
+    case numbered = "Temporary"
     case permanent = "Permanent"
 
     var id: Self { self }

@@ -3,6 +3,7 @@ import Foundation
 enum VoiceCommand: Equatable, Sendable {
     case copyNumber(Int)
     case pasteNumber(Int)
+    case copyNamed(String)
     case saveCurrentClipboard(Int)
     case permanentCopy(String)
     case pasteNamed(String)
@@ -13,6 +14,7 @@ enum VoiceCommand: Equatable, Sendable {
         switch self {
         case .copyNumber: "copy-number"
         case .pasteNumber: "paste-number"
+        case .copyNamed: "copy-temporary-named"
         case .saveCurrentClipboard: "save-current"
         case .permanentCopy: "copy-named"
         case .pasteNamed: "paste-named"
@@ -23,7 +25,7 @@ enum VoiceCommand: Equatable, Sendable {
 
     var requiresExternalTarget: Bool {
         switch self {
-        case .copyNumber, .pasteNumber, .permanentCopy, .pasteNamed:
+        case .copyNumber, .pasteNumber, .copyNamed, .permanentCopy, .pasteNamed:
             true
         case .saveCurrentClipboard, .deleteNamed, .clearNumbered:
             false
@@ -69,7 +71,10 @@ enum VoiceCommandParser {
         }
 
         if tokens.count == 2, tokens[0] == "copy" {
-            return slotNumber(tokens[1]).map(VoiceCommand.copyNumber)
+            if let number = slotNumber(tokens[1]) {
+                return .copyNumber(number)
+            }
+            return validTemporaryNameTokens([tokens[1]]).map(VoiceCommand.copyNamed)
         }
 
         if tokens.count == 3, tokens[0] == "save", tokens[1] == "clipboard" {
@@ -107,6 +112,10 @@ enum VoiceCommandParser {
         validNameTokens(normalizedTokens(name))
     }
 
+    static func validNormalizedTemporaryName(_ name: String) -> String? {
+        validTemporaryNameTokens(normalizedTokens(name))
+    }
+
     static func isPotentialCommand(_ transcript: String) -> Bool {
         let tokens = normalizedTokens(transcript)
         guard let first = tokens.first else { return true }
@@ -125,6 +134,10 @@ enum VoiceCommandParser {
         if token == "copy" { return "copy" }
         if isPasteVerb(token) { return "paste" }
         return nil
+    }
+
+    static func isPotentialPermanentModifier(_ token: String) -> Bool {
+        token == "permanent" || token == "permanently" || token.hasPrefix("perman")
     }
 
     private static func normalizedTokens(_ text: String) -> [String] {
@@ -155,6 +168,11 @@ enum VoiceCommandParser {
         }
         return tokens.joined(separator: " ")
     }
+
+    private static func validTemporaryNameTokens(_ tokens: [String]) -> String? {
+        guard tokens.count == 1 else { return nil }
+        return validNameTokens(tokens)
+    }
 }
 
 enum VolatileCommandAcceptancePolicy {
@@ -169,7 +187,7 @@ enum VolatileCommandAcceptancePolicy {
         knownNamedCopies: Names
     ) -> Bool where Names.Element == String {
         switch command {
-        case .copyNumber, .pasteNumber:
+        case .copyNumber, .pasteNumber, .copyNamed:
             // These are complete, tightly scoped commands once both tokens
             // arrive. Execute the first parseable volatile result instead of
             // waiting up to several seconds for finalization or confidence.
