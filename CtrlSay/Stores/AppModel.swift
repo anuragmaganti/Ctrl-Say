@@ -20,6 +20,12 @@ final class AppModel {
     @ObservationIgnored private var lastCommand: VoiceCommand?
     @ObservationIgnored private var lastCommandTime = ContinuousClock().now
 
+    var isReadyForCommands: Bool {
+        speech.microphoneAuthorization == .authorized
+            && hasKeyboardMonitoringAccess
+            && hasEventPostingAccess
+    }
+
     init() {
         hasEventPostingAccess = clipboard.hasEventPostingAccess
         speech.onTranscript = { [weak self] transcript, isFinal in
@@ -35,6 +41,13 @@ final class AppModel {
     }
 
     func toggleListening() {
+        refreshPermissions()
+        guard isReadyForCommands else {
+            lastError = "Complete the three setup permissions before listening."
+            lastAction = "Setup required"
+            return
+        }
+
         Task {
             if speech.isListening {
                 await speech.stop()
@@ -52,11 +65,21 @@ final class AppModel {
         hasEventPostingAccess = clipboard.requestEventPostingAccess()
     }
 
+    func requestMicrophoneAccess() {
+        Task {
+            let granted = await speech.requestMicrophoneAccess()
+            if !granted {
+                PrivacySettings.openMicrophone()
+            }
+        }
+    }
+
     func requestKeyboardMonitoringAccess() {
         hasKeyboardMonitoringAccess = rightOptionMonitor?.requestGlobalMonitoringAccess() == true
     }
 
     func refreshPermissions() {
+        speech.refreshMicrophoneAuthorization()
         hasEventPostingAccess = clipboard.hasEventPostingAccess
         hasKeyboardMonitoringAccess = rightOptionMonitor?.refreshGlobalMonitoringAccess() == true
     }

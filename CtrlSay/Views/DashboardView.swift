@@ -26,7 +26,7 @@ struct DashboardView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Ctrl-Say")
                         .font(.title2.weight(.semibold))
-                    Text(model.speech.state.label)
+                    Text(model.isReadyForCommands ? model.speech.state.label : "Setup required")
                         .font(.caption)
                         .foregroundStyle(model.speech.isListening ? .green : .secondary)
                 }
@@ -41,13 +41,14 @@ struct DashboardView: View {
                 model.toggleListening()
             } label: {
                 Label(
-                    model.speech.isListening ? "Stop Listening" : "Start Listening",
-                    systemImage: model.speech.isListening ? "stop.fill" : "waveform"
+                    listeningButtonTitle,
+                    systemImage: listeningButtonIcon
                 )
                 .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
+            .disabled(!model.isReadyForCommands)
 
             Text("Tap Right Option to start or stop listening")
                 .font(.caption)
@@ -63,23 +64,34 @@ struct DashboardView: View {
 
     @ViewBuilder
     private var permissions: some View {
-        if !model.hasKeyboardMonitoringAccess || !model.hasEventPostingAccess {
-            VStack(spacing: 10) {
-                if !model.hasKeyboardMonitoringAccess {
-                    permissionRow(
-                        icon: "keyboard",
-                        message: "Allow Input Monitoring for the Right Option shortcut.",
-                        action: model.requestKeyboardMonitoringAccess
-                    )
-                }
+        if !model.isReadyForCommands {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Finish setup")
+                    .font(.headline)
+                Text("Complete these once so your first voice command works immediately.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
 
-                if !model.hasEventPostingAccess {
-                    permissionRow(
-                        icon: "hand.raised.fill",
-                        message: "Allow Accessibility control for cross-app Copy and Paste.",
-                        action: model.requestEventPostingAccess
-                    )
-                }
+                permissionRow(
+                    icon: "mic.fill",
+                    message: "Microphone for on-device commands",
+                    isGranted: model.speech.microphoneAuthorization == .authorized,
+                    action: model.requestMicrophoneAccess
+                )
+
+                permissionRow(
+                    icon: "keyboard",
+                    message: "Input Monitoring for Right Option",
+                    isGranted: model.hasKeyboardMonitoringAccess,
+                    action: model.requestKeyboardMonitoringAccess
+                )
+
+                permissionRow(
+                    icon: "hand.raised.fill",
+                    message: "Accessibility for Copy and Paste",
+                    isGranted: model.hasEventPostingAccess,
+                    action: model.requestEventPostingAccess
+                )
             }
         }
     }
@@ -87,16 +99,35 @@ struct DashboardView: View {
     private func permissionRow(
         icon: String,
         message: String,
+        isGranted: Bool,
         action: @escaping () -> Void
     ) -> some View {
-            HStack(spacing: 10) {
-                Image(systemName: icon)
-                    .foregroundStyle(.orange)
-                Text(message)
+        HStack(spacing: 10) {
+            Image(systemName: isGranted ? "checkmark.circle.fill" : icon)
+                .foregroundStyle(isGranted ? .green : .orange)
+                .frame(width: 18)
+            Text(message)
+                .font(.caption)
+            Spacer()
+            if isGranted {
+                Text("Allowed")
                     .font(.caption)
-                Spacer()
+                    .foregroundStyle(.secondary)
+            } else {
                 Button("Allow", action: action)
+                    .controlSize(.small)
             }
+        }
+    }
+
+    private var listeningButtonTitle: String {
+        if !model.isReadyForCommands { return "Complete Setup to Listen" }
+        return model.speech.isListening ? "Stop Listening" : "Start Listening"
+    }
+
+    private var listeningButtonIcon: String {
+        if !model.isReadyForCommands { return "checklist" }
+        return model.speech.isListening ? "stop.fill" : "waveform"
     }
 
     private var slots: some View {

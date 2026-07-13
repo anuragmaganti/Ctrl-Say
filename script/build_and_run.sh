@@ -6,19 +6,33 @@ APP_NAME="CtrlSay"
 BUNDLE_ID="com.anuragmaganti.CtrlSay"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DERIVED_DATA="$ROOT_DIR/.build/DerivedData"
-APP_BUNDLE="$DERIVED_DATA/Build/Products/Debug/$APP_NAME.app"
-APP_BINARY="$APP_BUNDLE/Contents/MacOS/$APP_NAME"
+PROJECT="$ROOT_DIR/CtrlSay.xcodeproj"
+BUILD_ARGS=(
+  -project "$PROJECT"
+  -scheme "$APP_NAME"
+  -configuration Debug
+  -destination "platform=macOS"
+)
 
 pkill -x "$APP_NAME" >/dev/null 2>&1 || true
+for _ in {1..40}; do
+  if ! pgrep -x "$APP_NAME" >/dev/null; then
+    break
+  fi
+  sleep 0.05
+done
 
-xcodebuild \
-  -project "$ROOT_DIR/CtrlSay.xcodeproj" \
-  -scheme "$APP_NAME" \
-  -configuration Debug \
-  -destination "platform=macOS" \
-  -derivedDataPath "$DERIVED_DATA" \
-  build
+if pgrep -x "$APP_NAME" >/dev/null; then
+  echo "$APP_NAME did not stop; stop the active Xcode run and try again." >&2
+  exit 1
+fi
+
+xcodebuild "${BUILD_ARGS[@]}" build
+
+BUILD_SETTINGS="$(xcodebuild "${BUILD_ARGS[@]}" -showBuildSettings)"
+TARGET_BUILD_DIR="$(awk -F ' = ' '/^[[:space:]]*TARGET_BUILD_DIR = / { print $2; exit }' <<<"$BUILD_SETTINGS")"
+APP_BUNDLE="$TARGET_BUILD_DIR/$APP_NAME.app"
+APP_BINARY="$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 
 open_app() {
   /usr/bin/open -n "$APP_BUNDLE"

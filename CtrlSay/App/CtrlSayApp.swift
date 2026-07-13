@@ -38,12 +38,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         updateStatusItemPresentation()
         observeListeningState()
+
+        Task { @MainActor [weak self] in
+            await Task.yield()
+            self?.presentSetupIfNeeded()
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         if let statusItem {
             NSStatusBar.system.removeStatusItem(statusItem)
         }
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        // Returning from Privacy & Security should make the shortcut usable
+        // immediately after the user grants Input Monitoring access.
+        model.refreshPermissions()
+        updateStatusItemPresentation()
     }
 
     @objc
@@ -68,23 +80,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let title: String
         let toolTip: String
 
-        switch model.speech.state {
-        case .stopped:
-            symbolName = "waveform.circle"
-            title = ""
-            toolTip = "Ctrl-Say — Not listening"
-        case .requestingMicrophone, .preparing, .downloadingModel:
-            symbolName = "waveform.circle"
-            title = " Starting…"
-            toolTip = "Ctrl-Say — Starting on-device listening"
-        case .listening:
-            symbolName = "waveform.circle.fill"
-            title = " Listening"
-            toolTip = "Ctrl-Say — Listening"
-        case .failed:
-            symbolName = "exclamationmark.triangle"
-            title = " Error"
-            toolTip = "Ctrl-Say — Listening failed"
+        if !model.isReadyForCommands {
+            symbolName = "checklist"
+            title = " Setup"
+            toolTip = "Ctrl-Say — Complete setup"
+        } else {
+            switch model.speech.state {
+            case .stopped:
+                symbolName = "waveform.circle"
+                title = ""
+                toolTip = "Ctrl-Say — Not listening"
+            case .requestingMicrophone, .preparing, .downloadingModel:
+                symbolName = "waveform.circle"
+                title = " Starting…"
+                toolTip = "Ctrl-Say — Starting on-device listening"
+            case .listening:
+                symbolName = "waveform.circle.fill"
+                title = " Listening"
+                toolTip = "Ctrl-Say — Listening"
+            case .failed:
+                symbolName = "exclamationmark.triangle"
+                title = " Error"
+                toolTip = "Ctrl-Say — Listening failed"
+            }
         }
 
         guard let button = statusItem?.button else { return }
@@ -100,6 +118,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func observeListeningState() {
         withObservationTracking {
             _ = model.speech.state
+            _ = model.speech.microphoneAuthorization
+            _ = model.hasKeyboardMonitoringAccess
+            _ = model.hasEventPostingAccess
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -107,5 +128,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.observeListeningState()
             }
         }
+    }
+
+    private func presentSetupIfNeeded() {
+        model.refreshPermissions()
+        guard !model.isReadyForCommands,
+              !popover.isShown,
+              let button = statusItem?.button else {
+            return
+        }
+
+        popover.show(
+            relativeTo: button.bounds,
+            of: button,
+            preferredEdge: .minY
+        )
+        popover.contentViewController?.view.window?.makeKey()
+        Telemetry.interface.info("First-run setup opened")
     }
 }

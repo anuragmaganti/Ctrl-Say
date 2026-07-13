@@ -22,7 +22,10 @@ final class RightOptionKeyMonitor {
 
     @discardableResult
     func requestGlobalMonitoringAccess() -> Bool {
-        _ = CGRequestListenEventAccess()
+        let granted = CGRequestListenEventAccess()
+        if !granted {
+            PrivacySettings.openInputMonitoring()
+        }
         return refreshGlobalMonitoringAccess()
     }
 
@@ -48,7 +51,11 @@ final class RightOptionKeyMonitor {
             }
         }
 
-        previouslyHadGlobalMonitoringAccess = hasGlobalMonitoringAccess
+        let hasAccess = hasGlobalMonitoringAccess
+        previouslyHadGlobalMonitoringAccess = hasAccess
+        Telemetry.commands.info(
+            "Right Option monitor started; Input Monitoring access: \(hasAccess, privacy: .public)"
+        )
     }
 
     func stop() {
@@ -80,10 +87,9 @@ final class RightOptionKeyMonitor {
     private func handle(_ event: NSEvent) {
         guard event.keyCode == Self.rightOptionKeyCode else { return }
 
-        let isDown = CGEventSource.keyState(
-            .combinedSessionState,
-            key: Self.rightOptionKeyCode
-        )
+        // flagsChanged already contains the modifier transition. A separate
+        // global key-state query can lag the event on some keyboards.
+        let isDown = event.modifierFlags.contains(.option)
 
         if isDown, !isRightOptionDown {
             isRightOptionDown = true

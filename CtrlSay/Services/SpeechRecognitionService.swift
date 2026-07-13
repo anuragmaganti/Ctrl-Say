@@ -6,6 +6,8 @@ import Speech
 @MainActor
 @Observable
 final class SpeechRecognitionService {
+    private static let commandLocale = Locale(identifier: "en-US")
+
     enum State: Equatable {
         case stopped
         case requestingMicrophone
@@ -28,11 +30,9 @@ final class SpeechRecognitionService {
 
     private(set) var state: State = .stopped
     private(set) var latestTranscript = ""
+    private(set) var microphoneAuthorization = AVCaptureDevice.authorizationStatus(for: .audio)
 
     var isListening: Bool { state == .listening }
-    var microphoneAuthorization: AVAuthorizationStatus {
-        AVCaptureDevice.authorizationStatus(for: .audio)
-    }
 
     @ObservationIgnored var onTranscript: ((String, Bool) -> Void)?
 
@@ -51,7 +51,7 @@ final class SpeechRecognitionService {
         guard state == .stopped || isFailure else { return }
         state = .requestingMicrophone
 
-        guard await requestMicrophoneAccessIfNeeded() else {
+        guard await requestMicrophoneAccess() else {
             state = .failed("Microphone access is required.")
             return
         }
@@ -88,6 +88,28 @@ final class SpeechRecognitionService {
         }
     }
 
+    @discardableResult
+    func requestMicrophoneAccess() async -> Bool {
+        let granted: Bool
+        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        case .authorized:
+            granted = true
+        case .notDetermined:
+            granted = await AVCaptureDevice.requestAccess(for: .audio)
+        case .denied, .restricted:
+            granted = false
+        @unknown default:
+            granted = false
+        }
+
+        refreshMicrophoneAuthorization()
+        return granted
+    }
+
+    func refreshMicrophoneAuthorization() {
+        microphoneAuthorization = AVCaptureDevice.authorizationStatus(for: .audio)
+    }
+
     private var isFailure: Bool {
         if case .failed = state { return true }
         return false
@@ -97,7 +119,11 @@ final class SpeechRecognitionService {
         guard SpeechTranscriber.isAvailable else {
             throw SpeechServiceError.transcriberUnavailable
         }
-        guard let locale = await SpeechTranscriber.supportedLocale(equivalentTo: .current) else {
+        // Ctrl-Say's v1 command grammar is English. Using the Mac's current
+        // locale would make identical commands fail on non-English systems.
+        guard let locale = await SpeechTranscriber.supportedLocale(
+            equivalentTo: Self.commandLocale
+        ) else {
             throw SpeechServiceError.localeUnsupported
         }
 
@@ -234,19 +260,6 @@ final class SpeechRecognitionService {
         analyzer = nil
         transcriber = nil
         analyzerFormat = nil
-    }
-
-    private func requestMicrophoneAccessIfNeeded() async -> Bool {
-        switch AVCaptureDevice.authorizationStatus(for: .audio) {
-        case .authorized:
-            true
-        case .notDetermined:
-            await AVCaptureDevice.requestAccess(for: .audio)
-        case .denied, .restricted:
-            false
-        @unknown default:
-            false
-        }
     }
 
     private func commandVocabulary(namedCopies: [String]) -> [String] {

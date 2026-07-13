@@ -8,6 +8,7 @@ final class ClipboardService {
     private let pasteboard = NSPasteboard.general
     private let maximumRepresentationBytes = 64 * 1_024 * 1_024
     private let maximumPayloadBytes = 128 * 1_024 * 1_024
+    private var didRequestEventPostingAccess = false
 
     var hasEventPostingAccess: Bool {
         CGPreflightPostEventAccess()
@@ -15,13 +16,15 @@ final class ClipboardService {
 
     @discardableResult
     func requestEventPostingAccess() -> Bool {
-        CGRequestPostEventAccess()
+        let granted = CGRequestPostEventAccess()
+        if !granted {
+            PrivacySettings.openAccessibility()
+        }
+        return granted
     }
 
     func captureSelection() async throws -> ClipboardPayload {
-        guard hasEventPostingAccess else {
-            throw ClipboardServiceError.accessibilityPermissionRequired
-        }
+        try requireEventPostingAccess()
 
         let initialChangeCount = pasteboard.changeCount
         let started = DispatchTime.now().uptimeNanoseconds
@@ -108,9 +111,7 @@ final class ClipboardService {
     }
 
     func paste(_ payload: ClipboardPayload) throws {
-        guard hasEventPostingAccess else {
-            throw ClipboardServiceError.accessibilityPermissionRequired
-        }
+        try requireEventPostingAccess()
 
         let started = DispatchTime.now().uptimeNanoseconds
         let items = payload.items.map { payloadItem in
@@ -145,6 +146,16 @@ final class ClipboardService {
         keyUp.flags = .maskCommand
         keyDown.post(tap: .cgSessionEventTap)
         keyUp.post(tap: .cgSessionEventTap)
+    }
+
+    private func requireEventPostingAccess() throws {
+        guard hasEventPostingAccess else {
+            if !didRequestEventPostingAccess {
+                didRequestEventPostingAccess = true
+                _ = requestEventPostingAccess()
+            }
+            throw ClipboardServiceError.accessibilityPermissionRequired
+        }
     }
 
     private func contentKind(text: Bool, image: Bool, files: Bool) -> ClipboardContentKind {
@@ -191,7 +202,7 @@ enum ClipboardServiceError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .accessibilityPermissionRequired:
-            "Accessibility permission is required to send Copy and Paste commands."
+            "Grant Accessibility access, then repeat the Copy or Paste command."
         case .clipboardIsEmpty:
             "The native clipboard is empty."
         case .copyTimedOut:

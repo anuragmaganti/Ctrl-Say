@@ -40,3 +40,11 @@
 - Instrument speech detection, command recognition, native Copy/Paste dispatch, pasteboard change detection, snapshot/write time, and visible completion where measurable.
 - Benchmark median and tail latency, idle CPU, memory growth, and energy on the performance-floor Macs from the first prototype.
 - Never log clipboard contents or transcripts containing copied content. Keep the dashboard and telemetry out of the latency-critical path.
+
+## Portability and distribution
+
+- The shipped app must not depend on Apple Shortcuts, Automator, AppleScript, shell commands, developer tools, localhost services, hard-coded user paths, DerivedData, or project-only generated files. Development scripts must remain outside the app bundle.
+- Use public Apple-native runtime APIs and system-managed Speech assets. Do not bundle a machine-local speech model or require a network service for command recognition.
+- Before external testing, build Release from a clean checkout and fresh DerivedData, scan the bundle for local paths and non-system dynamic libraries, and verify both `arm64` and `x86_64` unless supported architectures are intentionally narrowed.
+- Keep the release Team ID and bundle identifier stable so macOS recognizes updates as the same app. Public builds must be Developer ID signed, hardened, notarized, and tested on a clean Mac user account before distribution.
+- The v1 command grammar is explicitly English and must not silently follow the Mac's UI language. Test command dispatch on non-US keyboard layouts and external keyboards before public beta; do not assume one developer keyboard layout represents all users.
