@@ -16,7 +16,9 @@ struct CtrlSayApp: App {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let model = AppModel()
-    private let popover = NSPopover()
+    private lazy var dashboardPanel = DashboardPanelController(
+        rootView: DashboardView(model: model)
+    )
     private var statusItem: NSStatusItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -29,13 +31,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             button.toolTip = "Ctrl-Say"
         }
 
-        popover.behavior = .transient
-        popover.animates = false
-        popover.contentSize = NSSize(width: 360, height: 500)
-        popover.contentViewController = NSHostingController(
-            rootView: DashboardView(model: model)
-        )
-
         updateStatusItemPresentation()
         observeListeningState()
 
@@ -46,6 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        dashboardPanel.hide()
         if let statusItem {
             NSStatusBar.system.removeStatusItem(statusItem)
         }
@@ -60,18 +56,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc
     private func togglePopover(_ sender: NSStatusBarButton) {
-        if popover.isShown {
-            popover.performClose(sender)
+        if dashboardPanel.isShown {
+            dashboardPanel.hide()
             Telemetry.interface.info("Dashboard closed")
             return
         }
 
-        popover.show(
-            relativeTo: sender.bounds,
-            of: sender,
-            preferredEdge: .minY
-        )
-        popover.contentViewController?.view.window?.makeKey()
+        dashboardPanel.show(relativeTo: sender)
         Telemetry.interface.info("Dashboard opened")
     }
 
@@ -98,6 +89,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 symbolName = "waveform.circle.fill"
                 title = " Listening"
                 toolTip = "Ctrl-Say — Listening"
+            case .stopping:
+                symbolName = "waveform.circle"
+                title = " Stopping…"
+                toolTip = "Ctrl-Say — Stopping listening"
             case .failed:
                 symbolName = "exclamationmark.triangle"
                 title = " Error"
@@ -133,17 +128,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func presentSetupIfNeeded() {
         model.refreshPermissions()
         guard !model.isReadyForCommands,
-              !popover.isShown,
+              !dashboardPanel.isShown,
               let button = statusItem?.button else {
             return
         }
 
-        popover.show(
-            relativeTo: button.bounds,
-            of: button,
-            preferredEdge: .minY
-        )
-        popover.contentViewController?.view.window?.makeKey()
+        dashboardPanel.show(relativeTo: button)
         Telemetry.interface.info("First-run setup opened")
     }
 }

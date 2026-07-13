@@ -1,0 +1,167 @@
+import XCTest
+
+final class VoiceCommandParserTests: XCTestCase {
+    func testPotentialCommandPrefixesAreDetectedWithoutRetainingTranscript() {
+        XCTAssertTrue(VoiceCommandParser.isPotentialCommand("cop"))
+        XCTAssertTrue(VoiceCommandParser.isPotentialCommand("copy"))
+        XCTAssertTrue(VoiceCommandParser.isPotentialCommand("permanent"))
+        XCTAssertFalse(VoiceCommandParser.isPotentialCommand("ordinary dictation"))
+    }
+
+    func testNumberedCopyAndPasteAcceptFirstCompleteVolatileResult() {
+        for number in VoiceCommandParser.numberedSlotRange {
+            for command in [
+                VoiceCommand.copyNumber(number),
+                VoiceCommand.pasteNumber(number),
+            ] {
+                XCTAssertTrue(
+                    VolatileCommandAcceptancePolicy.accepts(
+                        command,
+                        confidence: nil,
+                        knownNamedCopies: []
+                    )
+                )
+                XCTAssertTrue(
+                    VolatileCommandAcceptancePolicy.accepts(
+                        command,
+                        confidence: 0,
+                        knownNamedCopies: []
+                    )
+                )
+            }
+        }
+    }
+
+    func testNonCoreVolatileCommandsStillRequireMeasuredConfidence() {
+        for command in [VoiceCommand.saveCurrentClipboard(2), .clearNumbered] {
+            XCTAssertFalse(
+                VolatileCommandAcceptancePolicy.accepts(
+                    command,
+                    confidence: nil,
+                    knownNamedCopies: []
+                )
+            )
+            XCTAssertFalse(
+                VolatileCommandAcceptancePolicy.accepts(
+                    command,
+                    confidence: VolatileCommandAcceptancePolicy.minimumGuardedConfidence - 0.01,
+                    knownNamedCopies: []
+                )
+            )
+            XCTAssertTrue(
+                VolatileCommandAcceptancePolicy.accepts(
+                    command,
+                    confidence: VolatileCommandAcceptancePolicy.minimumGuardedConfidence,
+                    knownNamedCopies: []
+                )
+            )
+        }
+    }
+
+    func testVolatileNamedCommandsRequireKnownUnambiguousName() {
+        XCTAssertFalse(
+            VolatileCommandAcceptancePolicy.accepts(
+                .pasteNamed("house"),
+                confidence: nil,
+                knownNamedCopies: ["house"]
+            )
+        )
+        XCTAssertFalse(
+            VolatileCommandAcceptancePolicy.accepts(
+                .pasteNamed("house"),
+                confidence: VolatileCommandAcceptancePolicy.minimumGuardedConfidence - 0.01,
+                knownNamedCopies: ["house"]
+            )
+        )
+        XCTAssertFalse(
+            VolatileCommandAcceptancePolicy.accepts(
+                .permanentCopy("house"),
+                confidence: 0.9,
+                knownNamedCopies: ["house"]
+            )
+        )
+        XCTAssertFalse(
+            VolatileCommandAcceptancePolicy.accepts(
+                .pasteNamed("house"),
+                confidence: 0.9,
+                knownNamedCopies: ["office"]
+            )
+        )
+        XCTAssertFalse(
+            VolatileCommandAcceptancePolicy.accepts(
+                .pasteNamed("home"),
+                confidence: 0.9,
+                knownNamedCopies: ["home", "home office"]
+            )
+        )
+        XCTAssertTrue(
+            VolatileCommandAcceptancePolicy.accepts(
+                .pasteNamed("house"),
+                confidence: VolatileCommandAcceptancePolicy.minimumGuardedConfidence,
+                knownNamedCopies: ["house"]
+            )
+        )
+    }
+
+    func testCanonicalNumberedCommands() {
+        let spoken = VoiceCommandParser.canonicalSpokenSlotNumbers
+        XCTAssertEqual(VoiceCommandParser.numberedSlotRange, 1...10)
+
+        for number in VoiceCommandParser.numberedSlotRange {
+            XCTAssertEqual(
+                VoiceCommandParser.parse("paste \(number)"),
+                .pasteNumber(number)
+            )
+            XCTAssertEqual(
+                VoiceCommandParser.parse("copy \(spoken[number - 1])"),
+                .copyNumber(number)
+            )
+            XCTAssertEqual(
+                VoiceCommandParser.parse("save clipboard \(spoken[number - 1])"),
+                .saveCurrentClipboard(number)
+            )
+        }
+
+        XCTAssertEqual(VoiceCommandParser.parse("copy 10"), .copyNumber(10))
+        XCTAssertEqual(VoiceCommandParser.parse("paste ten"), .pasteNumber(10))
+        XCTAssertNil(VoiceCommandParser.parse("permanent copy ten"))
+    }
+
+    func testHighConfidenceNumberHomophonesAreScopedToNumberedCommands() {
+        let aliases: [(String, Int)] = [
+            ("won", 1),
+            ("to", 2),
+            ("too", 2),
+            ("for", 4),
+            ("fore", 4),
+            ("foor", 4),
+            ("ate", 8),
+        ]
+
+        for (word, number) in aliases {
+            XCTAssertEqual(
+                VoiceCommandParser.parse("paste \(word)"),
+                .pasteNumber(number)
+            )
+            XCTAssertEqual(
+                VoiceCommandParser.parse("copy \(word)"),
+                .copyNumber(number)
+            )
+        }
+    }
+
+    func testNumberAliasesDoNotMatchInsideLongerNames() {
+        XCTAssertNil(VoiceCommandParser.parse("paste to house"))
+        XCTAssertNil(VoiceCommandParser.parse("permanent copy to"))
+        XCTAssertNil(VoiceCommandParser.parse("permanent copy for later"))
+        XCTAssertNil(VoiceCommandParser.parse("paste 11"))
+        XCTAssertNil(VoiceCommandParser.parse("permanent copy 11"))
+    }
+
+    func testPunctuationAndCapitalizationRemainAccepted() {
+        XCTAssertEqual(
+            VoiceCommandParser.parse("Paste TOO!"),
+            .pasteNumber(2)
+        )
+    }
+}

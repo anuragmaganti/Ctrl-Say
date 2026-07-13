@@ -4,9 +4,16 @@ import SwiftUI
 struct DashboardView: View {
     let model: AppModel
 
+#if DEBUG
+    @State private var showsDeveloperDiagnostics = false
+#endif
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             header
+#if DEBUG
+            developerDiagnostics
+#endif
             permissions
             Divider()
             slots
@@ -19,6 +26,54 @@ struct DashboardView: View {
             model.refreshPermissions()
         }
     }
+
+#if DEBUG
+    private var developerDiagnostics: some View {
+        DisclosureGroup(
+            isExpanded: $showsDeveloperDiagnostics
+        ) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Memory-only diagnostic data • never logged")
+                    .foregroundStyle(.secondary)
+
+                diagnosticRow("Transcript", model.debugDiagnostics.transcript.isEmpty
+                    ? "No speech yet"
+                    : model.debugDiagnostics.transcript)
+                diagnosticRow("Result", model.debugDiagnostics.resultState)
+                diagnosticRow("Confidence", model.debugDiagnostics.confidence)
+                diagnosticRow("Parser", model.debugDiagnostics.parseOutcome)
+                diagnosticRow("Recognition", model.debugDiagnostics.recognitionLatency)
+                diagnosticRow("Queue", model.debugDiagnostics.queue)
+                diagnosticRow("Clipboard path", model.debugDiagnostics.clipboardPath)
+                diagnosticRow("Target", model.debugDiagnostics.target)
+
+                if model.debugDiagnostics.alternatives.count > 1 {
+                    diagnosticRow(
+                        "Alternatives",
+                        model.debugDiagnostics.alternatives.dropFirst().prefix(3)
+                            .joined(separator: " • ")
+                    )
+                }
+            }
+            .font(.caption2.monospaced())
+            .padding(.top, 6)
+        } label: {
+            Label("Developer diagnostics", systemImage: "wrench.and.screwdriver")
+                .font(.caption.weight(.semibold))
+        }
+    }
+
+    private func diagnosticRow(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(label)
+                .foregroundStyle(.secondary)
+                .frame(width: 72, alignment: .leading)
+            Text(value)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+#endif
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -48,7 +103,7 @@ struct DashboardView: View {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
-            .disabled(!model.isReadyForCommands)
+            .disabled(!model.isReadyForCommands && !model.speech.isActive)
 
             Text("Tap Right Option to start or stop listening")
                 .font(.caption)
@@ -121,13 +176,27 @@ struct DashboardView: View {
     }
 
     private var listeningButtonTitle: String {
-        if !model.isReadyForCommands { return "Complete Setup to Listen" }
-        return model.speech.isListening ? "Stop Listening" : "Start Listening"
+        switch model.speech.state {
+        case .requestingMicrophone, .preparing, .downloadingModel:
+            return "Cancel Starting"
+        case .listening:
+            return "Stop Listening"
+        case .stopping:
+            return "Start Again"
+        case .stopped, .failed:
+            return model.isReadyForCommands
+                ? "Start Listening"
+                : "Complete Setup to Listen"
+        }
     }
 
     private var listeningButtonIcon: String {
-        if !model.isReadyForCommands { return "checklist" }
-        return model.speech.isListening ? "stop.fill" : "waveform"
+        switch model.speech.state {
+        case .requestingMicrophone, .preparing, .downloadingModel, .listening:
+            return "stop.fill"
+        case .stopping, .stopped, .failed:
+            return model.isReadyForCommands ? "waveform" : "checklist"
+        }
     }
 
     private var slots: some View {
@@ -214,6 +283,8 @@ struct DashboardView: View {
     }
 }
 
+#if DEBUG
 #Preview {
     DashboardView(model: AppModel())
 }
+#endif

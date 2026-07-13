@@ -3,12 +3,43 @@ import CoreGraphics
 import Foundation
 import UniformTypeIdentifiers
 
+struct CommandTarget: Equatable, Sendable {
+    let processIdentifier: pid_t
+    let launchDate: Date?
+    let bundleIdentifier: String?
+}
+
+struct PasteDispatchMetrics: Equatable, Sendable {
+    let milliseconds: Double
+}
+
+struct ClipboardCaptureResult: Sendable {
+    let payload: ClipboardPayload
+    let milliseconds: Double
+}
+
 @MainActor
 final class ClipboardService {
+    private static let commandKeyCode: CGKeyCode = 55
+
     private let pasteboard = NSPasteboard.general
     private let maximumRepresentationBytes = 64 * 1_024 * 1_024
     private let maximumPayloadBytes = 128 * 1_024 * 1_024
     private var didRequestEventPostingAccess = false
+    private var activationGeneration: UInt64 = 0
+    private var activationObserver: NSObjectProtocol?
+
+    init() {
+        activationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.activationGeneration &+= 1
+            }
+        }
+    }
 
     var hasEventPostingAccess: Bool {
         CGPreflightPostEventAccess()
@@ -23,26 +54,51 @@ final class ClipboardService {
         return granted
     }
 
-    func captureSelection() async throws -> ClipboardPayload {
+    func currentCommandTarget() -> CommandTarget? {
+        guard let application = NSWorkspace.shared.frontmostApplication,
+              application.processIdentifier != ProcessInfo.processInfo.processIdentifier,
+              !application.isTerminated else {
+            return nil
+        }
+        return CommandTarget(
+            processIdentifier: application.processIdentifier,
+            launchDate: application.launchDate,
+            bundleIdentifier: application.bundleIdentifier
+        )
+    }
+
+    func captureSelection(target requestedTarget: CommandTarget?) async throws -> ClipboardCaptureResult {
         try requireEventPostingAccess()
+        let target = try requireCurrentTarget(requestedTarget)
 
         let initialChangeCount = pasteboard.changeCount
+        let initialActivationGeneration = activationGeneration
         let started = DispatchTime.now().uptimeNanoseconds
-        try postCommandKey(keyCode: 8) // C
+        try postCommandKey(keyCode: 8, target: target) // C
 
         let clock = ContinuousClock()
         let deadline = clock.now.advanced(by: .milliseconds(750))
         while pasteboard.changeCount == initialChangeCount {
+            guard activationGeneration == initialActivationGeneration else {
+                throw ClipboardServiceError.commandTargetChanged
+            }
             guard clock.now < deadline else {
                 throw ClipboardServiceError.copyTimedOut
             }
             try await Task.sleep(for: .milliseconds(2))
         }
 
+        guard activationGeneration == initialActivationGeneration else {
+            throw ClipboardServiceError.commandTargetChanged
+        }
+        _ = try requireCurrentTarget(target)
         let payload = try snapshotCurrentClipboard()
         let milliseconds = Double(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000
-        Telemetry.clipboard.info("Copy captured in \(milliseconds, privacy: .public) ms; \(payload.byteCount, privacy: .public) bytes")
-        return payload
+        Telemetry.clipboard.info("Copy captured in \(milliseconds, privacy: .public) ms")
+        return ClipboardCaptureResult(
+            payload: payload,
+            milliseconds: milliseconds
+        )
     }
 
     func snapshotCurrentClipboard() throws -> ClipboardPayload {
@@ -110,8 +166,12 @@ final class ClipboardService {
         )
     }
 
-    func paste(_ payload: ClipboardPayload) throws {
+    func paste(
+        _ payload: ClipboardPayload,
+        target requestedTarget: CommandTarget?
+    ) throws -> PasteDispatchMetrics {
         try requireEventPostingAccess()
+        let target = try requireCurrentTarget(requestedTarget)
 
         let started = DispatchTime.now().uptimeNanoseconds
         let items = payload.items.map { payloadItem in
@@ -130,22 +190,72 @@ final class ClipboardService {
             throw ClipboardServiceError.couldNotWriteClipboard
         }
 
-        try postCommandKey(keyCode: 9) // V
+        // Revalidate after the pasteboard write so an intentional app switch
+        // cannot send a paste to a different destination.
+        _ = try requireCurrentTarget(target)
+        try postCommandKey(keyCode: 9, target: target) // V
         let milliseconds = Double(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000
-        Telemetry.clipboard.info("Paste dispatched in \(milliseconds, privacy: .public) ms; \(payload.byteCount, privacy: .public) bytes")
+        Telemetry.clipboard.info("Paste dispatched in \(milliseconds, privacy: .public) ms")
+        return PasteDispatchMetrics(milliseconds: milliseconds)
     }
 
-    private func postCommandKey(keyCode: CGKeyCode) throws {
+    private func postCommandKey(
+        keyCode: CGKeyCode,
+        target: CommandTarget
+    ) throws {
         guard let source = CGEventSource(stateID: .combinedSessionState),
+              let commandDown = CGEvent(
+                  keyboardEventSource: source,
+                  virtualKey: Self.commandKeyCode,
+                  keyDown: true
+              ),
               let keyDown = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true),
-              let keyUp = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false) else {
+              let keyUp = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false),
+              let commandUp = CGEvent(
+                  keyboardEventSource: source,
+                  virtualKey: Self.commandKeyCode,
+                  keyDown: false
+              ) else {
             throw ClipboardServiceError.couldNotCreateKeyboardEvent
         }
 
+        // Quartz requires the complete modifier sequence. Posting only C/V
+        // with a Command flag can be ignored by some target event loops, and
+        // postToPid provides no delivery acknowledgement.
+        commandDown.flags = .maskCommand
         keyDown.flags = .maskCommand
         keyUp.flags = .maskCommand
-        keyDown.post(tap: .cgSessionEventTap)
-        keyUp.post(tap: .cgSessionEventTap)
+        commandUp.flags = []
+
+        commandDown.postToPid(target.processIdentifier)
+        keyDown.postToPid(target.processIdentifier)
+        keyUp.postToPid(target.processIdentifier)
+        commandUp.postToPid(target.processIdentifier)
+    }
+
+    private func requireCurrentTarget(_ target: CommandTarget?) throws -> CommandTarget {
+        guard let target,
+              let application = NSRunningApplication(
+                processIdentifier: target.processIdentifier
+              ),
+              !application.isTerminated else {
+            throw ClipboardServiceError.commandTargetUnavailable
+        }
+
+        if let launchDate = target.launchDate,
+           application.launchDate != launchDate {
+            throw ClipboardServiceError.commandTargetUnavailable
+        }
+        if let bundleIdentifier = target.bundleIdentifier,
+           application.bundleIdentifier != bundleIdentifier {
+            throw ClipboardServiceError.commandTargetUnavailable
+        }
+
+        guard NSWorkspace.shared.frontmostApplication?.processIdentifier
+                == target.processIdentifier else {
+            throw ClipboardServiceError.commandTargetChanged
+        }
+        return target
     }
 
     private func requireEventPostingAccess() throws {
@@ -198,6 +308,8 @@ enum ClipboardServiceError: LocalizedError {
     case unsupportedOrOversizedContent
     case couldNotWriteClipboard
     case couldNotCreateKeyboardEvent
+    case commandTargetUnavailable
+    case commandTargetChanged
 
     var errorDescription: String? {
         switch self {
@@ -213,6 +325,10 @@ enum ClipboardServiceError: LocalizedError {
             "Ctrl-Say could not write this slot to the native clipboard."
         case .couldNotCreateKeyboardEvent:
             "Ctrl-Say could not create the Copy or Paste keyboard event."
+        case .commandTargetUnavailable:
+            "No destination app is ready for this Copy or Paste command."
+        case .commandTargetChanged:
+            "The active app changed before Ctrl-Say could send the command. Please repeat it."
         }
     }
 }
