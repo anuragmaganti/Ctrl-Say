@@ -1,0 +1,27 @@
+import SwiftUI
+
+extension View {
+    func temporarySlotSwipeToDelete(
+        action: @escaping @MainActor @Sendable () -> Void
+    ) -> some View {
+        swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            Button(role: .destructive, action: action) {
+                Label("Delete Copy", systemImage: "trash")
+            }
+            .tint(.red)
+        }
+    }
+
+    func temporarySlotListRow(verticalInset: CGFloat = 0) -> some View {
+        listRowInsets(
+            EdgeInsets(
+                top: verticalInset,
+                leading: 0,
+                bottom: verticalInset,
+                trailing: 0
+            )
+        )
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
+    }
+}

@@ -22,7 +22,7 @@ struct NumberedCopyRow: View {
     let number: Int
     let payload: ClipboardPayload
     let paste: () -> Void
-    let delete: () -> Void
+    let delete: @MainActor @Sendable () -> Void
     let style: ClipboardSlotRowStyle
     let thumbnailProvider: ClipboardThumbnailProvider?
 
@@ -32,7 +32,7 @@ struct NumberedCopyRow: View {
         number: Int,
         payload: ClipboardPayload,
         paste: @escaping () -> Void,
-        delete: @escaping () -> Void,
+        delete: @escaping @MainActor @Sendable () -> Void,
         style: ClipboardSlotRowStyle = .dashboard,
         thumbnailProvider: ClipboardThumbnailProvider? = nil
     ) {
@@ -46,6 +46,7 @@ struct NumberedCopyRow: View {
 
     var body: some View {
         row
+            .temporarySlotSwipeToDelete(action: delete)
             .contextMenu { menuItems }
             .accessibilityElement(children: .contain)
             .accessibilityAction(named: "Paste slot \(number)") {
@@ -137,7 +138,7 @@ struct TemporaryNamedCopyRow: View {
     let name: String
     let payload: ClipboardPayload
     let paste: () -> Void
-    let delete: () -> Void
+    let delete: @MainActor @Sendable () -> Void
     let style: ClipboardSlotRowStyle
     let thumbnailProvider: ClipboardThumbnailProvider?
 
@@ -147,7 +148,7 @@ struct TemporaryNamedCopyRow: View {
         name: String,
         payload: ClipboardPayload,
         paste: @escaping () -> Void,
-        delete: @escaping () -> Void,
+        delete: @escaping @MainActor @Sendable () -> Void,
         style: ClipboardSlotRowStyle = .dashboard,
         thumbnailProvider: ClipboardThumbnailProvider? = nil
     ) {
@@ -161,6 +162,7 @@ struct TemporaryNamedCopyRow: View {
 
     var body: some View {
         row
+            .temporarySlotSwipeToDelete(action: delete)
             .contextMenu { menuItems }
             .accessibilityElement(children: .contain)
             .accessibilityAction(named: "Paste copy \(name)") {

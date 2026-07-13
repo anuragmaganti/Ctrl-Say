@@ -37,6 +37,54 @@ final class ClipboardStoreMutationTests: XCTestCase {
     }
 
     @MainActor
+    func testTemporaryNamedSlotsPreserveInsertionOrderAndStableReplacement() throws {
+        let store = ClipboardStore()
+        try store.setTemporaryNamed(makeTextPayload("First"), named: "zebra")
+        try store.setTemporaryNamed(makeTextPayload("Second"), named: "apple")
+        try store.setTemporaryNamed(makeTextPayload("Third"), named: "middle")
+
+        XCTAssertEqual(
+            store.temporaryNamedSlots.map(\.name),
+            ["zebra", "apple", "middle"]
+        )
+
+        try store.setTemporaryNamed(
+            makeTextPayload("Replacement"),
+            named: "apple"
+        )
+        XCTAssertEqual(
+            store.temporaryNamedSlots.map(\.name),
+            ["zebra", "apple", "middle"]
+        )
+    }
+
+    @MainActor
+    func testRemovedTemporaryNameReappearsAtEndWhenAddedAgain() throws {
+        let store = ClipboardStore()
+        try store.setTemporaryNamed(makeTextPayload("First"), named: "zebra")
+        try store.setTemporaryNamed(makeTextPayload("Second"), named: "apple")
+        try store.setTemporaryNamed(makeTextPayload("Third"), named: "middle")
+
+        store.removeTemporaryNamed("zebra")
+        try store.setTemporaryNamed(makeTextPayload("New"), named: "zebra")
+
+        XCTAssertEqual(
+            store.temporaryNamedSlots.map(\.name),
+            ["apple", "middle", "zebra"]
+        )
+    }
+
+    @MainActor
+    func testNumberedSlotsRemainInNumericOrder() throws {
+        let store = ClipboardStore()
+        try store.set(makeTextPayload("Ten"), at: 10)
+        try store.set(makeTextPayload("Two"), at: 2)
+        try store.set(makeTextPayload("One"), at: 1)
+
+        XCTAssertEqual(store.numberedSlots.map(\.number), [1, 2, 10])
+    }
+
+    @MainActor
     func testTemporaryNamedCopyRejectsNumbersAndMultipleWords() {
         let store = ClipboardStore()
         let payload = makeTextPayload("Temporary")

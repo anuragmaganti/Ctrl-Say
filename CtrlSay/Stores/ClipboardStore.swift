@@ -11,6 +11,7 @@ final class ClipboardStore {
     private(set) var temporaryNamed: [String: ClipboardPayload] = [:]
     private(set) var named: [String: ClipboardPayload] = [:]
     private(set) var totalByteCount = 0
+    private var temporaryNamedOrder: [String] = []
 
     var numberedSlots: [(number: Int, payload: ClipboardPayload)] {
         numbered.keys.sorted().compactMap { number in
@@ -25,7 +26,7 @@ final class ClipboardStore {
     }
 
     var temporaryNamedSlots: [(name: String, payload: ClipboardPayload)] {
-        temporaryNamed.keys.sorted().compactMap { name in
+        temporaryNamedOrder.compactMap { name in
             temporaryNamed[name].map { (name, $0) }
         }
     }
@@ -64,7 +65,9 @@ final class ClipboardStore {
             with: payload
         )
         totalByteCount += payload.byteCount - replacedBytes
-        temporaryNamed.removeValue(forKey: normalizedName)
+        if temporaryNamed.removeValue(forKey: normalizedName) != nil {
+            temporaryNamedOrder.removeAll { $0 == normalizedName }
+        }
         named[normalizedName] = payload
     }
 
@@ -91,6 +94,9 @@ final class ClipboardStore {
         )
         totalByteCount += payload.byteCount
             - (temporaryNamed[normalizedName]?.byteCount ?? 0)
+        if temporaryNamed[normalizedName] == nil {
+            temporaryNamedOrder.append(normalizedName)
+        }
         temporaryNamed[normalizedName] = payload
     }
 
@@ -138,6 +144,7 @@ final class ClipboardStore {
         ) else {
             return nil
         }
+        temporaryNamedOrder.removeAll { $0 == normalizedName }
         totalByteCount = max(0, totalByteCount - removed.byteCount)
         return removed
     }
@@ -227,6 +234,7 @@ final class ClipboardStore {
             + temporaryNamed.values.reduce(0) { $0 + $1.byteCount }
         numbered.removeAll(keepingCapacity: true)
         temporaryNamed.removeAll(keepingCapacity: true)
+        temporaryNamedOrder.removeAll(keepingCapacity: true)
         totalByteCount = max(0, totalByteCount - removedBytes)
     }
 

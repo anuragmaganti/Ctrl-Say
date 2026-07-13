@@ -304,7 +304,8 @@ struct DashboardView: View {
                 instruction: "Say “copy one” or “copy house” with something selected."
             )
         } else {
-            LazyVStack(spacing: 2) {
+            let rowCount = numberedSlots.count + namedSlots.count
+            List {
                 ForEach(numberedSlots, id: \.number) { slot in
                     NumberedCopyRow(
                         number: slot.number,
@@ -316,6 +317,7 @@ struct DashboardView: View {
                             model.deleteNumberedCopy(slot.number)
                         }
                     )
+                    .temporarySlotListRow(verticalInset: 1)
                 }
 
                 ForEach(namedSlots, id: \.name) { slot in
@@ -329,8 +331,15 @@ struct DashboardView: View {
                             model.deleteTemporaryNamedCopy(slot.name)
                         }
                     )
+                    .temporarySlotListRow(verticalInset: 1)
                 }
             }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .scrollBounceBehavior(.basedOnSize)
+            .contentMargins(.horizontal, 0, for: .scrollContent)
+            .contentMargins(.vertical, 0, for: .scrollContent)
+            .frame(height: CGFloat(rowCount * 51))
         }
     }
 

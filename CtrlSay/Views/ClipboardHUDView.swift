@@ -100,35 +100,35 @@ struct ClipboardHUDView: View {
         .padding(.vertical, 7)
     }
 
+    @ViewBuilder
     private var copyList: some View {
-        ScrollView {
-            Group {
-                switch presentationState.selectedCollection {
-                case .numbered:
-                    numberedCopies
-                case .permanent:
-                    permanentCopies
-                }
+        switch presentationState.selectedCollection {
+        case .numbered:
+            numberedCopies
+        case .permanent:
+            ScrollView {
+                permanentCopies
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, ClipboardHUDMetrics.listVerticalPadding / 2)
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, ClipboardHUDMetrics.listVerticalPadding / 2)
+            .scrollIndicators(.automatic)
+            .scrollEdgeEffectStyle(.hard, for: [.top, .bottom])
         }
-        .scrollIndicators(.automatic)
-        .scrollEdgeEffectStyle(.hard, for: [.top, .bottom])
     }
 
     @ViewBuilder
     private var numberedCopies: some View {
         let numberedSlots = model.slots.numberedSlots
         let namedSlots = model.slots.temporaryNamedSlots
-        if numberedSlots.isEmpty && namedSlots.isEmpty {
-            emptyState(
-                icon: "square.stack",
-                title: "No temporary copies",
-                detail: "Say “copy 1” or “copy house”."
-            )
-        } else {
-            LazyVStack(spacing: 0) {
+        List {
+            if numberedSlots.isEmpty && namedSlots.isEmpty {
+                emptyState(
+                    icon: "square.stack",
+                    title: "No temporary copies",
+                    detail: "Say “copy 1” or “copy house”."
+                )
+                .temporarySlotListRow()
+            } else {
                 ForEach(numberedSlots, id: \.number) { slot in
                     NumberedCopyRow(
                         number: slot.number,
@@ -146,6 +146,7 @@ struct ClipboardHUDView: View {
                     .onAppear {
                         model.recordHUDRowAppearance(for: slot.payload.id)
                     }
+                    .temporarySlotListRow()
                 }
 
                 ForEach(namedSlots, id: \.name) { slot in
@@ -165,9 +166,20 @@ struct ClipboardHUDView: View {
                     .onAppear {
                         model.recordHUDRowAppearance(for: slot.payload.id)
                     }
+                    .temporarySlotListRow()
                 }
             }
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .contentMargins(.horizontal, 8, for: .scrollContent)
+        .contentMargins(
+            .vertical,
+            ClipboardHUDMetrics.listVerticalPadding / 2,
+            for: .scrollContent
+        )
+        .scrollIndicators(.automatic)
+        .scrollEdgeEffectStyle(.hard, for: [.top, .bottom])
     }
 
     @ViewBuilder
