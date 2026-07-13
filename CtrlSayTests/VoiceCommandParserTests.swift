@@ -4,6 +4,8 @@ final class VoiceCommandParserTests: XCTestCase {
     func testPotentialCommandPrefixesAreDetectedWithoutRetainingTranscript() {
         XCTAssertTrue(VoiceCommandParser.isPotentialCommand("cop"))
         XCTAssertTrue(VoiceCommandParser.isPotentialCommand("copy"))
+        XCTAssertTrue(VoiceCommandParser.isPotentialCommand("peace"))
+        XCTAssertTrue(VoiceCommandParser.isPotentialCommand("TASTE!"))
         XCTAssertTrue(VoiceCommandParser.isPotentialCommand("permanent"))
         XCTAssertFalse(VoiceCommandParser.isPotentialCommand("ordinary dictation"))
     }
@@ -159,10 +161,46 @@ final class VoiceCommandParserTests: XCTestCase {
     }
 
     func testPunctuationAndCapitalizationRemainAccepted() {
+        let cases: [(String, VoiceCommand)] = [
+            ("Copy.... ONE", .copyNumber(1)),
+            ("copy? two!", .copyNumber(2)),
+            ("PASTE... too?!", .pasteNumber(2)),
+            ("Pace!!! THREE.", .pasteNumber(3)),
+            ("pase, four…", .pasteNumber(4)),
+        ]
+
+        for (transcript, expected) in cases {
+            XCTAssertEqual(
+                VoiceCommandParser.parse(transcript),
+                expected,
+                "Expected punctuation to be ignored in \(transcript.debugDescription)"
+            )
+        }
+    }
+
+    func testPasteVerbAliasesAreCaseInsensitiveAndScopedToVerbPosition() {
+        let aliases = [
+            "pasting", "peace", "Pace", "hase", "pase", "pay", "pae", "Taste",
+        ]
+
+        for alias in aliases {
+            for spelling in [alias.lowercased(), alias.uppercased()] {
+                XCTAssertEqual(
+                    VoiceCommandParser.parse("\(spelling) one"),
+                    .pasteNumber(1)
+                )
+                XCTAssertEqual(
+                    VoiceCommandParser.parse("\(spelling) house"),
+                    .pasteNamed("house")
+                )
+            }
+        }
+
         XCTAssertEqual(
-            VoiceCommandParser.parse("Paste TOO!"),
-            .pasteNumber(2)
+            VoiceCommandParser.validNormalizedPermanentName("peace treaty"),
+            "peace treaty"
         )
+        XCTAssertNil(VoiceCommandParser.parse("copy peace"))
     }
 
     func testPermanentNameValidationNormalizesUsingVoiceGrammar() {

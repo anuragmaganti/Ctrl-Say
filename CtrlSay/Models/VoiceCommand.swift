@@ -38,6 +38,13 @@ enum VoiceCommandParser {
     ]
     static let numberedSlotRange = 1...canonicalSpokenSlotNumbers.count
 
+    // Scoped to the command verb position. These are common on-device
+    // transcriptions of a spoken "paste" and must never rewrite slot names or
+    // ordinary words elsewhere in an utterance.
+    private static let pasteVerbAliases: Set<String> = [
+        "pasting", "peace", "pace", "hase", "pase", "pay", "pae", "taste",
+    ]
+
     private static let spokenNumberAliases: [String: Int] = [
         "won": 1,
         "to": 2, "too": 2,
@@ -69,7 +76,7 @@ enum VoiceCommandParser {
             return slotNumber(tokens[2]).map(VoiceCommand.saveCurrentClipboard)
         }
 
-        if tokens.count == 2, tokens[0] == "paste" {
+        if tokens.count == 2, isPasteVerb(tokens[0]) {
             let value = tokens[1]
             if let number = slotNumber(value) {
                 return .pasteNumber(number)
@@ -81,7 +88,7 @@ enum VoiceCommandParser {
             return validNameTokens(Array(tokens.dropFirst(2))).map(VoiceCommand.permanentCopy)
         }
 
-        if tokens.starts(with: ["paste"]) {
+        if let first = tokens.first, isPasteVerb(first) {
             return validNameTokens(Array(tokens.dropFirst())).map(VoiceCommand.pasteNamed)
         }
 
@@ -108,9 +115,16 @@ enum VoiceCommandParser {
         // numbered argument arrives. Keep that range as an ordering barrier
         // without retaining the transcript itself.
         let commandBeginnings = ["copy", "paste", "permanent", "delete", "save", "clear"]
+            + pasteVerbAliases
         return commandBeginnings.contains {
             $0.hasPrefix(first) || first.hasPrefix($0)
         }
+    }
+
+    static func canonicalNumberedCommandVerb(_ token: String) -> String? {
+        if token == "copy" { return "copy" }
+        if isPasteVerb(token) { return "paste" }
+        return nil
     }
 
     private static func normalizedTokens(_ text: String) -> [String] {
@@ -127,6 +141,10 @@ enum VoiceCommandParser {
             return nil
         }
         return number
+    }
+
+    private static func isPasteVerb(_ token: String) -> Bool {
+        token == "paste" || pasteVerbAliases.contains(token)
     }
 
     private static func validNameTokens(_ tokens: [String]) -> String? {

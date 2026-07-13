@@ -32,6 +32,24 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
         )
     }
 
+    func testRecognizesPasteVerbAliasesWithCaseAndPunctuation() throws {
+        let aliases = [
+            "pasting", "peace", "Pace", "hase", "pase", "pay", "pae", "Taste",
+        ]
+        var words: [String] = []
+        for alias in aliases {
+            words.append(contentsOf: ["\(alias.uppercased())...", "TWO?!", "then"])
+        }
+
+        var scanner = StreamingNumberedCommandScanner()
+        let update = scanner.ingest(segment(0...8, words: words))
+
+        XCTAssertEqual(
+            try commands(in: update),
+            Array(repeating: VoiceCommand.pasteNumber(2), count: aliases.count)
+        )
+    }
+
     func testRecognizesScopedNumberAliasesAndAllSlots() throws {
         let spoken = ["won", "too", "three", "fore", "five", "six", "seven", "ate", "nine", "ten"]
         var words: [String] = []

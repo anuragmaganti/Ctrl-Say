@@ -257,12 +257,14 @@ struct StreamingNumberedCommandScanner {
         for index in 0..<(resolvedTokens.count - 1) {
             let verb = resolvedTokens[index]
             let argument = resolvedTokens[index + 1]
-            guard verb.text == "copy" || verb.text == "paste" else {
+            guard let canonicalVerb = VoiceCommandParser.canonicalNumberedCommandVerb(
+                verb.text
+            ) else {
                 continue
             }
             guard canBridge(verb, to: argument) else { continue }
             guard let command = VoiceCommandParser.parse(
-                "\(verb.text) \(argument.text)"
+                "\(canonicalVerb) \(argument.text)"
             ) else {
                 continue
             }
