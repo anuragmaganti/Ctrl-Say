@@ -50,7 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         self.statusItem = statusItem
 
         if let button = statusItem.button {
@@ -166,35 +166,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func updateStatusItemPresentation() {
         let symbolName: String
-        let title: String
         let toolTip: String
 
         if !model.isReadyForCommands
             || !model.hasAnsweredLaunchAtLoginOnboarding {
             symbolName = "checklist"
-            title = " Setup"
             toolTip = "Ctrl-Say — Complete setup"
         } else {
             switch model.speech.state {
             case .stopped:
                 symbolName = "waveform.circle"
-                title = ""
                 toolTip = "Ctrl-Say — Not listening"
             case .requestingMicrophone, .preparing, .downloadingModel:
                 symbolName = "waveform.circle"
-                title = " Starting…"
                 toolTip = "Ctrl-Say — Starting on-device listening"
             case .listening:
                 symbolName = "waveform.circle.fill"
-                title = " Listening"
                 toolTip = "Ctrl-Say — Listening"
             case .stopping:
                 symbolName = "waveform.circle"
-                title = " Stopping…"
                 toolTip = "Ctrl-Say — Stopping listening"
             case .failed:
                 symbolName = "exclamationmark.triangle"
-                title = " Error"
                 toolTip = "Ctrl-Say — Listening failed"
             }
         }
@@ -204,10 +197,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             systemSymbolName: symbolName,
             accessibilityDescription: "Ctrl-Say"
         )
-        button.imagePosition = .imageLeading
-        button.title = title
+        button.imagePosition = .imageOnly
+        button.title = ""
         button.toolTip = toolTip
-        dashboardPanel.reposition(relativeTo: button)
     }
 
     private func observeListeningState() {
