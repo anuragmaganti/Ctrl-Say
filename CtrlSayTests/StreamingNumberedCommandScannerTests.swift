@@ -633,6 +633,94 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
         }
     }
 
+    func testCanonicalPermanentPhraseCanUseOneAttributedToken() throws {
+        var scanner = StreamingNumberedCommandScanner()
+        let update = scanner.ingest(
+            StreamingNumberedCommandSegment(
+                range: timeRange(0, 1.2),
+                tokens: [
+                    token("permanent copy name", 0.10, 1.05),
+                ],
+                isFinal: true
+            )
+        )
+
+        let candidate = try XCTUnwrap(upserts(in: update).first)
+        XCTAssertEqual(candidate.command, .permanentCopy("name"))
+        XCTAssertTrue(candidate.isReadyForDispatch)
+    }
+
+    func testNextCommandImmediatelyClosesPendingPermanentName() throws {
+        var scanner = StreamingNumberedCommandScanner()
+        let update = scanner.ingest(
+            segment(
+                0...2.4,
+                words: [
+                    "permanent", "copy", "name",
+                    "permanent", "copy", "named",
+                ]
+            )
+        )
+        let candidates = upserts(in: update)
+
+        XCTAssertEqual(candidates.count, 2)
+        XCTAssertEqual(candidates[0].command, .permanentCopy("name"))
+        XCTAssertTrue(candidates[0].isReadyForDispatch)
+        XCTAssertEqual(candidates[1].command, .permanentCopy("named"))
+        XCTAssertFalse(candidates[1].isReadyForDispatch)
+    }
+
+    func testRepeatedCanonicalPermanentResultsCloseTheEarlierAttempt() throws {
+        var scanner = StreamingNumberedCommandScanner()
+        let first = scanner.ingest(
+            StreamingNumberedCommandSegment(
+                range: timeRange(0, 1.1),
+                tokens: [
+                    token("permanent copy named", 0.05, 1.05),
+                ],
+                isFinal: false
+            )
+        )
+        XCTAssertFalse(try XCTUnwrap(upserts(in: first).first).isReadyForDispatch)
+
+        let retry = scanner.ingest(
+            StreamingNumberedCommandSegment(
+                range: timeRange(1.15, 2.25),
+                tokens: [
+                    token("permanent copy name", 1.20, 2.20),
+                ],
+                isFinal: false
+            )
+        )
+        let candidates = upserts(in: retry)
+
+        XCTAssertEqual(candidates.count, 2)
+        XCTAssertEqual(candidates[0].command, .permanentCopy("named"))
+        XCTAssertTrue(candidates[0].isReadyForDispatch)
+        XCTAssertEqual(candidates[1].command, .permanentCopy("name"))
+        XCTAssertFalse(candidates[1].isReadyForDispatch)
+    }
+
+    func testAndThenCommandClosesPendingPermanentName() throws {
+        var scanner = StreamingNumberedCommandScanner()
+        let update = scanner.ingest(
+            segment(
+                0...2,
+                words: [
+                    "permanent", "copy", "house",
+                    "and", "copy", "one",
+                ]
+            )
+        )
+        let candidates = upserts(in: update)
+
+        XCTAssertEqual(candidates.count, 2)
+        XCTAssertEqual(candidates[0].command, .permanentCopy("house"))
+        XCTAssertTrue(candidates[0].isReadyForDispatch)
+        XCTAssertEqual(candidates[1].command, .copyNumber(1))
+        XCTAssertTrue(candidates[1].isReadyForDispatch)
+    }
+
     func testPermanentMultiwordNameDoesNotCommitOneWordPrefix() {
         var scanner = StreamingNumberedCommandScanner()
         let update = scanner.ingest(

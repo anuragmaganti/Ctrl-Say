@@ -16,7 +16,7 @@ struct CtrlSayApp: App {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let model: AppModel
-    private let dashboardEditingSession = DashboardEditingSession()
+    private let dashboardPresentationState = DashboardPresentationState()
     private lazy var hudEditingSession = DashboardEditingSession()
     private lazy var hudPresentationState = ClipboardHUDPresentationState()
     private lazy var thumbnailProvider = ClipboardThumbnailProvider()
@@ -24,9 +24,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var dashboardPanel = DashboardPanelController(
         rootView: DashboardView(
             model: model,
-            editingSession: dashboardEditingSession
+            presentationState: dashboardPresentationState
         ),
-        editingSession: dashboardEditingSession
+        presentationState: dashboardPresentationState
     )
     private var statusItem: NSStatusItem?
     private var hudPanel: ClipboardHUDPanelController?
@@ -36,7 +36,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     override init() {
 #if DEBUG
-        if CommandLine.arguments.contains("-CtrlSaySeedHUDForTesting") {
+        if CommandLine.arguments.contains("-CtrlSaySeedHUDForTesting")
+            || CommandLine.arguments.contains("-CtrlSayStressHUDLayoutForTesting")
+            || CommandLine.arguments.contains("-CtrlSayStressPresentationSurfacesForTesting") {
             model = AppModel(
                 permanentRepository: PermanentCopyRepository(location: .memory)
             )
@@ -72,8 +74,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 seedHUDForTesting()
             }
         }
-        if CommandLine.arguments.contains("-CtrlSayShowHUDForTesting") {
+        if CommandLine.arguments.contains("-CtrlSayShowHUDPermanentForTesting") {
+            hudPresentationState.selectedCollection = .permanent
+        }
+        if CommandLine.arguments.contains("-CtrlSayShowHUDForTesting")
+            || CommandLine.arguments.contains("-CtrlSayShowHUDPermanentForTesting") {
             model.setClipboardHUDPresented(true)
+        }
+        if CommandLine.arguments.contains("-CtrlSayShowDashboardForTesting") {
+            if CommandLine.arguments.contains("-CtrlSayExpandDashboardDiagnosticsForTesting") {
+                dashboardPresentationState.showsDeveloperDiagnostics = true
+            }
+            Task { @MainActor [weak self] in
+                // The validation launcher can run before AppKit has attached
+                // the status item to its window. Real user clicks occur after
+                // attachment; this Debug-only pause makes the automated render
+                // exercise that same state.
+                try? await Task.sleep(for: .milliseconds(250))
+                guard let self, let button = statusItem.button else { return }
+                dashboardPanel.show(relativeTo: button)
+            }
         }
         if CommandLine.arguments.contains("-CtrlSayShowNotchListeningForTesting") {
             _ = ensureNotchPanel()
@@ -88,6 +108,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if CommandLine.arguments.contains("-CtrlSayStressNotchForTesting") {
             runNotchStressPreview()
+        }
+        if CommandLine.arguments.contains("-CtrlSayStressHUDLayoutForTesting") {
+            model.setClipboardHUDPresented(true)
+            runHUDLayoutStressPreview()
+        }
+        if CommandLine.arguments.contains("-CtrlSayStressPresentationSurfacesForTesting") {
+            runPresentationSurfaceStressPreview()
         }
 #endif
 
@@ -350,6 +377,143 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
 #if DEBUG
+    private func runPresentationSurfaceStressPreview() {
+        let notchPanel = ensureNotchPanel()
+        let hudPanel = hudPanel ?? makeHUDPanel()
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            await model.waitForPermanentStorageRestore()
+            // Automated launch can reach this task before the status item has
+            // a window. A physical click cannot, so wait only in this Debug
+            // stress harness until it can exercise real panel attachment.
+            for _ in 0..<10 where statusItem?.button?.window == nil {
+                try? await Task.sleep(for: .milliseconds(25))
+            }
+            guard let statusButton = statusItem?.button,
+                  statusButton.window != nil else {
+                Telemetry.interface.error(
+                    "Presentation surface stress missing status item"
+                )
+                return
+            }
+            // Let the system finish its initial status-item reflow before the
+            // harness deliberately starts rapid hide/show and resize cycles.
+            try? await Task.sleep(for: .milliseconds(500))
+
+            hudPanel.show()
+            dashboardPanel.show(relativeTo: statusButton)
+            notchPresentationState.setListeningActivity(.listening)
+
+            let transitionCount = 480
+            for index in 0..<transitionCount {
+                let payload = stressPayload(index: index)
+                switch index % 12 {
+                case 0:
+                    try? model.slots.set(payload, at: 1)
+                case 1:
+                    try? model.slots.set(payload, named: "stress")
+                case 2:
+                    hudPresentationState.selectedCollection = index
+                        .isMultiple(of: 2) ? .numbered : .permanent
+                    switch (index / 12) % 3 {
+                    case 0:
+                        notchPresentationState.setInteractionMode(.passive)
+                    case 1:
+                        notchPresentationState.setInteractionMode(.compactInteractive)
+                    default:
+                        notchPresentationState.setInteractionMode(.expandedInteractive)
+                    }
+                case 3:
+                    switch (index / 12) % 4 {
+                    case 0:
+                        notchPresentationState.setListeningActivity(.preparing)
+                    case 1:
+                        notchPresentationState.present(
+                            .success(action: .copy, label: "Stress")
+                        )
+                    case 2:
+                        notchPresentationState.present(
+                            .failure(message: "Stress failure")
+                        )
+                    default:
+                        notchPresentationState.setListeningActivity(.inactive)
+                    }
+                case 4:
+                    dashboardPanel.hide()
+                case 5:
+                    dashboardPanel.show(relativeTo: statusButton)
+                case 6:
+                    hudPanel.hide()
+                case 7:
+                    hudPanel.show()
+                case 8:
+                    dashboardPresentationState.showsDeveloperDiagnostics.toggle()
+                case 9:
+                    if let token = hudEditingSession.begin(
+                        commit: { true },
+                        cancel: {}
+                    ) {
+                        hudEditingSession.finish(token)
+                    }
+                case 10:
+                    _ = model.slots.removeNamed("stress")
+                default:
+                    _ = model.slots.removeNumbered(1)
+                    notchPresentationState.setListeningActivity(.listening)
+                }
+                try? await Task.sleep(for: .milliseconds(4))
+            }
+
+            hudEditingSession.prepareForDismissal()
+            dashboardPanel.hide()
+            hudPanel.hide()
+            notchPresentationState.setInteractionMode(.passive)
+            notchPresentationState.setListeningActivity(.inactive)
+            try? await Task.sleep(for: .milliseconds(350))
+            notchPanel.hideImmediately()
+            Telemetry.interface.info(
+                "Presentation surface stress complete transitions=\(transitionCount, privacy: .public)"
+            )
+        }
+    }
+
+    private func runHUDLayoutStressPreview() {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            await model.waitForPermanentStorageRestore()
+
+            let transitionCount = 240
+            for index in 0..<transitionCount {
+                let payload = stressPayload(index: index)
+
+                switch index % 6 {
+                case 0:
+                    try? model.slots.set(payload, at: 1)
+                case 1:
+                    try? model.slots.setTemporaryNamed(payload, named: "stress")
+                case 2:
+                    _ = model.slots.removeNumbered(1)
+                case 3:
+                    try? model.slots.set(payload, named: "stress")
+                case 4:
+                    _ = model.slots.removeTemporaryNamed("stress")
+                default:
+                    _ = model.slots.removeNamed("stress")
+                }
+
+                hudPresentationState.selectedCollection = index.isMultiple(of: 2)
+                    ? .numbered
+                    : .permanent
+                try? await Task.sleep(for: .milliseconds(5))
+            }
+
+            Telemetry.interface.info(
+                "HUD layout stress complete transitions=\(transitionCount, privacy: .public)"
+            )
+        }
+    }
+
     private func runNotchStressPreview() {
         _ = ensureNotchPanel()
         Task { @MainActor [weak self] in
@@ -383,6 +547,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 "Notch stress complete transitions=\(transitionCount, privacy: .public)"
             )
         }
+    }
+
+    private func stressPayload(index: Int) -> ClipboardPayload {
+        let text = "Presentation stress payload \(index)"
+        let data = Data(text.utf8)
+        return ClipboardPayload(
+            items: [
+                PasteboardItemPayload(
+                    representations: [
+                        PasteboardRepresentation(
+                            typeIdentifier: "public.utf8-plain-text",
+                            data: data
+                        ),
+                    ]
+                ),
+            ],
+            kind: .text,
+            preview: ClipboardPayload.preview(forText: text),
+            byteCount: data.count
+        )
     }
 
     private func seedHUDForTesting() {

@@ -7,12 +7,6 @@ struct ClipboardSlotRowStyle {
     let minimumHeight: CGFloat
     let showsThumbnail: Bool
 
-    static let dashboard = ClipboardSlotRowStyle(
-        previewLineLimit: 1,
-        expandedPreviewLineLimit: 8,
-        minimumHeight: 49,
-        showsThumbnail: false
-    )
     static let hud = ClipboardSlotRowStyle(
         previewLineLimit: 2,
         expandedPreviewLineLimit: 8,
@@ -105,14 +99,13 @@ private struct ExpandableClipboardPreview: View {
     }
 
     private var displayedText: String {
-        if isExpanded {
+        if isTextPreview {
+            // Let SwiftUI truncate according to the actual glyph widths and
+            // available row space. The short stored preview is intentionally
+            // metadata-sized and can end before a visual line is full.
             return expandedText ?? payload.expandedPreviewText
         }
-        guard payload.hasAdditionalPreviewText,
-              !payload.preview.hasSuffix("…") else {
-            return payload.preview
-        }
-        return payload.preview + "…"
+        return payload.preview
     }
 
     private var helpText: String {
@@ -148,7 +141,7 @@ struct NumberedCopyRow: View {
         payload: ClipboardPayload,
         paste: @escaping () -> Void,
         delete: @escaping @MainActor @Sendable () -> Void,
-        style: ClipboardSlotRowStyle = .dashboard,
+        style: ClipboardSlotRowStyle = .hud,
         thumbnailProvider: ClipboardThumbnailProvider? = nil
     ) {
         self.number = number
@@ -249,7 +242,7 @@ struct TemporaryNamedCopyRow: View {
         payload: ClipboardPayload,
         paste: @escaping () -> Void,
         delete: @escaping @MainActor @Sendable () -> Void,
-        style: ClipboardSlotRowStyle = .dashboard,
+        style: ClipboardSlotRowStyle = .hud,
         thumbnailProvider: ClipboardThumbnailProvider? = nil
     ) {
         self.name = name
@@ -382,7 +375,7 @@ struct PermanentCopyRow: View {
         delete: @escaping () -> Void,
         rename: @escaping (UUID, String) throws -> String,
         updateText: @escaping (UUID, String) throws -> Void,
-        style: ClipboardSlotRowStyle = .dashboard,
+        style: ClipboardSlotRowStyle = .hud,
         thumbnailProvider: ClipboardThumbnailProvider? = nil
     ) {
         self.name = name
@@ -508,7 +501,7 @@ struct PermanentCopyRow: View {
     }
 
     private var rowActions: some View {
-        HStack(spacing: 2) {
+        VStack(spacing: 0) {
             Button("Paste", action: paste)
                 .controlSize(.small)
                 .buttonStyle(.borderless)

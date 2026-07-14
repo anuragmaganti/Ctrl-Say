@@ -2,6 +2,38 @@ import CoreGraphics
 import XCTest
 
 final class DashboardPanelPlacementTests: XCTestCase {
+    func testMenuBarPanelUsesCompactContentHeights() {
+        XCTAssertLessThan(
+            DashboardPanelMetrics.preferredSize.height,
+            150
+        )
+#if DEBUG
+        XCTAssertGreaterThan(
+            DashboardPanelMetrics.preferredSize(
+                showsDeveloperDiagnostics: true
+            ).height,
+            DashboardPanelMetrics.preferredSize.height
+        )
+#endif
+    }
+
+    func testFrameUpdatesIgnoreSubpixelJitter() {
+        let current = CGRect(x: 100, y: 200, width: 388, height: 540)
+
+        XCTAssertFalse(
+            DashboardPanelPlacement.requiresFrameUpdate(
+                current: current,
+                target: current.offsetBy(dx: 0.25, dy: -0.25)
+            )
+        )
+        XCTAssertTrue(
+            DashboardPanelPlacement.requiresFrameUpdate(
+                current: current,
+                target: current.offsetBy(dx: 1, dy: 0)
+            )
+        )
+    }
+
     func testPlacesPanelCenteredBelowAnchor() throws {
         let visibleFrame = CGRect(x: 0, y: 0, width: 1_440, height: 877)
         let anchor = CGRect(x: 700, y: 877, width: 32, height: 24)

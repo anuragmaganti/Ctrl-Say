@@ -12,6 +12,7 @@ final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
     private let positionStore: ClipboardHUDPositionStore
     private weak var activeScreen: NSScreen?
     private var isApplyingFrame = false
+    private var isLayoutUpdateScheduled = false
     private var wantsToBeShown = false
     private var visibilityAnimationGeneration: UInt64 = 0
 
@@ -91,6 +92,7 @@ final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
         }
         editingSession.onEndEditing = { [weak panel] in
             panel?.makeFirstResponder(nil)
+            panel?.resignKey()
             if panel?.isVisible == true {
                 panel?.orderFrontRegardless()
             }
@@ -196,7 +198,7 @@ final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
                 visibleFrame: screen.visibleFrame
             )
         }
-        setFrame(frame, animated: false)
+        setFrame(frame)
     }
 
     func windowDidMove(_ notification: Notification) {
@@ -220,14 +222,31 @@ final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                self.updateHeightForCurrentContent()
                 self.observeLayoutInputs()
+                self.scheduleHeightUpdate()
+            }
+        }
+    }
+
+    private func scheduleHeightUpdate() {
+        guard !isLayoutUpdateScheduled else { return }
+        isLayoutUpdateScheduled = true
+
+        // Observation can publish several related slot and persistence-state
+        // mutations in one turn. Resize once with their final values after the
+        // current SwiftUI/AppKit transaction instead of re-entering layout for
+        // every intermediate state.
+        RunLoop.main.perform(inModes: [.common]) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.isLayoutUpdateScheduled = false
+                self.updateHeightForCurrentContent()
             }
         }
     }
 
     private func updateHeightForCurrentContent() {
-        guard panel.isVisible else { return }
+        guard wantsToBeShown, panel.isVisible else { return }
         let screen = activeScreen ?? bestScreenForCurrentFrame()
         activeScreen = screen
         let height = ClipboardHUDMetrics.height(
@@ -241,7 +260,7 @@ final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
             height: height,
             visibleFrame: screen.visibleFrame
         )
-        setFrame(target, animated: true, measuresResize: true)
+        setFrame(target, measuresResize: true)
     }
 
     private func applyInitialFrame(on screen: NSScreen) {
@@ -266,49 +285,37 @@ final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
                 visibleFrame: screen.visibleFrame
             )
         }
-        setFrame(frame, animated: false)
+        setFrame(frame)
     }
 
     private func setFrame(
         _ frame: CGRect,
-        animated: Bool,
         measuresResize: Bool = false
     ) {
+        guard ClipboardHUDPlacement.requiresFrameUpdate(
+            current: panel.frame,
+            target: frame
+        ) else {
+            return
+        }
+
         isApplyingFrame = true
         defer { isApplyingFrame = false }
         let startedAt = DispatchTime.now().uptimeNanoseconds
         let itemCount = visibleItemCount
-        let shouldAnimate = animated
-            && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        if shouldAnimate {
-            NSAnimationContext.runAnimationGroup(
-                { context in
-                    context.duration = 0.18
-                    context.timingFunction = CAMediaTimingFunction(
-                        name: .easeInEaseOut
-                    )
-                    panel.animator().setFrame(frame, display: true)
-                },
-                completionHandler: {
-                    guard measuresResize else { return }
-                    let elapsed = Double(
-                        DispatchTime.now().uptimeNanoseconds - startedAt
-                    ) / 1_000_000
-                    Telemetry.interface.debug(
-                        "HUD layout item_count=\(itemCount, privacy: .public) resize_ms=\(elapsed, privacy: .public)"
-                    )
-                }
+
+        // Never animate the NSWindow frame. NSHostingView and its scroll view
+        // also participate in layout; overlapping animator-proxy resizes can
+        // make each side invalidate the other until AppKit aborts for a layout
+        // feedback loop. Visibility still fades through the compositor.
+        panel.setFrame(frame, display: false)
+        if measuresResize {
+            let elapsed = Double(
+                DispatchTime.now().uptimeNanoseconds - startedAt
+            ) / 1_000_000
+            Telemetry.interface.debug(
+                "HUD layout item_count=\(itemCount, privacy: .public) resize_ms=\(elapsed, privacy: .public)"
             )
-        } else {
-            panel.setFrame(frame, display: true)
-            if measuresResize {
-                let elapsed = Double(
-                    DispatchTime.now().uptimeNanoseconds - startedAt
-                ) / 1_000_000
-                Telemetry.interface.debug(
-                    "HUD layout item_count=\(itemCount, privacy: .public) resize_ms=\(elapsed, privacy: .public)"
-                )
-            }
         }
     }
 

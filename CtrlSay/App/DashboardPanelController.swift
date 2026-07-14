@@ -1,20 +1,28 @@
 import AppKit
+import Observation
 import SwiftUI
+
+@MainActor
+@Observable
+final class DashboardPresentationState {
+    var showsDeveloperDiagnostics = false
+}
 
 @MainActor
 final class DashboardPanelController {
     private let panel: NSPanel
-    private let editingSession: DashboardEditingSession
+    private let presentationState: DashboardPresentationState
     private weak var anchorButton: NSStatusBarButton?
     private var outsideClickMonitor: Any?
     private var deferredShowTask: Task<Void, Never>?
     private var wantsToBeShown = false
+    private var isSizeUpdateScheduled = false
 
     var isShown: Bool { panel.isVisible || wantsToBeShown }
 
     init(
         rootView: DashboardView,
-        editingSession: DashboardEditingSession
+        presentationState: DashboardPresentationState
     ) {
         let panel = NonactivatingPanel(
             contentRect: NSRect(
@@ -26,6 +34,9 @@ final class DashboardPanelController {
             defer: false
         )
         let hostingController = NSHostingController(rootView: rootView)
+        // This panel has one fixed, placement-owned size. Never let changing
+        // SwiftUI content feed preferred/min/max sizes back into NSWindow.
+        hostingController.sizingOptions = []
         let containerController = NSViewController()
         let backdropView = NSVisualEffectView()
 
@@ -79,20 +90,8 @@ final class DashboardPanelController {
         hostingController.view.layer?.masksToBounds = true
 
         self.panel = panel
-        self.editingSession = editingSession
-
-        editingSession.onBeginEditing = { [weak panel] in
-            // A nonactivating panel may become key without moving Ctrl-Say to
-            // the foreground or stealing the user's copy/paste destination.
-            panel?.makeKey()
-        }
-        editingSession.onEndEditing = { [weak panel] in
-            panel?.makeFirstResponder(nil)
-            if panel?.isVisible == true {
-                panel?.orderOut(nil)
-                panel?.orderFrontRegardless()
-            }
-        }
+        self.presentationState = presentationState
+        observePreferredSize()
     }
 
     func show(relativeTo button: NSStatusBarButton) {
@@ -100,6 +99,17 @@ final class DashboardPanelController {
         wantsToBeShown = true
         deferredShowTask?.cancel()
         deferredShowTask = nil
+
+        // Launch/setup and a user click can request the same already-visible
+        // panel while AppKit is relocating the status-item window. Keep the
+        // existing presentation instead of starting a second attachment loop.
+        if panel.isVisible {
+            wantsToBeShown = false
+            _ = position(relativeTo: button)
+            button.highlight(true)
+            installOutsideClickMonitor()
+            return
+        }
 
         guard position(relativeTo: button) else {
             deferredShowTask = Task { @MainActor [weak self] in
@@ -118,7 +128,12 @@ final class DashboardPanelController {
                 }
 
                 self.deferredShowTask = nil
+                if self.panel.isVisible {
+                    self.wantsToBeShown = false
+                    return
+                }
                 self.wantsToBeShown = false
+                self.anchorButton?.highlight(false)
                 Telemetry.interface.error(
                     "Dashboard could not attach to the status item"
                 )
@@ -146,6 +161,7 @@ final class DashboardPanelController {
             .processIdentifier
 #endif
         panel.orderFrontRegardless()
+        anchorButton?.highlight(true)
         installOutsideClickMonitor()
 #if DEBUG
         Task { @MainActor in
@@ -163,9 +179,37 @@ final class DashboardPanelController {
         wantsToBeShown = false
         deferredShowTask?.cancel()
         deferredShowTask = nil
-        editingSession.prepareForDismissal()
+        anchorButton?.highlight(false)
         panel.orderOut(nil)
         removeOutsideClickMonitor()
+    }
+
+    private func observePreferredSize() {
+        withObservationTracking {
+            _ = presentationState.showsDeveloperDiagnostics
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.observePreferredSize()
+                self.scheduleSizeUpdate()
+            }
+        }
+    }
+
+    private func scheduleSizeUpdate() {
+        guard !isSizeUpdateScheduled else { return }
+        isSizeUpdateScheduled = true
+        RunLoop.main.perform(inModes: [.common]) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.isSizeUpdateScheduled = false
+                guard self.panel.isVisible,
+                      let button = self.anchorButton else {
+                    return
+                }
+                _ = self.position(relativeTo: button)
+            }
+        }
     }
 
     private func waitForNextMainRunLoopTurn() async {
@@ -181,7 +225,6 @@ final class DashboardPanelController {
     private func position(relativeTo button: NSStatusBarButton) -> Bool {
         guard let buttonWindow = button.window else { return false }
 
-        panel.contentView?.layoutSubtreeIfNeeded()
         let buttonRectInWindow = button.convert(button.bounds, to: nil)
         let buttonRect = buttonWindow.convertToScreen(buttonRectInWindow)
         let screens = NSScreen.screens
@@ -193,13 +236,18 @@ final class DashboardPanelController {
         guard let targetScreen,
               let frame = DashboardPanelPlacement.frame(
                 below: buttonRect,
-                preferredSize: DashboardPanelMetrics.preferredSize,
+                preferredSize: preferredSize,
                 visibleFrame: targetScreen.visibleFrame
               ) else {
             return false
         }
 
-        panel.setFrame(frame, display: false)
+        if DashboardPanelPlacement.requiresFrameUpdate(
+            current: panel.frame,
+            target: frame
+        ) {
+            panel.setFrame(frame, display: false)
+        }
 #if DEBUG
         let belowAnchor = frame.maxY <= buttonRect.minY
         let visible = targetScreen.visibleFrame.contains(frame)
@@ -208,6 +256,13 @@ final class DashboardPanelController {
         )
 #endif
         return true
+    }
+
+    private var preferredSize: CGSize {
+        DashboardPanelMetrics.preferredSize(
+            showsDeveloperDiagnostics: presentationState
+                .showsDeveloperDiagnostics
+        )
     }
 
     private func installOutsideClickMonitor() {

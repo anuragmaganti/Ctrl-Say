@@ -36,6 +36,17 @@ enum NotchPanelLayoutCalculator {
     static let attachedCornerRadiusRatio: CGFloat = 0.32
     static let maximumAttachedCornerRadius: CGFloat = 12
 
+    static func requiresFrameUpdate(
+        current: CGRect,
+        target: CGRect,
+        tolerance: CGFloat = 0.5
+    ) -> Bool {
+        abs(current.minX - target.minX) > tolerance
+            || abs(current.minY - target.minY) > tolerance
+            || abs(current.width - target.width) > tolerance
+            || abs(current.height - target.height) > tolerance
+    }
+
     static func attachedBottomCornerRadius(
         notchHeight: CGFloat
     ) -> CGFloat {

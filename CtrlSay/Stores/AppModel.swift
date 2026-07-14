@@ -411,10 +411,27 @@ final class AppModel {
     }
 
     private func received(_ result: RecognizedSpeechResult) {
+        let exactCommand = VoiceCommandParser.parse(result.text)
+        let timelineTokens: [StreamingNumberedCommandToken]
+        if case .permanentCopy = exactCommand {
+            // A full phrase that parses as permanent must never lose its
+            // modifier because SpeechTranscriber's attributed runs exposed a
+            // different lexical partition. The scanner still owns timing and
+            // deduplication; this only gives it the canonical phrase tokens.
+            timelineTokens = [
+                StreamingNumberedCommandToken(
+                    result.text,
+                    range: SpeechResultRange(result.range),
+                    confidence: result.minimumConfidence
+                ),
+            ]
+        } else {
+            timelineTokens = result.tokens
+        }
         let numberedUpdate = numberedCommandScanner.ingest(
             StreamingNumberedCommandSegment(
                 range: SpeechResultRange(result.range),
-                tokens: result.tokens,
+                tokens: timelineTokens,
                 finalizationTime: result.finalizationTime,
                 isFinal: result.isFinal,
                 hasTrailingPhraseBoundary:
@@ -426,7 +443,6 @@ final class AppModel {
             apply(mutation, from: result)
         }
 
-        let exactCommand = VoiceCommandParser.parse(result.text)
         let gatedCommand: VoiceCommand?
         switch exactCommand {
         case .copyNumber, .pasteNumber, .copyNamed:

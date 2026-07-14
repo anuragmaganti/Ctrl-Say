@@ -6,8 +6,6 @@ struct ClipboardHUDView: View {
     let editingSession: DashboardEditingSession
     let thumbnailProvider: ClipboardThumbnailProvider
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
     var body: some View {
         VStack(spacing: 0) {
             dragHeader
@@ -16,7 +14,8 @@ struct ClipboardHUDView: View {
             copyList
                 .frame(maxHeight: .infinity)
 
-            if presentationState.selectedCollection == .numbered {
+            if presentationState.selectedCollection == .numbered,
+               model.slots.hasTemporaryCopies {
                 numberedFooter
                     .frame(height: ClipboardHUDMetrics.numberedFooterHeight)
             }
@@ -28,10 +27,6 @@ struct ClipboardHUDView: View {
             in: .rect(cornerRadius: ClipboardHUDMetrics.cornerRadius)
         )
         .glassEffectTransition(.materialize)
-        .animation(
-            reduceMotion ? nil : .snappy(duration: 0.2),
-            value: presentationState.selectedCollection
-        )
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Ctrl-Say Clipboard HUD")
     }
@@ -277,10 +272,10 @@ struct ClipboardHUDView: View {
             }
             .font(.caption)
             .buttonStyle(.borderless)
-            .disabled(!model.slots.hasTemporaryCopies)
+            .controlSize(.small)
             .accessibilityLabel("Clear all temporary copies")
         }
-        .padding(.horizontal, 14)
+        .padding(.trailing, 7)
     }
 
     private var selectedCollectionBinding: Binding<ClipboardCollection> {

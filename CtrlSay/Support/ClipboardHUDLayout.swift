@@ -23,7 +23,7 @@ enum ClipboardHUDMetrics {
     static let rowHeight: CGFloat = 66
     static let emptyListHeight: CGFloat = 50
     static let listVerticalPadding: CGFloat = 12
-    static let numberedFooterHeight: CGFloat = 42
+    static let numberedFooterHeight: CGFloat = 30
     static let permanentStatusHeight: CGFloat = 48
 
     static func idealHeight(
@@ -43,7 +43,7 @@ enum ClipboardHUDMetrics {
         case .precedesContent:
             listHeight = permanentStatusHeight + copyContentHeight
         }
-        let footerHeight = collection == .numbered
+        let footerHeight = collection == .numbered && itemCount > 0
             ? numberedFooterHeight
             : 0
         return headerHeight
@@ -141,6 +141,17 @@ enum ClipboardHUDPlacement {
             size: CGSize(width: ClipboardHUDMetrics.width, height: height),
             visibleFrame: visibleFrame
         )
+    }
+
+    static func requiresFrameUpdate(
+        current: CGRect,
+        target: CGRect,
+        tolerance: CGFloat = 0.5
+    ) -> Bool {
+        abs(current.minX - target.minX) > tolerance
+            || abs(current.minY - target.minY) > tolerance
+            || abs(current.width - target.width) > tolerance
+            || abs(current.height - target.height) > tolerance
     }
 
     static func frame(

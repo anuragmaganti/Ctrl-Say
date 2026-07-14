@@ -10,6 +10,23 @@ final class NotchPanelLayoutTests: XCTestCase {
         auxiliaryTopRightArea: CGRect(x: 1_010, y: 1_131, width: 790, height: 38)
     )
 
+    func testFrameUpdatesIgnoreSubpixelJitter() {
+        let current = CGRect(x: 784, y: 1_125, width: 232, height: 44)
+
+        XCTAssertFalse(
+            NotchPanelLayoutCalculator.requiresFrameUpdate(
+                current: current,
+                target: current.offsetBy(dx: -0.25, dy: 0.25)
+            )
+        )
+        XCTAssertTrue(
+            NotchPanelLayoutCalculator.requiresFrameUpdate(
+                current: current,
+                target: CGRect(x: 784, y: 1_125, width: 320, height: 44)
+            )
+        )
+    }
+
     func testNotchGeometryUsesTheGapBetweenAuxiliaryAreas() {
         XCTAssertEqual(
             NotchPanelLayoutCalculator.surfaceStyle(for: notchedDisplay),

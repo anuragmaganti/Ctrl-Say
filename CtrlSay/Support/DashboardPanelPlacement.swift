@@ -2,10 +2,32 @@ import CoreGraphics
 import Foundation
 
 enum DashboardPanelMetrics {
-    static let preferredSize = CGSize(width: 388, height: 540)
+    static let width: CGFloat = 388
+    static let compactHeight: CGFloat = 64
+#if DEBUG
+    static let diagnosticsCollapsedHeight: CGFloat = 112
+    static let diagnosticsExpandedHeight: CGFloat = 350
+#endif
     static let cornerRadius: CGFloat = 22
     static let screenInset: CGFloat = 8
     static let anchorGap: CGFloat = 6
+
+    static var preferredSize: CGSize {
+        preferredSize(showsDeveloperDiagnostics: false)
+    }
+
+    static func preferredSize(
+        showsDeveloperDiagnostics: Bool
+    ) -> CGSize {
+#if DEBUG
+        let height = showsDeveloperDiagnostics
+            ? diagnosticsExpandedHeight
+            : diagnosticsCollapsedHeight
+#else
+        let height = compactHeight
+#endif
+        return CGSize(width: width, height: height)
+    }
 }
 
 /// Pure geometry for a menu-bar panel that must remain below its status item.
@@ -14,6 +36,17 @@ enum DashboardPanelMetrics {
 /// keeps its nonactivating panel, so this calculation makes the placement rule
 /// explicit and testable across displays with different coordinate origins.
 enum DashboardPanelPlacement {
+    static func requiresFrameUpdate(
+        current: CGRect,
+        target: CGRect,
+        tolerance: CGFloat = 0.5
+    ) -> Bool {
+        abs(current.minX - target.minX) > tolerance
+            || abs(current.minY - target.minY) > tolerance
+            || abs(current.width - target.width) > tolerance
+            || abs(current.height - target.height) > tolerance
+    }
+
     static func frame(
         below anchor: CGRect,
         preferredSize: CGSize,

@@ -20,6 +20,8 @@ final class NotchFeedbackPanelController {
     private let windowContext = NotchWindowContext()
     private weak var activeScreen: NSScreen?
     private var delayedHideTask: Task<Void, Never>?
+    private var isPresentationUpdateScheduled = false
+    private var scheduledUpdateShouldAnimate = false
 
     init(presentationState: NotchFeedbackPresentationState) {
         self.presentationState = presentationState
@@ -93,11 +95,30 @@ final class NotchFeedbackPanelController {
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                self.updatePresentation(animated: true)
                 self.observePresentation()
+                self.schedulePresentationUpdate(animated: true)
             }
         }
         updatePresentation(animated: false)
+    }
+
+    private func schedulePresentationUpdate(animated: Bool) {
+        scheduledUpdateShouldAnimate = scheduledUpdateShouldAnimate || animated
+        guard !isPresentationUpdateScheduled else { return }
+        isPresentationUpdateScheduled = true
+
+        // One reducer event can change both the visual and interaction state.
+        // Apply their final values after the current SwiftUI/AppKit transaction
+        // instead of resizing the panel once for every intermediate publish.
+        RunLoop.main.perform(inModes: [.common]) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let shouldAnimate = self.scheduledUpdateShouldAnimate
+                self.isPresentationUpdateScheduled = false
+                self.scheduledUpdateShouldAnimate = false
+                self.updatePresentation(animated: shouldAnimate)
+            }
+        }
     }
 
     private func updatePresentation(animated: Bool) {
@@ -195,7 +216,16 @@ final class NotchFeedbackPanelController {
             display: display
         )
         windowContext.update(surfaceStyle: layout.surfaceStyle)
-        panel.setFrame(layout.frame, display: true)
+        guard NotchPanelLayoutCalculator.requiresFrameUpdate(
+            current: panel.frame,
+            target: layout.frame
+        ) else {
+            return
+        }
+        // SwiftUI/Core Animation own the visual transition inside the panel.
+        // Forcing display during NSWindow geometry mutation can re-enter the
+        // hosting view's layout pass under rapid feedback changes.
+        panel.setFrame(layout.frame, display: false)
     }
 
     private func pointerScreen() -> NSScreen {

@@ -58,8 +58,14 @@ case "$MODE" in
     sleep 1
     pgrep -x "$APP_NAME" >/dev/null
     ;;
+  --stress-hud|stress-hud)
+    /usr/bin/open -n "$APP_BUNDLE" --args -CtrlSayStressHUDLayoutForTesting
+    ;;
+  --stress-surfaces|stress-surfaces)
+    /usr/bin/open -n "$APP_BUNDLE" --args -CtrlSayStressPresentationSurfacesForTesting
+    ;;
   *)
-    echo "usage: $0 [run|--debug|--logs|--telemetry|--verify]" >&2
+    echo "usage: $0 [run|--debug|--logs|--telemetry|--verify|--stress-hud|--stress-surfaces]" >&2
     exit 2
     ;;
 esac

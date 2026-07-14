@@ -64,6 +64,19 @@ final class ClipboardHUDLayoutTests: XCTestCase {
         )
     }
 
+    func testEmptyTemporaryCollectionOmitsClearAllFooter() {
+        let numbered = ClipboardHUDMetrics.idealHeight(
+            itemCount: 0,
+            collection: .numbered
+        )
+        let permanent = ClipboardHUDMetrics.idealHeight(
+            itemCount: 0,
+            collection: .permanent
+        )
+
+        XCTAssertEqual(numbered, permanent)
+    }
+
     func testPermanentStorageStatusIsIncludedWithoutDuplicatingEmptyState() {
         let loading = ClipboardHUDMetrics.idealHeight(
             itemCount: 0,
@@ -109,6 +122,23 @@ final class ClipboardHUDLayoutTests: XCTestCase {
             visibleFrame: visible
         )
         XCTAssertEqual(clamped.minY, visible.minY)
+    }
+
+    func testFrameUpdateIgnoresLayoutJitterAndDetectsRealResize() {
+        let current = CGRect(x: 100, y: 200, width: 360, height: 266)
+
+        XCTAssertFalse(
+            ClipboardHUDPlacement.requiresFrameUpdate(
+                current: current,
+                target: current.offsetBy(dx: 0.25, dy: -0.25)
+            )
+        )
+        XCTAssertTrue(
+            ClipboardHUDPlacement.requiresFrameUpdate(
+                current: current,
+                target: CGRect(x: 100, y: 134, width: 360, height: 332)
+            )
+        )
     }
 
     func testNormalizedPositionRoundTripsOnNegativeOriginDisplay() {

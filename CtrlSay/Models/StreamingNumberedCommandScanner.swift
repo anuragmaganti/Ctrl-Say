@@ -533,13 +533,18 @@ struct StreamingNumberedCommandScanner {
             return nil
         }
 
+        var hasFollowingCommandBoundary = false
         // If Apple has already supplied another ordinary word in the same
         // result, the permanent name may be multiword. Leave that case on the
         // whole-phrase gate instead of prematurely capturing only its prefix.
         if index + 3 < tokens.count {
             let following = tokens[index + 3]
-            if canBridge(argument, to: following),
-               !isExplicitCommandBoundary(following.text) {
+            if !canBridge(argument, to: following) {
+                hasFollowingCommandBoundary = true
+            } else if isExplicitCommandBoundary(following.text)
+                        || beginsCommandTransition(at: index + 3, in: tokens) {
+                hasFollowingCommandBoundary = true
+            } else {
                 return nil
             }
         }
@@ -567,7 +572,8 @@ struct StreamingNumberedCommandScanner {
             minimumConfidence: minimumConfidence,
             isReadyForDispatch: isReadyForDispatch(
                 command,
-                argument: argument
+                argument: argument,
+                hasFollowingCommandBoundary: hasFollowingCommandBoundary
             ),
             isStableForCommit: isStableForCommit(
                 command,
@@ -586,6 +592,7 @@ struct StreamingNumberedCommandScanner {
     private func isReadyForDispatch(
         _ command: VoiceCommand,
         argument: ResolvedToken,
+        hasFollowingCommandBoundary: Bool = false,
         minimumConfidence: Double? = nil,
         knownNamedCopies: Set<String> = []
     ) -> Bool {
@@ -606,7 +613,9 @@ struct StreamingNumberedCommandScanner {
             // dispatch metadata only; punctuation never becomes part of the
             // normalized slot name. Finalization remains the fallback for
             // results that contain no explicit boundary.
-            return argument.hasExplicitPhraseBoundary || isFinalized
+            return argument.hasExplicitPhraseBoundary
+                || hasFollowingCommandBoundary
+                || isFinalized
 
         case .pasteNamed:
             // Pasting can use the volatile fast path because its name must
