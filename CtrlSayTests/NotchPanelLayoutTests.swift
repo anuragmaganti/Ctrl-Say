@@ -17,6 +17,22 @@ final class NotchPanelLayoutTests: XCTestCase {
         )
     }
 
+    func testCornerRadiusMatchesOfficialMacBookBezelProportions() {
+        XCTAssertEqual(
+            NotchPanelLayoutCalculator.attachedBottomCornerRadius(
+                notchHeight: 38
+            ),
+            12
+        )
+        XCTAssertEqual(
+            NotchPanelLayoutCalculator.attachedBottomCornerRadius(
+                notchHeight: 30
+            ),
+            9.6,
+            accuracy: 0.000_1
+        )
+    }
+
     func testAttachedListeningCanvasSurroundsSystemReportedNotch() {
         let layout = NotchPanelLayoutCalculator.layout(
             visualState: .listening,
@@ -42,7 +58,7 @@ final class NotchPanelLayoutTests: XCTestCase {
         )
     }
 
-    func testVisibleBorderSitsOutsideHardwareExclusionOnEveryEdge() {
+    func testVisibleBorderExpandsOnePointBeyondHardwareExclusion() {
         let layout = NotchPanelLayoutCalculator.layout(
             visualState: .listening,
             interactionMode: .passive,
@@ -61,19 +77,20 @@ final class NotchPanelLayoutTests: XCTestCase {
         let reportedNotchBottom = notchedDisplay.frame.maxY
             - notchedDisplay.safeAreaTop
 
-        XCTAssertLessThan(
+        XCTAssertEqual(borderOutset, 1)
+        XCTAssertEqual(
             layout.frame.minX + horizontalCanvas - borderOutset,
-            reportedNotchLeft
+            reportedNotchLeft - 1
         )
-        XCTAssertGreaterThan(
+        XCTAssertEqual(
             layout.frame.maxX - horizontalCanvas + borderOutset,
-            reportedNotchRight
+            reportedNotchRight + 1
         )
-        XCTAssertLessThan(
+        XCTAssertEqual(
             layout.frame.maxY
                 - notchedDisplay.safeAreaTop
                 - borderOutset,
-            reportedNotchBottom
+            reportedNotchBottom - 1
         )
         XCTAssertGreaterThan(
             NotchPanelLayoutCalculator.attachedBottomCanvasOutset,

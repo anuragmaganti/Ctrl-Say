@@ -25,11 +25,25 @@ enum NotchPanelLayoutCalculator {
     static let floatingListeningWidth: CGFloat = 152
     // NSScreen reports the rectangular hardware exclusion. A border drawn on
     // that rectangle is physically hidden by the camera housing. These canvas
-    // margins let the visible stroke sit just outside the reported exclusion
-    // while the black surface itself remains aligned to the hardware bounds.
+    // margins keep the outward half of a boundary-aligned stroke and its glow
+    // inside the panel while the black surface remains on the hardware bounds.
     static let attachedHorizontalCanvasOutset: CGFloat = 6
     static let attachedBottomCanvasOutset: CGFloat = 6
-    static let attachedVisibleBorderOutset: CGFloat = 2
+    static let attachedVisibleBorderOutset: CGFloat = 1
+    // NSScreen exposes the exact camera-housing rectangle, but not its corner
+    // radius. Apple's current MacBook Pro and MacBook Air bezel references use
+    // a lower-corner radius of about 32% of the housing depth, capped at 12 pt.
+    static let attachedCornerRadiusRatio: CGFloat = 0.32
+    static let maximumAttachedCornerRadius: CGFloat = 12
+
+    static func attachedBottomCornerRadius(
+        notchHeight: CGFloat
+    ) -> CGFloat {
+        min(
+            maximumAttachedCornerRadius,
+            max(0, notchHeight) * attachedCornerRadiusRatio
+        )
+    }
 
     static func layout(
         visualState: NotchVisualState,
