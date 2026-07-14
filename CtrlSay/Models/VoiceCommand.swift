@@ -102,6 +102,13 @@ enum VoiceCommandParser {
         normalizedTokens(name).joined(separator: " ")
     }
 
+    static func hasExplicitPhraseBoundary(_ text: String) -> Bool {
+        guard let last = text.last(where: { !$0.isWhitespace }) else {
+            return false
+        }
+        return last == "." || last == "!" || last == "?" || last == "…"
+    }
+
     static func validNormalizedPermanentName(_ name: String) -> String? {
         validNameTokens(normalizedTokens(name))
     }

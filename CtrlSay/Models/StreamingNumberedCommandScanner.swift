@@ -22,17 +22,20 @@ struct StreamingNumberedCommandSegment: Sendable {
     let tokens: [StreamingNumberedCommandToken]
     let finalizationTime: CMTime
     let isFinal: Bool
+    let hasTrailingPhraseBoundary: Bool
 
     init(
         range: SpeechResultRange,
         tokens: [StreamingNumberedCommandToken],
         finalizationTime: CMTime = .invalid,
-        isFinal: Bool = false
+        isFinal: Bool = false,
+        hasTrailingPhraseBoundary: Bool = false
     ) {
         self.range = range
         self.tokens = tokens
         self.finalizationTime = finalizationTime
         self.isFinal = isFinal
+        self.hasTrailingPhraseBoundary = hasTrailingPhraseBoundary
     }
 }
 
@@ -73,6 +76,7 @@ struct StreamingNumberedCommandScanner {
         var range: SpeechResultRange
         var tokens: [StreamingNumberedCommandToken]
         var isFinalized: Bool
+        var hasTrailingPhraseBoundary: Bool
     }
 
     private struct TokenAnchor: Hashable {
@@ -89,6 +93,7 @@ struct StreamingNumberedCommandScanner {
         let segmentRange: SpeechResultRange
         let confidence: Double?
         let isFinalized: Bool
+        let hasExplicitPhraseBoundary: Bool
     }
 
     private struct CandidateSnapshot {
@@ -158,6 +163,8 @@ struct StreamingNumberedCommandScanner {
         segments[segmentIndex].tokens = segment.tokens
         segments[segmentIndex].isFinalized = segments[segmentIndex].isFinalized
             || segment.isFinal
+        segments[segmentIndex].hasTrailingPhraseBoundary =
+            segment.hasTrailingPhraseBoundary
 
         advanceResultStreamFinalizationWatermark(to: segment.finalizationTime)
         advanceFinalizationWatermark(to: segment.finalizationTime)
@@ -207,7 +214,8 @@ struct StreamingNumberedCommandScanner {
                 id: id,
                 range: observation.range,
                 tokens: observation.tokens,
-                isFinalized: observation.isFinal
+                isFinalized: observation.isFinal,
+                hasTrailingPhraseBoundary: observation.hasTrailingPhraseBoundary
             )
         )
         return segments.index(before: segments.endIndex)
@@ -268,9 +276,18 @@ struct StreamingNumberedCommandScanner {
 
         var resolvedTokens: [ResolvedToken] = []
         for segment in orderedSegments {
+            let lastSemanticTokenIndex = segment.tokens.lastIndex {
+                !normalizedComponents($0.text).isEmpty
+            }
             for (tokenIndex, token) in segment.tokens.enumerated() {
                 let components = normalizedComponents(token.text)
                 for (componentIndex, component) in components.enumerated() {
+                    let isLastComponent = componentIndex == components.count - 1
+                    let tokenClosesPhrase = isLastComponent
+                        && VoiceCommandParser.hasExplicitPhraseBoundary(token.text)
+                    let segmentClosesPhrase = isLastComponent
+                        && tokenIndex == lastSemanticTokenIndex
+                        && segment.hasTrailingPhraseBoundary
                     resolvedTokens.append(
                         ResolvedToken(
                             text: component,
@@ -283,7 +300,9 @@ struct StreamingNumberedCommandScanner {
                             range: token.range ?? segment.range,
                             segmentRange: segment.range,
                             confidence: token.confidence,
-                            isFinalized: segment.isFinalized
+                            isFinalized: segment.isFinalized,
+                            hasExplicitPhraseBoundary: tokenClosesPhrase
+                                || segmentClosesPhrase
                         )
                     )
                 }
@@ -455,12 +474,12 @@ struct StreamingNumberedCommandScanner {
 
         switch command {
         case .copyNamed, .permanentCopy:
-            // Any arbitrary name can arrive as a partial volatile token. Do
-            // not let a parseable prefix escape the revisable timeline. A
-            // token's audio range is alignment data, not a promise that its
-            // text cannot grow. Only the enclosing result's finalization makes
-            // that safe, regardless of the word's spelling or syllable count.
-            return isFinalized
+            // Keep replacing unfinished volatile prefixes, but trust Apple's
+            // explicit phrase boundary as soon as it appears. The boundary is
+            // dispatch metadata only; punctuation never becomes part of the
+            // normalized slot name. Finalization remains the fallback for
+            // results that contain no explicit boundary.
+            return argument.hasExplicitPhraseBoundary || isFinalized
 
         case .pasteNamed:
             // Pasting can use the volatile fast path because its name must

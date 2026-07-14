@@ -385,7 +385,9 @@ final class AppModel {
                 range: SpeechResultRange(result.range),
                 tokens: result.tokens,
                 finalizationTime: result.finalizationTime,
-                isFinal: result.isFinal
+                isFinal: result.isFinal,
+                hasTrailingPhraseBoundary:
+                    VoiceCommandParser.hasExplicitPhraseBoundary(result.text)
             ),
             knownNamedCopies: slots.allNamedKeys
         )
@@ -684,6 +686,7 @@ final class AppModel {
            let metadata = queued.speechMetadata,
            !SpeechCommandFreshnessPolicy.isFresh(
                 metadata,
+                command: command,
                 at: DispatchTime.now().uptimeNanoseconds
            ) {
             recordPipeline(

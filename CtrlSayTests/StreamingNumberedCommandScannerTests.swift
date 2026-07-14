@@ -90,6 +90,70 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
         XCTAssertTrue(ready.isReadyForDispatch)
     }
 
+    func testExplicitVolatileBoundaryReleasesLatestArbitraryName() throws {
+        for name in ["point", "pointer", "house"] {
+            var scanner = StreamingNumberedCommandScanner()
+            let pendingUpdate = scanner.ingest(
+                StreamingNumberedCommandSegment(
+                    range: timeRange(0, 1),
+                    tokens: [
+                        token("copy", 0.10, 0.30),
+                        token(name, 0.31, 0.90),
+                    ]
+                )
+            )
+            let pending = try XCTUnwrap(upserts(in: pendingUpdate).first)
+            XCTAssertEqual(pending.command, .copyNamed(name))
+            XCTAssertFalse(pending.isReadyForDispatch)
+
+            let boundaryUpdate = scanner.ingest(
+                StreamingNumberedCommandSegment(
+                    range: timeRange(0, 1),
+                    tokens: [
+                        token("copy", 0.10, 0.30),
+                        token("\(name).", 0.31, 0.90),
+                    ],
+                    hasTrailingPhraseBoundary: true
+                )
+            )
+            let ready = try XCTUnwrap(upserts(in: boundaryUpdate).first)
+            XCTAssertEqual(ready.id, pending.id)
+            XCTAssertEqual(ready.command, .copyNamed(name))
+            XCTAssertTrue(ready.isReadyForDispatch)
+        }
+    }
+
+    func testPointRevisesToPointerBeforeVolatileBoundaryDispatches() throws {
+        var scanner = StreamingNumberedCommandScanner()
+        let partialUpdate = scanner.ingest(
+            StreamingNumberedCommandSegment(
+                range: timeRange(0, 1),
+                tokens: [
+                    token("copy", 0.10, 0.30),
+                    token("point", 0.31, 0.70),
+                ]
+            )
+        )
+        let partial = try XCTUnwrap(upserts(in: partialUpdate).first)
+        XCTAssertEqual(partial.command, .copyNamed("point"))
+        XCTAssertFalse(partial.isReadyForDispatch)
+
+        let completedUpdate = scanner.ingest(
+            StreamingNumberedCommandSegment(
+                range: timeRange(0, 1),
+                tokens: [
+                    token("copy", 0.10, 0.30),
+                    token("pointer.", 0.31, 0.90),
+                ],
+                hasTrailingPhraseBoundary: true
+            )
+        )
+        let completed = try XCTUnwrap(upserts(in: completedUpdate).first)
+        XCTAssertEqual(completed.id, partial.id)
+        XCTAssertEqual(completed.command, .copyNamed("pointer"))
+        XCTAssertTrue(completed.isReadyForDispatch)
+    }
+
     func testNamedCopyDoesNotReleaseBeforeEnclosingResultFinalizes() throws {
         var scanner = StreamingNumberedCommandScanner()
         let update = scanner.ingest(

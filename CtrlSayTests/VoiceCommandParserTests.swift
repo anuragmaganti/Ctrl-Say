@@ -199,6 +199,15 @@ final class VoiceCommandParserTests: XCTestCase {
         }
     }
 
+    func testOnlyTrailingTerminalPunctuationIsAnExplicitPhraseBoundary() {
+        for text in ["copy point.", "copy pointer!", "copy house?", "copy note…"] {
+            XCTAssertTrue(VoiceCommandParser.hasExplicitPhraseBoundary(text))
+        }
+        for text in ["copy point", "copy... point", "copy house,"] {
+            XCTAssertFalse(VoiceCommandParser.hasExplicitPhraseBoundary(text))
+        }
+    }
+
     func testPasteVerbAliasesAreCaseInsensitiveAndScopedToVerbPosition() {
         let aliases = [
             "pasting", "peace", "Pace", "hase", "pase", "pay", "pae", "Taste",

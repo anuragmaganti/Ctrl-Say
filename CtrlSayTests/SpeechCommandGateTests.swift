@@ -15,13 +15,49 @@ final class SpeechCommandGateTests: XCTestCase {
         XCTAssertTrue(
             SpeechCommandFreshnessPolicy.isFresh(
                 metadata,
+                command: .pasteNumber(1),
                 at: 1_000 + maximum
             )
         )
         XCTAssertFalse(
             SpeechCommandFreshnessPolicy.isFresh(
                 metadata,
+                command: .pasteNumber(1),
                 at: 1_001 + maximum
+            )
+        )
+    }
+
+    func testNamedCopyFreshnessStartsWhenBoundaryMakesItExecutable() {
+        let maximum = SpeechCommandFreshnessPolicy
+            .maximumSideEffectAgeNanoseconds
+        let boundaryReceivedAt: UInt64 = 10_000_000_000
+        let metadata = SpeechCommandMetadata(
+            resultReceivedAtNanoseconds: boundaryReceivedAt,
+            audioEndUptimeNanoseconds: 1_000,
+            minimumConfidence: nil,
+            isFinal: false
+        )
+
+        XCTAssertTrue(
+            SpeechCommandFreshnessPolicy.isFresh(
+                metadata,
+                command: .copyNamed("house"),
+                at: boundaryReceivedAt + maximum
+            )
+        )
+        XCTAssertFalse(
+            SpeechCommandFreshnessPolicy.isFresh(
+                metadata,
+                command: .copyNamed("house"),
+                at: boundaryReceivedAt + maximum + 1
+            )
+        )
+        XCTAssertFalse(
+            SpeechCommandFreshnessPolicy.isFresh(
+                metadata,
+                command: .pasteNamed("house"),
+                at: boundaryReceivedAt
             )
         )
     }

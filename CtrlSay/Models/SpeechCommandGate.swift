@@ -63,20 +63,31 @@ struct SpeechCommandMetadata: Equatable, Sendable {
 }
 
 enum SpeechCommandFreshnessPolicy {
-    // A delayed side effect is more dangerous than an ignored ambiguous
-    // command. This adds no wait; it only prevents an old recognition result
-    // or a command stalled behind startup work from firing much later.
+    // This adds no wait. It prevents a command that is already executable from
+    // sitting behind startup or clipboard work and firing much later.
     static let maximumSideEffectAgeNanoseconds: UInt64 = 1_500_000_000
 
     static func isFresh(
         _ metadata: SpeechCommandMetadata,
+        command: VoiceCommand,
         at uptimeNanoseconds: UInt64
     ) -> Bool {
-        guard let audioEnd = metadata.audioEndUptimeNanoseconds,
-              uptimeNanoseconds >= audioEnd else {
+        let readyAtNanoseconds: UInt64
+        switch command {
+        case .copyNamed, .permanentCopy:
+            // Arbitrary names intentionally remain pending while Apple's
+            // volatile text is incomplete. Their stale clock begins only when
+            // a phrase boundary or finalization makes the latest name safe.
+            readyAtNanoseconds = metadata.resultReceivedAtNanoseconds
+        default:
+            readyAtNanoseconds = metadata.audioEndUptimeNanoseconds
+                ?? metadata.resultReceivedAtNanoseconds
+        }
+
+        guard uptimeNanoseconds >= readyAtNanoseconds else {
             return true
         }
-        return uptimeNanoseconds - audioEnd
+        return uptimeNanoseconds - readyAtNanoseconds
             <= maximumSideEffectAgeNanoseconds
     }
 }
