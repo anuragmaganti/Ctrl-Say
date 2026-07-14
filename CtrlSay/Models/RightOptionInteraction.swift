@@ -28,7 +28,6 @@ enum RightOptionInteractionReducer {
             }
 
         case .hold:
-            guard state.wantsListening else { return state }
             next.isHUDPresented.toggle()
         }
 

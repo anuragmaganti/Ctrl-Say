@@ -31,20 +31,42 @@ final class RightOptionInteractionTests: XCTestCase {
         )
     }
 
-    func testHoldDoesNothingWhileListeningIsOff() {
+    func testHoldShowsHUDWithoutStartingListening() {
         XCTAssertEqual(
             RightOptionInteractionReducer.reduce(
                 .init(wantsListening: false, isHUDPresented: false),
                 gesture: .hold
             ),
-            .init(wantsListening: false, isHUDPresented: false)
+            .init(wantsListening: false, isHUDPresented: true)
         )
+    }
+
+    func testHoldHidesHUDWithoutStartingListening() {
         XCTAssertEqual(
             RightOptionInteractionReducer.reduce(
                 .init(wantsListening: false, isHUDPresented: true),
                 gesture: .hold
             ),
+            .init(wantsListening: false, isHUDPresented: false)
+        )
+    }
+
+    func testTapStartsListeningWhenHoldOpenedHUD() {
+        var state = RightOptionInteractionState(
+            wantsListening: false,
+            isHUDPresented: false
+        )
+
+        state = RightOptionInteractionReducer.reduce(state, gesture: .hold)
+        XCTAssertEqual(
+            state,
             .init(wantsListening: false, isHUDPresented: true)
+        )
+
+        state = RightOptionInteractionReducer.reduce(state, gesture: .tap)
+        XCTAssertEqual(
+            state,
+            .init(wantsListening: true, isHUDPresented: true)
         )
     }
 
