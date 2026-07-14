@@ -3,19 +3,134 @@ import SwiftUI
 
 struct ClipboardSlotRowStyle {
     let previewLineLimit: Int
+    let expandedPreviewLineLimit: Int
     let minimumHeight: CGFloat
     let showsThumbnail: Bool
 
     static let dashboard = ClipboardSlotRowStyle(
         previewLineLimit: 1,
+        expandedPreviewLineLimit: 8,
         minimumHeight: 49,
         showsThumbnail: false
     )
     static let hud = ClipboardSlotRowStyle(
         previewLineLimit: 2,
+        expandedPreviewLineLimit: 8,
         minimumHeight: ClipboardHUDMetrics.rowHeight,
         showsThumbnail: true
     )
+}
+
+private struct ExpandableClipboardPreview: View {
+    let payload: ClipboardPayload
+    let style: ClipboardSlotRowStyle
+    let doubleClickAction: (() -> Void)?
+    let additionalHelp: String?
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isExpanded = false
+    @State private var expandedText: String?
+
+    init(
+        payload: ClipboardPayload,
+        style: ClipboardSlotRowStyle,
+        doubleClickAction: (() -> Void)? = nil,
+        additionalHelp: String? = nil
+    ) {
+        self.payload = payload
+        self.style = style
+        self.doubleClickAction = doubleClickAction
+        self.additionalHelp = additionalHelp
+    }
+
+    @ViewBuilder
+    var body: some View {
+        if isTextPreview, let doubleClickAction {
+            interactivePreviewLabel
+                .gesture(
+                    TapGesture(count: 2)
+                        .exclusively(before: TapGesture(count: 1))
+                        .onEnded { result in
+                            switch result {
+                            case .first:
+                                doubleClickAction()
+                            case .second:
+                                toggleExpansion()
+                            }
+                        }
+                )
+        } else if isTextPreview {
+            interactivePreviewLabel
+                .onTapGesture {
+                    toggleExpansion()
+                }
+        } else {
+            previewLabel
+        }
+    }
+
+    private var previewLabel: some View {
+        Text(displayedText)
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .lineLimit(
+                isExpanded
+                    ? style.expandedPreviewLineLimit
+                    : style.previewLineLimit
+            )
+            .truncationMode(.tail)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityLabel("Contents, \(payload.preview)")
+            .onChange(of: payload) {
+                isExpanded = false
+                expandedText = nil
+            }
+    }
+
+    private var interactivePreviewLabel: some View {
+        previewLabel
+            .contentShape(.rect)
+            .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
+            .accessibilityHint(helpText)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction {
+                toggleExpansion()
+            }
+            .help(helpText)
+    }
+
+    private var isTextPreview: Bool {
+        payload.kind == .text || payload.kind == .mixed
+    }
+
+    private var displayedText: String {
+        if isExpanded {
+            return expandedText ?? payload.expandedPreviewText
+        }
+        guard payload.hasAdditionalPreviewText,
+              !payload.preview.hasSuffix("…") else {
+            return payload.preview
+        }
+        return payload.preview + "…"
+    }
+
+    private var helpText: String {
+        let expansionHelp = isExpanded
+            ? "Click to collapse preview"
+            : "Click to expand preview"
+        guard let additionalHelp else { return expansionHelp }
+        return "\(expansionHelp). \(additionalHelp)"
+    }
+
+    private func toggleExpansion() {
+        if !isExpanded, expandedText == nil {
+            expandedText = payload.expandedPreviewText
+        }
+        withAnimation(reduceMotion ? nil : .snappy(duration: 0.2)) {
+            isExpanded.toggle()
+        }
+    }
 }
 
 struct NumberedCopyRow: View {
@@ -65,10 +180,10 @@ struct NumberedCopyRow: View {
                 Text("\(number)")
                     .font(.callout.weight(.semibold))
                     .lineLimit(1)
-                Text(payload.preview)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(style.previewLineLimit)
+                ExpandableClipboardPreview(
+                    payload: payload,
+                    style: style
+                )
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -166,10 +281,10 @@ struct TemporaryNamedCopyRow: View {
                 Text(displayName)
                     .font(.callout.weight(.semibold))
                     .lineLimit(1)
-                Text(payload.preview)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(style.previewLineLimit)
+                ExpandableClipboardPreview(
+                    payload: payload,
+                    style: style
+                )
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -453,16 +568,14 @@ struct PermanentCopyRow: View {
                     .accessibilityLabel("Permanent copy contents")
                     .accessibilityHint("Press Command-Return to save or Escape to cancel")
             } else {
-                Text(payload.preview)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(style.previewLineLimit)
-                    .contentShape(.rect)
-                    .onTapGesture(count: 2) {
-                        if canEditContents { beginContentEditing() }
-                    }
-                    .accessibilityLabel("Contents, \(payload.preview)")
-                    .help(contentHelp)
+                ExpandableClipboardPreview(
+                    payload: payload,
+                    style: style,
+                    doubleClickAction: canEditContents
+                        ? { beginContentEditing() }
+                        : nil,
+                    additionalHelp: contentHelp
+                )
             }
 
             if let validationMessage {

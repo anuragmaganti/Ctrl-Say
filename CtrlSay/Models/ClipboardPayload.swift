@@ -30,6 +30,7 @@ enum ClipboardContentKind: String, Hashable, Sendable {
 struct ClipboardPayload: Identifiable, Hashable, Sendable {
     nonisolated private static let utf8PlainTextTypeIdentifier = "public.utf8-plain-text"
     nonisolated static let maximumInlineEditableTextBytes = 256 * 1_024
+    nonisolated static let maximumExpandedPreviewCharacters = 2_000
 
     enum InlineTextEditability: Equatable, Sendable {
         case editable
@@ -91,6 +92,32 @@ struct ClipboardPayload: Identifiable, Hashable, Sendable {
         return String(data: representation.data, encoding: .utf8)
     }
 
+    nonisolated var hasAdditionalPreviewText: Bool {
+        guard let data = firstUTF8PlainTextData else { return false }
+        return data.count > preview.utf8.count
+    }
+
+    nonisolated var expandedPreviewText: String {
+        guard let data = firstUTF8PlainTextData else { return preview }
+
+        let byteLimit = min(
+            data.count,
+            Self.maximumExpandedPreviewCharacters * 4
+        )
+        guard let decoded = Self.decodeUTF8Prefix(data, byteLimit: byteLimit),
+              !decoded.isEmpty else {
+            return preview
+        }
+
+        let bounded = String(
+            decoded.prefix(Self.maximumExpandedPreviewCharacters)
+        )
+        let isTruncated = byteLimit < data.count
+            || decoded.count > Self.maximumExpandedPreviewCharacters
+        guard isTruncated, !bounded.hasSuffix("…") else { return bounded }
+        return bounded + "…"
+    }
+
     func replacingEditableText(with text: String) -> ClipboardPayload? {
         guard inlineTextEditability == .editable else { return nil }
 
@@ -133,6 +160,33 @@ struct ClipboardPayload: Identifiable, Hashable, Sendable {
             if preview.count == 80 { break }
         }
         return preview
+    }
+
+    nonisolated private var firstUTF8PlainTextData: Data? {
+        guard kind == .text || kind == .mixed else { return nil }
+        return items.lazy
+            .flatMap(\.representations)
+            .first { representation in
+                representation.typeIdentifier == Self.utf8PlainTextTypeIdentifier
+            }?
+            .data
+    }
+
+    nonisolated private static func decodeUTF8Prefix(
+        _ data: Data,
+        byteLimit: Int
+    ) -> String? {
+        let maximumTrim = min(3, byteLimit)
+        for trailingByteCount in 0...maximumTrim {
+            let end = byteLimit - trailingByteCount
+            if let decoded = String(
+                data: Data(data.prefix(end)),
+                encoding: .utf8
+            ) {
+                return decoded
+            }
+        }
+        return nil
     }
 
     nonisolated private static func hasValidInlineTextEncoding(
