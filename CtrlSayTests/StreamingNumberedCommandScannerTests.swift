@@ -49,7 +49,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
         )
     }
 
-    func testNamedCopyRemainsPendingAcrossPartialWordRevisions() throws {
+    func testNamedCopyDispatchesVolatileResultAndKeepsIdentityAcrossRevisions() throws {
         var scanner = StreamingNumberedCommandScanner()
         let first = scanner.ingest(
             StreamingNumberedCommandSegment(
@@ -63,7 +63,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
         let partial = try XCTUnwrap(upserts(in: first).first)
 
         XCTAssertEqual(partial.command, .copyNamed("g"))
-        XCTAssertFalse(partial.isReadyForDispatch)
+        XCTAssertTrue(partial.isReadyForDispatch)
 
         let revision = scanner.ingest(
             StreamingNumberedCommandSegment(
@@ -78,19 +78,15 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
 
         XCTAssertEqual(completedWord.id, partial.id)
         XCTAssertEqual(completedWord.command, .copyNamed("github"))
-        XCTAssertFalse(completedWord.isReadyForDispatch)
+        XCTAssertTrue(completedWord.isReadyForDispatch)
 
         let finalized = scanner.advanceFinalization(
             to: time(1)
         )
-        let ready = try XCTUnwrap(upserts(in: finalized).first)
-
-        XCTAssertEqual(ready.id, partial.id)
-        XCTAssertEqual(ready.command, .copyNamed("github"))
-        XCTAssertTrue(ready.isReadyForDispatch)
+        XCTAssertTrue(finalized.mutations.isEmpty)
     }
 
-    func testExplicitVolatileBoundaryReleasesLatestArbitraryName() throws {
+    func testExplicitVolatileBoundaryDoesNotDelayOrDuplicateNamedCopy() throws {
         for name in ["point", "pointer", "house"] {
             var scanner = StreamingNumberedCommandScanner()
             let pendingUpdate = scanner.ingest(
@@ -102,9 +98,9 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
                     ]
                 )
             )
-            let pending = try XCTUnwrap(upserts(in: pendingUpdate).first)
-            XCTAssertEqual(pending.command, .copyNamed(name))
-            XCTAssertFalse(pending.isReadyForDispatch)
+            let immediate = try XCTUnwrap(upserts(in: pendingUpdate).first)
+            XCTAssertEqual(immediate.command, .copyNamed(name))
+            XCTAssertTrue(immediate.isReadyForDispatch)
 
             let boundaryUpdate = scanner.ingest(
                 StreamingNumberedCommandSegment(
@@ -116,14 +112,11 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
                     hasTrailingPhraseBoundary: true
                 )
             )
-            let ready = try XCTUnwrap(upserts(in: boundaryUpdate).first)
-            XCTAssertEqual(ready.id, pending.id)
-            XCTAssertEqual(ready.command, .copyNamed(name))
-            XCTAssertTrue(ready.isReadyForDispatch)
+            XCTAssertTrue(boundaryUpdate.mutations.isEmpty)
         }
     }
 
-    func testPointRevisesToPointerBeforeVolatileBoundaryDispatches() throws {
+    func testPointRevisesToPointerWithoutWaitingForVolatileBoundary() throws {
         var scanner = StreamingNumberedCommandScanner()
         let partialUpdate = scanner.ingest(
             StreamingNumberedCommandSegment(
@@ -136,7 +129,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
         )
         let partial = try XCTUnwrap(upserts(in: partialUpdate).first)
         XCTAssertEqual(partial.command, .copyNamed("point"))
-        XCTAssertFalse(partial.isReadyForDispatch)
+        XCTAssertTrue(partial.isReadyForDispatch)
 
         let completedUpdate = scanner.ingest(
             StreamingNumberedCommandSegment(
@@ -154,7 +147,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
         XCTAssertTrue(completed.isReadyForDispatch)
     }
 
-    func testNamedCopyDoesNotReleaseBeforeEnclosingResultFinalizes() throws {
+    func testNamedCopyDoesNotWaitForEnclosingResultFinalization() throws {
         var scanner = StreamingNumberedCommandScanner()
         let update = scanner.ingest(
             StreamingNumberedCommandSegment(
@@ -167,10 +160,10 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
             )
         )
 
-        XCTAssertFalse(try XCTUnwrap(upserts(in: update).first).isReadyForDispatch)
+        XCTAssertTrue(try XCTUnwrap(upserts(in: update).first).isReadyForDispatch)
     }
 
-    func testShortNamesAreDeferredWhileVolatileButRemainValidWhenFinalized() throws {
+    func testShortNamesDispatchWhileVolatileAndFinalizationDoesNotDuplicate() throws {
         for partialName in ["G", "GET", "Sum"] {
             var scanner = StreamingNumberedCommandScanner()
             let update = scanner.ingest(
@@ -185,23 +178,17 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
             )
             let candidate = try XCTUnwrap(upserts(in: update).first)
 
-            XCTAssertFalse(
+            XCTAssertTrue(
                 candidate.isReadyForDispatch,
-                "A finalized token alignment must not release \(partialName) while its result remains volatile"
+                "A complete volatile named command should dispatch without waiting for finalization"
             )
 
             let finalizationUpdate = scanner.advanceFinalization(to: time(1.20))
-            let finalized = try XCTUnwrap(upserts(in: finalizationUpdate).first)
-            XCTAssertEqual(finalized.id, candidate.id)
-            XCTAssertEqual(
-                finalized.command,
-                .copyNamed(VoiceCommandParser.normalizeName(partialName))
-            )
-            XCTAssertTrue(finalized.isReadyForDispatch)
+            XCTAssertTrue(finalizationUpdate.mutations.isEmpty)
         }
     }
 
-    func testNamedCopyStabilizationWorksAcrossArbitraryWordShapes() throws {
+    func testNamedCopyRevisionsStayImmediateAcrossArbitraryWordShapes() throws {
         let revisions = [
             (partial: "port", complete: "portfolio"),
             (partial: "note", complete: "notebook"),
@@ -222,7 +209,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
                 )
             )
             let partial = try XCTUnwrap(upserts(in: partialUpdate).first)
-            XCTAssertFalse(partial.isReadyForDispatch)
+            XCTAssertTrue(partial.isReadyForDispatch)
 
             let completeUpdate = scanner.ingest(
                 StreamingNumberedCommandSegment(
@@ -237,17 +224,14 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
             let complete = try XCTUnwrap(upserts(in: completeUpdate).first)
             XCTAssertEqual(complete.id, partial.id)
             XCTAssertEqual(complete.command, .copyNamed(revisionWords.complete))
-            XCTAssertFalse(complete.isReadyForDispatch)
+            XCTAssertTrue(complete.isReadyForDispatch)
 
             let finalizationUpdate = scanner.advanceFinalization(to: time(1.20))
-            let finalized = try XCTUnwrap(upserts(in: finalizationUpdate).first)
-            XCTAssertEqual(finalized.id, partial.id)
-            XCTAssertEqual(finalized.command, .copyNamed(revisionWords.complete))
-            XCTAssertTrue(finalized.isReadyForDispatch)
+            XCTAssertTrue(finalizationUpdate.mutations.isEmpty)
         }
     }
 
-    func testSummaryRemainsPendingUntilFullRevisionAndResultFinalization() throws {
+    func testSummaryRevisionDoesNotWaitForResultFinalization() throws {
         var scanner = StreamingNumberedCommandScanner()
         let partialUpdate = scanner.ingest(
             StreamingNumberedCommandSegment(
@@ -261,7 +245,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
         )
         let partial = try XCTUnwrap(upserts(in: partialUpdate).first)
         XCTAssertEqual(partial.command, .copyNamed("sum"))
-        XCTAssertFalse(partial.isReadyForDispatch)
+        XCTAssertTrue(partial.isReadyForDispatch)
 
         let revisionUpdate = scanner.ingest(
             StreamingNumberedCommandSegment(
@@ -276,13 +260,10 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
         let revision = try XCTUnwrap(upserts(in: revisionUpdate).first)
         XCTAssertEqual(revision.id, partial.id)
         XCTAssertEqual(revision.command, .copyNamed("summary"))
-        XCTAssertFalse(revision.isReadyForDispatch)
+        XCTAssertTrue(revision.isReadyForDispatch)
 
         let finalizationUpdate = scanner.advanceFinalization(to: time(1.20))
-        let finalized = try XCTUnwrap(upserts(in: finalizationUpdate).first)
-        XCTAssertEqual(finalized.id, partial.id)
-        XCTAssertEqual(finalized.command, .copyNamed("summary"))
-        XCTAssertTrue(finalized.isReadyForDispatch)
+        XCTAssertTrue(finalizationUpdate.mutations.isEmpty)
     }
 
     func testExternalFinalizationCanArriveBeforeTheTextResult() throws {

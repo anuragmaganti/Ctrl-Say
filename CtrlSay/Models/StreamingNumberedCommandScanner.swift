@@ -473,7 +473,14 @@ struct StreamingNumberedCommandScanner {
             || argument.segmentRange.isFinalized(through: finalizedThrough)
 
         switch command {
-        case .copyNamed, .permanentCopy:
+        case .copyNamed:
+            // Temporary named copies are latency-first, just like numbered
+            // copies. Trust Apple's complete volatile two-token command; its
+            // audio identity still deduplicates later punctuation and final
+            // echoes. Do not wait for result finalization.
+            return true
+
+        case .permanentCopy:
             // Keep replacing unfinished volatile prefixes, but trust Apple's
             // explicit phrase boundary as soon as it appears. The boundary is
             // dispatch metadata only; punctuation never becomes part of the
