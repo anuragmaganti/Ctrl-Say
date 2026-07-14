@@ -24,6 +24,9 @@ struct DashboardView: View {
                         if !model.isReadyForCommands {
                             setupModule
                         }
+                        if !model.hasAnsweredLaunchAtLoginOnboarding {
+                            launchAtLoginOnboardingModule
+                        }
                     }
 
                     copiesSection
@@ -222,6 +225,45 @@ struct DashboardView: View {
         .background(.quaternary, in: .rect(cornerRadius: 14))
     }
 
+    private var launchAtLoginOnboardingModule: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 11) {
+                Image(systemName: "power.circle")
+                    .font(.system(size: 21, weight: .medium))
+                    .foregroundStyle(.tint)
+                    .frame(width: 24)
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Open Ctrl-Say at Login?")
+                        .font(.callout.weight(.semibold))
+                    Text("Keep voice commands ready after you restart your Mac. You can change this later in Settings.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            HStack {
+                Spacer()
+                Button("Not Now") {
+                    model.completeLaunchAtLoginOnboarding(enable: false)
+                }
+                .controlSize(.small)
+
+                Button("Turn On") {
+                    model.completeLaunchAtLoginOnboarding(enable: true)
+                }
+                .buttonStyle(.glassProminent)
+                .controlSize(.small)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.quaternary, in: .rect(cornerRadius: 14))
+        .accessibilityElement(children: .contain)
+    }
+
     private func permissionRow(
         icon: String,
         title: String,
@@ -294,7 +336,7 @@ struct DashboardView: View {
             emptyState(
                 icon: "square.stack.3d.up",
                 title: "No temporary copies",
-                instruction: "Say “copy one” or “copy house” with something selected."
+                instruction: "Say “copy one,” “copy house,” or “copy my new york address” with something selected."
             )
         } else {
             let rowCount = numberedSlots.count + namedSlots.count

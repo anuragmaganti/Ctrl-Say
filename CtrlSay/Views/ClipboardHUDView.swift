@@ -124,7 +124,7 @@ struct ClipboardHUDView: View {
                 emptyState(
                     icon: "square.stack",
                     title: "No temporary copies",
-                    detail: "Say “copy 1” or “copy house”."
+                    detail: "Say “copy 1,” “copy house,” or a short named phrase."
                 )
                 .temporarySlotListRow(showsBottomSeparator: false)
             } else {

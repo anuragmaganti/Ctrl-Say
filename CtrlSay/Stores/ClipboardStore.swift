@@ -133,6 +133,29 @@ final class ClipboardStore {
         return newName
     }
 
+    @discardableResult
+    func renameTemporaryNamed(
+        from currentName: String,
+        to requestedName: String
+    ) throws -> String {
+        let oldName = VoiceCommandParser.normalizeName(currentName)
+        let newName = try validateTemporaryNameAvailable(requestedName)
+        guard let payload = temporaryNamed[oldName] else {
+            throw ClipboardStoreError.missingTemporaryCopy
+        }
+        guard oldName != newName else { return newName }
+        guard temporaryNamed[newName] == nil else {
+            throw ClipboardStoreError.temporaryNameAlreadyExists(newName)
+        }
+
+        temporaryNamed[newName] = payload
+        temporaryNamed.removeValue(forKey: oldName)
+        if let index = temporaryNamedOrder.firstIndex(of: oldName) {
+            temporaryNamedOrder[index] = newName
+        }
+        return newName
+    }
+
     func payload(at number: Int) -> ClipboardPayload? {
         numbered[number]
     }
@@ -371,6 +394,7 @@ enum ClipboardStoreError: LocalizedError, Equatable {
     case nameProtectedByPermanentCopy(String)
     case temporaryNameAlreadyExists(String)
     case permanentNameAlreadyExists(String)
+    case missingTemporaryCopy
     case missingPermanentCopy
     case permanentCopyChanged
     case emptyContent
@@ -384,7 +408,7 @@ enum ClipboardStoreError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .invalidTemporaryName:
-            "Use a one-word name that is not a number."
+            "Use a name of one to five words that does not begin with a number."
         case .invalidPermanentName:
             "Use a name of one to three words that does not begin with a number."
         case .nameProtectedByPermanentCopy(let name):
@@ -393,6 +417,8 @@ enum ClipboardStoreError: LocalizedError, Equatable {
             "A temporary copy named “\(name)” already exists."
         case .permanentNameAlreadyExists(let name):
             "A permanent copy named “\(name)” already exists."
+        case .missingTemporaryCopy:
+            "That temporary copy no longer exists."
         case .missingPermanentCopy:
             "That permanent copy no longer exists."
         case .permanentCopyChanged:

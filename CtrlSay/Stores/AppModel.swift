@@ -8,6 +8,7 @@ import Observation
 final class AppModel {
     let slots = ClipboardStore()
     let speech = SpeechRecognitionService()
+    let launchAtLogin = LaunchAtLoginController()
 
     private(set) var lastAction = "Ready"
     private(set) var lastError: String?
@@ -17,6 +18,7 @@ final class AppModel {
     private(set) var isClipboardHUDPresented = false
     private(set) var permanentStorageState: PermanentCopyPersistenceState = .loading
     private(set) var notchFeedbackSignal: NotchFeedbackSignal?
+    private(set) var hasAnsweredLaunchAtLoginOnboarding: Bool
 
 #if DEBUG
     private(set) var debugDiagnostics = DebugPipelineSnapshot()
@@ -57,6 +59,9 @@ final class AppModel {
         permanentRepository: any PermanentCopyPersisting = PermanentCopyRepository()
     ) {
         self.permanentRepository = permanentRepository
+        hasAnsweredLaunchAtLoginOnboarding = UserDefaults.standard.bool(
+            forKey: CtrlSayPreferenceKey.answeredLaunchAtLoginOnboarding
+        )
         hasEventPostingAccess = clipboard.hasEventPostingAccess
         speech.onResult = { [weak self] result in
             self?.received(result)
@@ -72,6 +77,42 @@ final class AppModel {
         hasKeyboardMonitoringAccess = monitor.hasGlobalMonitoringAccess
         monitor.start()
         startPermanentStorageRestore()
+    }
+
+    func completeLaunchAtLoginOnboarding(enable: Bool) {
+        let updated = enable ? launchAtLogin.setEnabled(true) : true
+        hasAnsweredLaunchAtLoginOnboarding = true
+        UserDefaults.standard.set(
+            true,
+            forKey: CtrlSayPreferenceKey.answeredLaunchAtLoginOnboarding
+        )
+
+        if enable {
+            if launchAtLogin.state == .requiresApproval {
+                launchAtLogin.openSystemSettings()
+            }
+            if updated {
+                lastAction = "Launch at Login enabled"
+            } else {
+                lastError = launchAtLogin.errorMessage
+                lastAction = "Login Item setting unavailable"
+            }
+        } else {
+            lastAction = "Launch at Login skipped"
+        }
+    }
+
+    func setLaunchAtLoginEnabled(_ isEnabled: Bool) {
+        _ = launchAtLogin.setEnabled(isEnabled)
+        hasAnsweredLaunchAtLoginOnboarding = true
+        UserDefaults.standard.set(
+            true,
+            forKey: CtrlSayPreferenceKey.answeredLaunchAtLoginOnboarding
+        )
+    }
+
+    func refreshLaunchAtLogin() {
+        launchAtLogin.refresh()
     }
 
     var hasPendingPermanentWrites: Bool {
@@ -402,7 +443,7 @@ final class AppModel {
         let gatedCommand: VoiceCommand?
         switch exactCommand {
         case .copyNumber, .pasteNumber, .copyNamed:
-            // Fast two-token commands are owned by the timeline scanner.
+            // Fast copy and paste commands are owned by the timeline scanner.
             // Sending an exact match through both paths would execute final
             // echoes twice.
             gatedCommand = nil
@@ -412,7 +453,10 @@ final class AppModel {
             // finalizes. Multiword permanent names keep the whole-phrase gate
             // because their end is otherwise ambiguous.
             gatedCommand = nil
-        case .pasteNamed(let name) where !name.contains(" "):
+        case .pasteNamed:
+            // The timeline scanner owns all known-name pastes, including
+            // multiword names, so growing volatile results cannot execute
+            // through both the scanner and whole-result gate.
             gatedCommand = nil
         default:
             gatedCommand = exactCommand
@@ -917,7 +961,6 @@ final class AppModel {
                     )
 
                 case .copyNamed(let name):
-                    try requirePermanentStorage()
                     let candidateID: StreamingNumberedCommandID?
                     if case .numbered(let id) = identity {
                         candidateID = id
@@ -1007,12 +1050,46 @@ final class AppModel {
                         label: name
                     )
 
-                case .deleteNamed(let name):
-                    try requirePermanentStorage()
-                    guard removePermanentCopy(named: name) else {
-                        throw AppModelError.missingNamedCopy
+                case .deleteNumber(let number):
+                    guard slots.removeNumbered(number) != nil else {
+                        throw AppModelError.emptyNumberedSlot(number)
                     }
-                    lastAction = "Deleted permanent copy"
+                    lastAction = "Deleted copy \(number)"
+
+                case .deleteNamed(let name):
+                    if slots.removeTemporaryNamed(name) != nil {
+                        scheduleVocabularyRefresh()
+                        lastAction = "Deleted temporary copy"
+                    } else {
+                        try requirePermanentStorage()
+                        guard removePermanentCopy(named: name) else {
+                            throw AppModelError.missingNamedCopy
+                        }
+                        lastAction = "Deleted permanent copy"
+                    }
+
+                case .promoteTemporaryNamed(let name):
+                    try requirePermanentStorage()
+                    guard let normalizedName = VoiceCommandParser.validNormalizedPermanentName(name) else {
+                        throw ClipboardStoreError.invalidPermanentName
+                    }
+                    guard let payload = slots.payload(temporaryNamed: normalizedName) else {
+                        throw ClipboardStoreError.missingTemporaryCopy
+                    }
+                    try slots.set(payload, named: normalizedName)
+                    enqueuePermanentMutation(
+                        .upsert(name: normalizedName, payload: payload)
+                    )
+                    scheduleVocabularyRefresh()
+                    lastAction = "Made \(normalizedName) permanent"
+
+                case .renameTemporaryNamed(let currentName, let requestedName):
+                    let revisedName = try slots.renameTemporaryNamed(
+                        from: currentName,
+                        to: requestedName
+                    )
+                    scheduleVocabularyRefresh()
+                    lastAction = "Renamed to \(revisedName)"
 
                 case .clearTemporary:
                     slots.clearTemporary()
@@ -1176,6 +1253,8 @@ final class AppModel {
             case .temporaryNameAlreadyExists, .permanentNameAlreadyExists:
                 return "Name already exists"
             case .missingPermanentCopy:
+                return "Copy not found"
+            case .missingTemporaryCopy:
                 return "Copy not found"
             case .permanentCopyChanged:
                 return "Copy changed — try again"

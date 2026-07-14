@@ -480,11 +480,24 @@ final class SpeechRecognitionService {
 
     private func commandVocabulary(namedCopies: [String]) -> [String] {
         var vocabulary = VoiceCommandParser.canonicalSpokenSlotNumbers.flatMap {
-            ["copy \($0)", "paste \($0)"]
+            ["copy \($0)", "paste \($0)", "delete \($0)"]
         }
-        vocabulary += ["permanent copy", "clear copies"]
+        vocabulary += [
+            "permanent copy",
+            "clear copies",
+            "clear temporary copies",
+            "make permanent",
+            "rename to"
+        ]
         vocabulary += namedCopies.flatMap {
-            ["copy \($0)", "paste \($0)", "permanent copy \($0)"]
+            [
+                "copy \($0)",
+                "paste \($0)",
+                "permanent copy \($0)",
+                "delete \($0)",
+                "make \($0) permanent",
+                "rename \($0) to"
+            ]
         }
         return vocabulary
     }

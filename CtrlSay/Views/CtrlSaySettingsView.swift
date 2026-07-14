@@ -9,6 +9,50 @@ struct CtrlSaySettingsView: View {
 
     var body: some View {
         Form {
+            Section("Startup") {
+                Toggle(
+                    "Open Ctrl-Say at Login",
+                    isOn: Binding(
+                        get: { model.launchAtLogin.isEnabled },
+                        set: { isEnabled in
+                            model.setLaunchAtLoginEnabled(isEnabled)
+                        }
+                    )
+                )
+
+                Text("Starts Ctrl-Say automatically when you sign in to this Mac.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                if model.launchAtLogin.state == .requiresApproval {
+                    HStack(alignment: .firstTextBaseline) {
+                        Label(
+                            "Approval is required in Login Items.",
+                            systemImage: "exclamationmark.triangle.fill"
+                        )
+                        .foregroundStyle(.orange)
+                        Spacer()
+                        Button("Open System Settings") {
+                            model.launchAtLogin.openSystemSettings()
+                        }
+                    }
+                }
+
+                if model.launchAtLogin.state == .unavailable {
+                    Label(
+                        "Launch at Login is unavailable for this app build.",
+                        systemImage: "exclamationmark.triangle.fill"
+                    )
+                    .foregroundStyle(.orange)
+                }
+
+                if let errorMessage = model.launchAtLogin.errorMessage {
+                    Text(errorMessage)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+            }
+
             Section("Clipboard HUD") {
                 Toggle(
                     "Show Clipboard HUD when Right Option starts listening",
@@ -44,8 +88,11 @@ struct CtrlSaySettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 500, height: 310)
+        .frame(width: 500, height: 440)
         .navigationTitle("General")
+        .onAppear {
+            model.refreshLaunchAtLogin()
+        }
         .alert(
             "Reset Permanent Storage?",
             isPresented: $confirmsPermanentStorageReset

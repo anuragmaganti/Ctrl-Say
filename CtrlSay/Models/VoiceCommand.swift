@@ -6,7 +6,10 @@ enum VoiceCommand: Equatable, Sendable {
     case copyNamed(String)
     case permanentCopy(String)
     case pasteNamed(String)
+    case deleteNumber(Int)
     case deleteNamed(String)
+    case promoteTemporaryNamed(String)
+    case renameTemporaryNamed(from: String, to: String)
     case clearTemporary
 
     var telemetryName: String {
@@ -16,7 +19,10 @@ enum VoiceCommand: Equatable, Sendable {
         case .copyNamed: "copy-temporary-named"
         case .permanentCopy: "copy-named"
         case .pasteNamed: "paste-named"
+        case .deleteNumber: "delete-number"
         case .deleteNamed: "delete-named"
+        case .promoteTemporaryNamed: "promote-temporary-named"
+        case .renameTemporaryNamed: "rename-temporary-named"
         case .clearTemporary: "clear-temporary"
         }
     }
@@ -25,7 +31,8 @@ enum VoiceCommand: Equatable, Sendable {
         switch self {
         case .copyNumber, .pasteNumber, .copyNamed, .permanentCopy, .pasteNamed:
             true
-        case .deleteNamed, .clearTemporary:
+        case .deleteNumber, .deleteNamed, .promoteTemporaryNamed,
+             .renameTemporaryNamed, .clearTemporary:
             false
         }
     }
@@ -37,6 +44,8 @@ enum VoiceCommandParser {
         "six", "seven", "eight", "nine", "ten",
     ]
     static let numberedSlotRange = 1...canonicalSpokenSlotNumbers.count
+    static let temporaryNameWordRange = 1...5
+    static let permanentNameWordRange = 1...3
 
     // Scoped to the command verb position. These are common on-device
     // transcriptions of a spoken "paste" and must never rewrite slot names or
@@ -64,35 +73,67 @@ enum VoiceCommandParser {
     static func parse(_ transcript: String) -> VoiceCommand? {
         let tokens = normalizedTokens(transcript)
 
-        if tokens == ["clear", "copies"] || tokens == ["clear", "numbered", "copies"] {
+        if tokens == ["clear", "copies"]
+            || tokens == ["clear", "numbered", "copies"]
+            || tokens == ["clear", "temporary", "copies"] {
             return .clearTemporary
         }
 
-        if tokens.count == 2, tokens[0] == "copy" {
-            if let number = slotNumber(tokens[1]) {
-                return .copyNumber(number)
-            }
-            return validTemporaryNameTokens([tokens[1]]).map(VoiceCommand.copyNamed)
+        if tokens.starts(with: ["delete", "permanent", "copy"]) {
+            return validPermanentNameTokens(Array(tokens.dropFirst(3)))
+                .map(VoiceCommand.deleteNamed)
         }
 
-        if tokens.count == 2, isPasteVerb(tokens[0]) {
-            let value = tokens[1]
-            if let number = slotNumber(value) {
+        if tokens.first == "delete", tokens.count >= 2 {
+            let nameTokens = Array(tokens.dropFirst())
+            if nameTokens.count == 1,
+               let number = slotNumber(nameTokens[0]) {
+                return .deleteNumber(number)
+            }
+            return validTemporaryNameTokens(nameTokens)
+                .map(VoiceCommand.deleteNamed)
+        }
+
+        if tokens.first == "make", tokens.last == "permanent",
+           tokens.count >= 3 {
+            return validPermanentNameTokens(
+                Array(tokens.dropFirst().dropLast())
+            ).map(VoiceCommand.promoteTemporaryNamed)
+        }
+
+        if tokens.first == "rename", tokens.count >= 4,
+           let separator = tokens.lastIndex(of: "to"), separator > 1,
+           separator < tokens.index(before: tokens.endIndex),
+           let source = validTemporaryNameTokens(
+               Array(tokens[1..<separator])
+           ),
+           let destination = validTemporaryNameTokens(
+               Array(tokens[tokens.index(after: separator)...])
+           ) {
+            return .renameTemporaryNamed(from: source, to: destination)
+        }
+
+        if tokens.count >= 2, tokens[0] == "copy" {
+            if let number = slotNumber(tokens[1]) {
+                return tokens.count == 2 ? .copyNumber(number) : nil
+            }
+            return validTemporaryNameTokens(Array(tokens.dropFirst()))
+                .map(VoiceCommand.copyNamed)
+        }
+
+        if tokens.count >= 2, isPasteVerb(tokens[0]) {
+            let nameTokens = Array(tokens.dropFirst())
+            if nameTokens.count == 1,
+               let number = slotNumber(nameTokens[0]) {
                 return .pasteNumber(number)
             }
-            return validNameTokens([value]).map(VoiceCommand.pasteNamed)
+            return validTemporaryNameTokens(nameTokens)
+                .map(VoiceCommand.pasteNamed)
         }
 
         if tokens.starts(with: ["permanent", "copy"]) {
-            return validNameTokens(Array(tokens.dropFirst(2))).map(VoiceCommand.permanentCopy)
-        }
-
-        if let first = tokens.first, isPasteVerb(first) {
-            return validNameTokens(Array(tokens.dropFirst())).map(VoiceCommand.pasteNamed)
-        }
-
-        if tokens.starts(with: ["delete", "permanent", "copy"]) {
-            return validNameTokens(Array(tokens.dropFirst(3))).map(VoiceCommand.deleteNamed)
+            return validPermanentNameTokens(Array(tokens.dropFirst(2)))
+                .map(VoiceCommand.permanentCopy)
         }
 
         return nil
@@ -110,7 +151,7 @@ enum VoiceCommandParser {
     }
 
     static func validNormalizedPermanentName(_ name: String) -> String? {
-        validNameTokens(normalizedTokens(name))
+        validPermanentNameTokens(normalizedTokens(name))
     }
 
     static func validNormalizedTemporaryName(_ name: String) -> String? {
@@ -124,7 +165,9 @@ enum VoiceCommandParser {
         // Volatile recognition can publish "cop…" or "copy" before the
         // numbered argument arrives. Keep that range as an ordering barrier
         // without retaining the transcript itself.
-        let commandBeginnings = ["copy", "paste", "permanent", "delete", "clear"]
+        let commandBeginnings = [
+            "copy", "paste", "permanent", "delete", "clear", "make", "rename",
+        ]
             + pasteVerbAliases
         return commandBeginnings.contains {
             $0.hasPrefix(first) || first.hasPrefix($0)
@@ -161,8 +204,11 @@ enum VoiceCommandParser {
         token == "paste" || pasteVerbAliases.contains(token)
     }
 
-    private static func validNameTokens(_ tokens: [String]) -> String? {
-        guard (1...3).contains(tokens.count),
+    private static func validNameTokens(
+        _ tokens: [String],
+        wordRange: ClosedRange<Int>
+    ) -> String? {
+        guard wordRange.contains(tokens.count),
               Int(tokens[0]) == nil,
               slotNumber(tokens[0]) == nil else {
             return nil
@@ -171,8 +217,11 @@ enum VoiceCommandParser {
     }
 
     private static func validTemporaryNameTokens(_ tokens: [String]) -> String? {
-        guard tokens.count == 1 else { return nil }
-        return validNameTokens(tokens)
+        validNameTokens(tokens, wordRange: temporaryNameWordRange)
+    }
+
+    private static func validPermanentNameTokens(_ tokens: [String]) -> String? {
+        validNameTokens(tokens, wordRange: permanentNameWordRange)
     }
 }
 
@@ -188,21 +237,22 @@ enum VolatileCommandAcceptancePolicy {
         knownNamedCopies: Names
     ) -> Bool where Names.Element == String {
         switch command {
-        case .copyNumber, .pasteNumber:
+        case .copyNumber, .pasteNumber, .deleteNumber:
             // Closed-vocabulary numbered commands keep the fastest path.
             return true
 
         case .copyNamed:
-            // The streaming scanner owns arbitrary one-word names and releases
-            // them only after Apple's finalization watermark clears the name.
+            // The streaming scanner owns arbitrary temporary names and can
+            // revise the same capture as Apple extends the spoken label.
             return false
 
-        case .permanentCopy, .deleteNamed:
+        case .permanentCopy, .renameTemporaryNamed:
             // A new arbitrary name has no known word boundary. The result gate
             // releases the last stable candidate when Apple finalizes its range.
             return false
 
-        case .pasteNamed(let name):
+        case .pasteNamed(let name), .deleteNamed(let name),
+             .promoteTemporaryNamed(let name):
             // Existing names form a closed vocabulary just like numbered
             // slots. Apple can omit confidence from otherwise complete
             // volatile results, so requiring it here forces a known paste to

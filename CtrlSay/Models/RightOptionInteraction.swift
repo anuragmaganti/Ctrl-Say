@@ -46,6 +46,8 @@ enum CtrlSayPreferenceKey {
     static let showHUDWhenRightOptionStartsListening =
         "showHUDWhenRightOptionStartsListening"
     static let hudPositionsByDisplay = "clipboardHUDPositionsByDisplay"
+    static let answeredLaunchAtLoginOnboarding =
+        "answeredLaunchAtLoginOnboarding"
 }
 
 enum RightOptionEventFilter {

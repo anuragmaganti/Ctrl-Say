@@ -153,11 +153,17 @@ final class ClipboardStoreMutationTests: XCTestCase {
     }
 
     @MainActor
-    func testTemporaryNamedCopyRejectsNumbersAndMultipleWords() {
+    func testTemporaryNamedCopyAcceptsUpToFiveWordsAndRejectsInvalidNames() throws {
         let store = ClipboardStore()
         let payload = makeTextPayload("Temporary")
 
-        for name in ["", "1", "one", "too", "home office"] {
+        try store.setTemporaryNamed(payload, named: "My New York Address")
+        XCTAssertEqual(
+            store.payload(temporaryNamed: "my new york address"),
+            payload
+        )
+
+        for name in ["", "1", "one", "too", "this name has more than five words"] {
             XCTAssertThrowsError(
                 try store.setTemporaryNamed(payload, named: name)
             ) { error in
@@ -167,8 +173,51 @@ final class ClipboardStoreMutationTests: XCTestCase {
                 )
             }
         }
-        XCTAssertTrue(store.temporaryNamed.isEmpty)
-        XCTAssertEqual(store.totalByteCount, 0)
+        XCTAssertEqual(store.temporaryNamed.count, 1)
+        XCTAssertEqual(store.totalByteCount, payload.byteCount)
+    }
+
+    @MainActor
+    func testVoiceStyleTemporaryRenamePreservesPayloadAndInsertionOrder() throws {
+        let store = ClipboardStore()
+        let first = makeTextPayload("First")
+        let second = makeTextPayload("Second")
+        try store.setTemporaryNamed(first, named: "my new york address")
+        try store.setTemporaryNamed(second, named: "green grapes passage")
+
+        let revised = try store.renameTemporaryNamed(
+            from: "my new york address",
+            to: "primary address"
+        )
+
+        XCTAssertEqual(revised, "primary address")
+        XCTAssertNil(store.payload(temporaryNamed: "my new york address"))
+        XCTAssertEqual(store.payload(temporaryNamed: "primary address"), first)
+        XCTAssertEqual(
+            store.temporaryNamedSlots.map(\.name),
+            ["primary address", "green grapes passage"]
+        )
+    }
+
+    @MainActor
+    func testVoiceStyleTemporaryRenameRejectsCollisionAndMissingSource() throws {
+        let store = ClipboardStore()
+        try store.setTemporaryNamed(makeTextPayload("First"), named: "house")
+        try store.setTemporaryNamed(makeTextPayload("Second"), named: "home")
+
+        XCTAssertThrowsError(
+            try store.renameTemporaryNamed(from: "house", to: "home")
+        ) { error in
+            XCTAssertEqual(
+                error as? ClipboardStoreError,
+                .temporaryNameAlreadyExists("home")
+            )
+        }
+        XCTAssertThrowsError(
+            try store.renameTemporaryNamed(from: "missing", to: "office")
+        ) { error in
+            XCTAssertEqual(error as? ClipboardStoreError, .missingTemporaryCopy)
+        }
     }
 
     @MainActor

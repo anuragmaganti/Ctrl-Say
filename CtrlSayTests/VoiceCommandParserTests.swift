@@ -265,20 +265,105 @@ final class VoiceCommandParserTests: XCTestCase {
         }
     }
 
-    func testTemporaryNamesAreOneWordAndCannotUseNumberAliases() {
+    func testTemporaryNamesAllowOneToFiveWordsAndCannotUseNumberAliases() {
         XCTAssertEqual(
             VoiceCommandParser.validNormalizedTemporaryName(" HOUSE! "),
             "house"
         )
         XCTAssertEqual(
-            VoiceCommandParser.parse("paste house"),
-            .pasteNamed("house")
+            VoiceCommandParser.validNormalizedTemporaryName("My New York Address"),
+            "my new york address"
+        )
+        XCTAssertEqual(
+            VoiceCommandParser.parse("copy this first paragraph"),
+            .copyNamed("this first paragraph")
+        )
+        XCTAssertEqual(
+            VoiceCommandParser.parse("copy green grapes passage"),
+            .copyNamed("green grapes passage")
+        )
+        XCTAssertEqual(
+            VoiceCommandParser.parse("paste my new york address"),
+            .pasteNamed("my new york address")
         )
 
-        for invalidName in ["", "2", "two", "too", "home office"] {
+        for invalidName in [
+            "", "2", "two", "too", "this name has more than five words",
+        ] {
             XCTAssertNil(
                 VoiceCommandParser.validNormalizedTemporaryName(invalidName)
             )
         }
+    }
+
+    func testVoiceSlotManagementCommands() {
+        let cases: [(String, VoiceCommand)] = [
+            ("delete 2", .deleteNumber(2)),
+            ("DELETE House!", .deleteNamed("house")),
+            ("delete my new york address", .deleteNamed("my new york address")),
+            ("clear temporary copies", .clearTemporary),
+            ("make house permanent", .promoteTemporaryNamed("house")),
+            (
+                "rename house to home",
+                .renameTemporaryNamed(from: "house", to: "home")
+            ),
+            (
+                "rename my new york address to primary address",
+                .renameTemporaryNamed(
+                    from: "my new york address",
+                    to: "primary address"
+                )
+            ),
+        ]
+
+        for (transcript, expected) in cases {
+            XCTAssertEqual(VoiceCommandParser.parse(transcript), expected)
+        }
+    }
+
+    func testVolatileManagementCommandsUseClosedVocabularySafety() {
+        XCTAssertTrue(
+            VolatileCommandAcceptancePolicy.accepts(
+                .deleteNumber(2),
+                confidence: nil,
+                knownNamedCopies: []
+            )
+        )
+        for command in [
+            VoiceCommand.deleteNamed("house"),
+            VoiceCommand.promoteTemporaryNamed("house"),
+        ] {
+            XCTAssertTrue(
+                VolatileCommandAcceptancePolicy.accepts(
+                    command,
+                    confidence: nil,
+                    knownNamedCopies: ["house"]
+                )
+            )
+            XCTAssertFalse(
+                VolatileCommandAcceptancePolicy.accepts(
+                    command,
+                    confidence: 1,
+                    knownNamedCopies: ["house notes"]
+                )
+            )
+        }
+        XCTAssertFalse(
+            VolatileCommandAcceptancePolicy.accepts(
+                .renameTemporaryNamed(from: "house", to: "home"),
+                confidence: 1,
+                knownNamedCopies: ["house"]
+            )
+        )
+    }
+
+    func testPromotionRetainsPermanentNameLimit() {
+        XCTAssertEqual(
+            VoiceCommandParser.parse("make shipping address permanent"),
+            .promoteTemporaryNamed("shipping address")
+        )
+        XCTAssertNil(
+            VoiceCommandParser.parse("make my new york address permanent")
+        )
     }
 }

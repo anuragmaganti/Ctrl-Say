@@ -140,6 +140,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Returning from Privacy & Security should make the shortcut usable
         // immediately after the user grants Input Monitoring access.
         model.refreshPermissions()
+        model.refreshLaunchAtLogin()
         updateStatusItemPresentation()
     }
 
@@ -168,7 +169,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let title: String
         let toolTip: String
 
-        if !model.isReadyForCommands {
+        if !model.isReadyForCommands
+            || !model.hasAnsweredLaunchAtLoginOnboarding {
             symbolName = "checklist"
             title = " Setup"
             toolTip = "Ctrl-Say — Complete setup"
@@ -214,6 +216,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             _ = model.speech.microphoneAuthorization
             _ = model.hasKeyboardMonitoringAccess
             _ = model.hasEventPostingAccess
+            _ = model.hasAnsweredLaunchAtLoginOnboarding
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -454,7 +457,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func presentSetupIfNeeded() {
         model.refreshPermissions()
-        guard !model.isReadyForCommands,
+        model.refreshLaunchAtLogin()
+        guard (!model.isReadyForCommands
+                || !model.hasAnsweredLaunchAtLoginOnboarding),
               !dashboardPanel.isShown,
               let button = statusItem?.button else {
             return

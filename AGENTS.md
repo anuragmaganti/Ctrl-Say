@@ -23,7 +23,7 @@
 
 ## Slot lifetime
 
-- Numbered slots and unprefixed one-word named slots are temporary, memory-only working slots. Reusing a number or name replaces it, and all temporary slots are cleared when the app quits or the user clears them.
+- Numbered slots and unprefixed one-to-five-word named slots are temporary, memory-only working slots. Reusing a number or name replaces it, and all temporary slots are cleared when the app quits or the user clears them.
 - `permanent copy <name>` stores a normalized one-to-three-word name in a protected namespace. Permanent copies persist locally across quits, restarts, rebuilds, and app updates until explicitly deleted; temporary commands cannot overwrite them and no permanent data syncs to the cloud.
 
 ## Interaction and UI

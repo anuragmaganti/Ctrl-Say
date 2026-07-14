@@ -62,7 +62,7 @@ struct NumberedCopyRow: View {
             leadingView
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("Slot \(number)")
+                Text("\(number)")
                     .font(.callout.weight(.semibold))
                     .lineLimit(1)
                 Text(payload.preview)
@@ -98,12 +98,6 @@ struct NumberedCopyRow: View {
                 payload: payload,
                 provider: thumbnailProvider
             )
-        } else if !style.showsThumbnail {
-            Text("\(number)")
-                .font(.callout.monospacedDigit().weight(.semibold))
-                .frame(width: 30, height: 30)
-                .background(.quaternary, in: .rect(cornerRadius: 8))
-                .accessibilityHidden(true)
         }
     }
 

@@ -61,8 +61,9 @@ struct StreamingNumberedCommandScannerUpdate: Equatable, Sendable {
     let mutations: [StreamingNumberedCommandMutation]
 }
 
-/// Extracts numbered, one-word named, and one-word permanent-copy commands
-/// from a revisable speech timeline.
+/// Extracts numbered, temporary named, and one-word permanent-copy commands
+/// from a revisable speech timeline. Temporary names may contain up to five
+/// words and expand under the same audio identity as Apple revises the result.
 ///
 /// A candidate stays mutable until `markCommitted(_:)` is called. A committed
 /// candidate becomes a tombstone, so Apple's final-result echo or a later text
@@ -330,13 +331,7 @@ struct StreamingNumberedCommandScanner {
             }
 
             let verb = resolvedTokens[index]
-            let argument = resolvedTokens[index + 1]
-            guard let canonicalVerb = VoiceCommandParser.canonicalNumberedCommandVerb(
-                verb.text
-            ) else {
-                continue
-            }
-            if canonicalVerb == "copy", index > 0 {
+            if verb.text == "copy", index > 0 {
                 let precedingToken = resolvedTokens[index - 1]
                 if VoiceCommandParser.isPotentialPermanentModifier(
                     precedingToken.text
@@ -347,59 +342,173 @@ struct StreamingNumberedCommandScanner {
                     continue
                 }
             }
-            guard canBridge(verb, to: argument) else { continue }
-            guard let command = VoiceCommandParser.parse(
-                "\(canonicalVerb) \(argument.text)"
+            guard let candidate = temporaryCommandCandidate(
+                startingAt: index,
+                in: resolvedTokens,
+                knownNamedCopies: availableNamedCopies,
+                order: snapshots.count
             ) else {
                 continue
             }
-            switch command {
-            case .copyNumber, .pasteNumber:
-                break
+            switch candidate.command {
             case .copyNamed(let name):
                 availableNamedCopies.insert(
                     VoiceCommandParser.normalizeName(name)
                 )
-            case .pasteNamed(let name):
-                guard availableNamedCopies.contains(
-                    VoiceCommandParser.normalizeName(name)
-                ) else {
-                    continue
-                }
             default:
-                continue
+                break
             }
-
-            let minimumConfidence: Double?
-            if let verbConfidence = verb.confidence,
-               let argumentConfidence = argument.confidence {
-                minimumConfidence = min(verbConfidence, argumentConfidence)
-            } else {
-                minimumConfidence = nil
-            }
-
-            snapshots.append(
-                CandidateSnapshot(
-                    anchors: [verb.anchor, argument.anchor],
-                    sourceSegmentIDs: [verb.segmentID, argument.segmentID],
-                    command: command,
-                    range: verb.range.union(argument.range),
-                    minimumConfidence: minimumConfidence,
-                    isReadyForDispatch: isReadyForDispatch(
-                        command,
-                        argument: argument,
-                        minimumConfidence: minimumConfidence,
-                        knownNamedCopies: storedNamedCopies
-                    ),
-                    isStableForCommit: isStableForCommit(
-                        command,
-                        argument: argument
-                    ),
-                    order: snapshots.count
-                )
-            )
+            snapshots.append(candidate)
         }
         return snapshots
+    }
+
+    private func temporaryCommandCandidate(
+        startingAt index: Int,
+        in tokens: [ResolvedToken],
+        knownNamedCopies: Set<String>,
+        order: Int
+    ) -> CandidateSnapshot? {
+        guard index + 1 < tokens.count else { return nil }
+        let verb = tokens[index]
+        guard let canonicalVerb = VoiceCommandParser.canonicalNumberedCommandVerb(
+            verb.text
+        ) else {
+            return nil
+        }
+        let firstArgument = tokens[index + 1]
+        guard canBridge(verb, to: firstArgument) else { return nil }
+
+        let arguments: [ResolvedToken]
+        if let numberedCommand = VoiceCommandParser.parse(
+            "\(canonicalVerb) \(firstArgument.text)"
+        ), case .copyNumber = numberedCommand {
+            arguments = [firstArgument]
+        } else if let numberedCommand = VoiceCommandParser.parse(
+            "\(canonicalVerb) \(firstArgument.text)"
+        ), case .pasteNumber = numberedCommand {
+            arguments = [firstArgument]
+        } else if canonicalVerb == "copy" {
+            arguments = temporaryNameArguments(
+                startingAt: index + 1,
+                in: tokens
+            )
+        } else {
+            arguments = longestKnownNameArguments(
+                startingAt: index + 1,
+                in: tokens,
+                knownNamedCopies: knownNamedCopies
+            )
+        }
+        guard let finalArgument = arguments.last else { return nil }
+
+        let spokenName = arguments.map(\.text).joined(separator: " ")
+        guard let command = VoiceCommandParser.parse(
+            "\(canonicalVerb) \(spokenName)"
+        ) else {
+            return nil
+        }
+        if case .pasteNamed(let name) = command,
+           !knownNamedCopies.contains(VoiceCommandParser.normalizeName(name)) {
+            return nil
+        }
+
+        let commandTokens = [verb] + arguments
+        let confidences = commandTokens.map(\.confidence)
+        let minimumConfidence = confidences.allSatisfy { $0 != nil }
+            ? confidences.compactMap { $0 }.min()
+            : nil
+        let range = commandTokens.dropFirst().reduce(verb.range) {
+            $0.union($1.range)
+        }
+
+        return CandidateSnapshot(
+            anchors: commandTokens.map(\.anchor),
+            sourceSegmentIDs: Set(commandTokens.map(\.segmentID)),
+            command: command,
+            range: range,
+            minimumConfidence: minimumConfidence,
+            isReadyForDispatch: isReadyForDispatch(
+                command,
+                argument: finalArgument,
+                minimumConfidence: minimumConfidence,
+                knownNamedCopies: knownNamedCopies
+            ),
+            isStableForCommit: isStableForCommit(
+                command,
+                argument: finalArgument
+            ),
+            order: order
+        )
+    }
+
+    private func temporaryNameArguments(
+        startingAt start: Int,
+        in tokens: [ResolvedToken]
+    ) -> [ResolvedToken] {
+        var arguments: [ResolvedToken] = []
+        var previous: ResolvedToken?
+
+        for index in start..<tokens.count {
+            let token = tokens[index]
+            if let previous, !canBridge(previous, to: token) { break }
+            if !arguments.isEmpty, isExplicitCommandBoundary(token.text) { break }
+            if beginsCommandTransition(at: index, in: tokens) { break }
+            guard arguments.count < VoiceCommandParser.temporaryNameWordRange.upperBound else {
+                break
+            }
+            arguments.append(token)
+            previous = token
+            if token.hasExplicitPhraseBoundary { break }
+        }
+        return arguments
+    }
+
+    private func longestKnownNameArguments(
+        startingAt start: Int,
+        in tokens: [ResolvedToken],
+        knownNamedCopies: Set<String>
+    ) -> [ResolvedToken] {
+        var arguments: [ResolvedToken] = []
+        var longestMatch: [ResolvedToken] = []
+        var previous: ResolvedToken?
+
+        for index in start..<tokens.count {
+            let token = tokens[index]
+            if let previous, !canBridge(previous, to: token) { break }
+            if !arguments.isEmpty, isExplicitCommandBoundary(token.text) { break }
+            guard arguments.count < VoiceCommandParser.temporaryNameWordRange.upperBound else {
+                break
+            }
+            arguments.append(token)
+            previous = token
+            let name = VoiceCommandParser.normalizeName(
+                arguments.map(\.text).joined(separator: " ")
+            )
+            if knownNamedCopies.contains(name) {
+                longestMatch = arguments
+            }
+            if token.hasExplicitPhraseBoundary { break }
+        }
+        return longestMatch
+    }
+
+    private func beginsCommandTransition(
+        at index: Int,
+        in tokens: [ResolvedToken]
+    ) -> Bool {
+        guard tokens[index].text == "and" || tokens[index].text == "then" else {
+            return false
+        }
+        let nextIndex = index + 1
+        guard nextIndex < tokens.count else { return false }
+        if isExplicitCommandBoundary(tokens[nextIndex].text) {
+            return true
+        }
+        let followingIndex = nextIndex + 1
+        return tokens[nextIndex].text == "then"
+            && followingIndex < tokens.count
+            && isExplicitCommandBoundary(tokens[followingIndex].text)
     }
 
     private func permanentCopyCandidate(
@@ -471,7 +580,7 @@ struct StreamingNumberedCommandScanner {
     private func isExplicitCommandBoundary(_ token: String) -> Bool {
         VoiceCommandParser.canonicalNumberedCommandVerb(token) != nil
             || VoiceCommandParser.isPotentialPermanentModifier(token)
-            || ["clear", "delete", "save"].contains(token)
+            || ["clear", "delete", "make", "rename", "save"].contains(token)
     }
 
     private func isReadyForDispatch(

@@ -49,6 +49,98 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
         )
     }
 
+    func testFindsRequestedMultiwordTemporaryCopies() throws {
+        for words in [
+            ["my", "new", "york", "address"],
+            ["this", "first", "paragraph"],
+            ["green", "grapes", "passage"],
+        ] {
+            var scanner = StreamingNumberedCommandScanner()
+            let update = scanner.ingest(
+                segment(0...2, words: ["copy"] + words)
+            )
+            let candidate = try XCTUnwrap(upserts(in: update).first)
+
+            XCTAssertEqual(
+                candidate.command,
+                .copyNamed(words.joined(separator: " "))
+            )
+            XCTAssertTrue(candidate.isReadyForDispatch)
+        }
+    }
+
+    func testMultiwordTemporaryCopyGrowsUnderOneIdentity() throws {
+        var scanner = StreamingNumberedCommandScanner()
+        let first = scanner.ingest(
+            StreamingNumberedCommandSegment(
+                range: timeRange(0, 2),
+                tokens: [
+                    token("copy", 0.10, 0.30),
+                    token("my", 0.31, 0.50),
+                ]
+            )
+        )
+        let initial = try XCTUnwrap(upserts(in: first).first)
+        XCTAssertEqual(initial.command, .copyNamed("my"))
+        XCTAssertTrue(initial.isReadyForDispatch)
+        XCTAssertFalse(initial.isStableForCommit)
+
+        let expanded = scanner.ingest(
+            StreamingNumberedCommandSegment(
+                range: timeRange(0, 2),
+                tokens: [
+                    token("copy", 0.10, 0.30),
+                    token("my", 0.31, 0.50),
+                    token("new", 0.51, 0.70),
+                    token("york", 0.71, 0.90),
+                    token("address", 0.91, 1.20),
+                ]
+            )
+        )
+        let complete = try XCTUnwrap(upserts(in: expanded).first)
+
+        XCTAssertEqual(complete.id, initial.id)
+        XCTAssertEqual(complete.command, .copyNamed("my new york address"))
+        XCTAssertTrue(complete.isReadyForDispatch)
+        XCTAssertFalse(complete.isStableForCommit)
+    }
+
+    func testKnownMultiwordPasteUsesVolatileFastPath() throws {
+        var scanner = StreamingNumberedCommandScanner()
+        let update = scanner.ingest(
+            segment(
+                0...2,
+                words: ["paste", "my", "new", "york", "address"]
+            ),
+            knownNamedCopies: ["my new york address"]
+        )
+        let candidate = try XCTUnwrap(upserts(in: update).first)
+
+        XCTAssertEqual(candidate.command, .pasteNamed("my new york address"))
+        XCTAssertTrue(candidate.isReadyForDispatch)
+    }
+
+    func testMultiwordCopyAndPasteRemainSeparateInContinuousSpeech() throws {
+        var scanner = StreamingNumberedCommandScanner()
+        let update = scanner.ingest(
+            segment(
+                0...4,
+                words: [
+                    "copy", "green", "grapes", "passage", "and",
+                    "paste", "green", "grapes", "passage",
+                ]
+            )
+        )
+
+        XCTAssertEqual(
+            try commands(in: update),
+            [
+                .copyNamed("green grapes passage"),
+                .pasteNamed("green grapes passage"),
+            ]
+        )
+    }
+
     func testNamedCopyDispatchesVolatileResultAndKeepsIdentityAcrossRevisions() throws {
         var scanner = StreamingNumberedCommandScanner()
         let first = scanner.ingest(
@@ -365,7 +457,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
         XCTAssertFalse(candidate.isReadyForDispatch)
     }
 
-    func testVolatilePasteWaitsForEarlierCopyOfPreviouslyUnknownName() throws {
+    func testVolatilePasteQueuesBehindEarlierCopyOfPreviouslyUnknownName() throws {
         var scanner = StreamingNumberedCommandScanner()
         let update = scanner.ingest(
             StreamingNumberedCommandSegment(
@@ -383,7 +475,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
             candidates.first { $0.command == .pasteNamed("house") }
         )
 
-        XCTAssertFalse(paste.isReadyForDispatch)
+        XCTAssertTrue(paste.isReadyForDispatch)
     }
 
     func testKnownNamedPasteWithoutConfidenceDispatchesBeforeFinalization() throws {
