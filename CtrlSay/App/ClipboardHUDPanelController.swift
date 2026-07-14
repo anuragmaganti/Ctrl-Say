@@ -12,8 +12,10 @@ final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
     private let positionStore: ClipboardHUDPositionStore
     private weak var activeScreen: NSScreen?
     private var isApplyingFrame = false
+    private var wantsToBeShown = false
+    private var visibilityAnimationGeneration: UInt64 = 0
 
-    var isShown: Bool { panel.isVisible }
+    var isShown: Bool { wantsToBeShown }
 
     init(
         model: AppModel,
@@ -92,17 +94,36 @@ final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
     }
 
     func show() {
+        guard !wantsToBeShown else { return }
+        wantsToBeShown = true
+        visibilityAnimationGeneration &+= 1
+        let generation = visibilityAnimationGeneration
         let requestedAt = model.consumeHUDPresentationRequestTimestamp()
             ?? DispatchTime.now().uptimeNanoseconds
-        let screen = pointerScreen()
-        activeScreen = screen
-        applyInitialFrame(on: screen)
+        let wasVisible = panel.isVisible
+
+        if wasVisible {
+            activeScreen = activeScreen ?? bestScreenForCurrentFrame()
+        } else {
+            let screen = pointerScreen()
+            activeScreen = screen
+            applyInitialFrame(on: screen)
+            // Establish the transparent state before the window enters the
+            // visible window list so it cannot flash for a compositor frame.
+            panel.alphaValue = 0
+        }
 
 #if DEBUG
         let frontmostProcessIdentifier = NSWorkspace.shared.frontmostApplication?
             .processIdentifier
 #endif
         panel.orderFrontRegardless()
+        animateVisibility(
+            to: 1,
+            duration: ClipboardHUDAnimation.fadeInDuration,
+            timingFunction: .easeOut,
+            generation: generation
+        )
         let elapsed = Double(
             DispatchTime.now().uptimeNanoseconds - requestedAt
         ) / 1_000_000
@@ -122,8 +143,24 @@ final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
     }
 
     func hide() {
+        guard wantsToBeShown else { return }
+        wantsToBeShown = false
+        visibilityAnimationGeneration &+= 1
+        let generation = visibilityAnimationGeneration
         editingSession.prepareForDismissal()
-        panel.orderOut(nil)
+
+        guard panel.isVisible else {
+            panel.alphaValue = 0
+            return
+        }
+
+        animateVisibility(
+            to: 0,
+            duration: ClipboardHUDAnimation.fadeOutDuration,
+            timingFunction: .easeIn,
+            generation: generation,
+            orderOutWhenFinished: true
+        )
     }
 
     func screenParametersDidChange() {
@@ -269,6 +306,47 @@ final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
         }
     }
 
+    private func animateVisibility(
+        to alpha: CGFloat,
+        duration: TimeInterval,
+        timingFunction: CAMediaTimingFunctionName,
+        generation: UInt64,
+        orderOutWhenFinished: Bool = false
+    ) {
+        let startedAt = DispatchTime.now().uptimeNanoseconds
+        NSAnimationContext.runAnimationGroup(
+            { context in
+                // The animator proxy is compositor-driven and follows the
+                // destination display's refresh cadence without a polling
+                // timer or an assumed 60 Hz frame rate.
+                context.duration = duration
+                context.timingFunction = CAMediaTimingFunction(
+                    name: timingFunction
+                )
+                panel.animator().alphaValue = alpha
+            },
+            completionHandler: { [weak self] in
+                Task { @MainActor [weak self] in
+                    guard let self,
+                          self.visibilityAnimationGeneration == generation else {
+                        return
+                    }
+                    self.panel.alphaValue = alpha
+                    if orderOutWhenFinished, !self.wantsToBeShown {
+                        self.panel.orderOut(nil)
+                    }
+
+                    let elapsed = Double(
+                        DispatchTime.now().uptimeNanoseconds - startedAt
+                    ) / 1_000_000
+                    Telemetry.interface.debug(
+                        "HUD fade target_visible=\(alpha > 0, privacy: .public) duration_ms=\(elapsed, privacy: .public)"
+                    )
+                }
+            }
+        )
+    }
+
     private var visibleItemCount: Int {
         switch presentationState.selectedCollection {
         case .numbered:
@@ -320,6 +398,11 @@ final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
         let frame = screen.frame
         return "frame:\(frame.minX):\(frame.minY):\(frame.width):\(frame.height)"
     }
+}
+
+private enum ClipboardHUDAnimation {
+    static let fadeInDuration: TimeInterval = 0.20
+    static let fadeOutDuration: TimeInterval = 0.16
 }
 
 private extension CGRect {
