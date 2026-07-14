@@ -49,7 +49,13 @@ final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
             thumbnailProvider: thumbnailProvider
         )
         let hostingController = NSHostingController(rootView: rootView)
+        // This controller owns the panel's fixed width and calculated height.
+        // Allowing NSHostingController to also derive window constraints from
+        // the changing SwiftUI content creates a resize feedback loop during
+        // rapid tab and slot changes.
+        hostingController.sizingOptions = []
         panel.contentViewController = hostingController
+        hostingController.view.autoresizingMask = [.width, .height]
 
         panel.title = "Ctrl-Say Clipboard HUD"
         panel.setAccessibilityElement(true)
