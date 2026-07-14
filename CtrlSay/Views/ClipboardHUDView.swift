@@ -55,7 +55,7 @@ struct ClipboardHUDView: View {
                 Text(statusTitle)
                     .font(.callout.weight(.semibold))
                     .lineLimit(1)
-                Text("Hold Right Option to hide")
+                Text("Hold Right Option to minimize")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)

@@ -138,8 +138,7 @@ final class AppModel {
         )
         let next = RightOptionInteractionReducer.reduce(
             current,
-            gesture: gesture,
-            showsHUDWhenListeningStarts: showsHUDWhenRightOptionStartsListening
+            gesture: gesture
         )
 
         if next.isHUDPresented, !current.isHUDPresented {
@@ -386,18 +385,6 @@ final class AppModel {
             return desiredListening
         }
         return speech.isActive
-    }
-
-    private var showsHUDWhenRightOptionStartsListening: Bool {
-        let defaults = UserDefaults.standard
-        guard defaults.object(
-            forKey: CtrlSayPreferenceKey.showHUDWhenRightOptionStartsListening
-        ) != nil else {
-            return true
-        }
-        return defaults.bool(
-            forKey: CtrlSayPreferenceKey.showHUDWhenRightOptionStartsListening
-        )
     }
 
     @discardableResult

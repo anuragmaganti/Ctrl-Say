@@ -5,8 +5,7 @@ final class RightOptionInteractionTests: XCTestCase {
     func testTapStartsListeningAndShowsHUDByDefault() {
         let state = RightOptionInteractionReducer.reduce(
             .init(wantsListening: false, isHUDPresented: false),
-            gesture: .tap,
-            showsHUDWhenListeningStarts: true
+            gesture: .tap
         )
 
         XCTAssertEqual(
@@ -15,64 +14,87 @@ final class RightOptionInteractionTests: XCTestCase {
         )
     }
 
-    func testTapCanStartListeningWithoutShowingHUD() {
-        let state = RightOptionInteractionReducer.reduce(
-            .init(wantsListening: false, isHUDPresented: false),
-            gesture: .tap,
-            showsHUDWhenListeningStarts: false
-        )
-
-        XCTAssertEqual(
-            state,
-            .init(wantsListening: true, isHUDPresented: false)
-        )
-    }
-
-    func testTapStopsListeningAndPreservesHUDVisibility() {
+    func testTapStopsListeningAndClosesHUD() {
         XCTAssertEqual(
             RightOptionInteractionReducer.reduce(
                 .init(wantsListening: true, isHUDPresented: true),
-                gesture: .tap,
-                showsHUDWhenListeningStarts: true
+                gesture: .tap
             ),
-            .init(wantsListening: false, isHUDPresented: true)
+            .init(wantsListening: false, isHUDPresented: false)
         )
         XCTAssertEqual(
             RightOptionInteractionReducer.reduce(
                 .init(wantsListening: true, isHUDPresented: false),
-                gesture: .tap,
-                showsHUDWhenListeningStarts: true
+                gesture: .tap
             ),
             .init(wantsListening: false, isHUDPresented: false)
         )
     }
 
-    func testHoldTogglesHUDWhileListeningIsOff() {
+    func testHoldDoesNothingWhileListeningIsOff() {
         XCTAssertEqual(
             RightOptionInteractionReducer.reduce(
                 .init(wantsListening: false, isHUDPresented: false),
-                gesture: .hold,
-                showsHUDWhenListeningStarts: true
+                gesture: .hold
             ),
-            .init(wantsListening: false, isHUDPresented: true)
+            .init(wantsListening: false, isHUDPresented: false)
         )
         XCTAssertEqual(
             RightOptionInteractionReducer.reduce(
                 .init(wantsListening: false, isHUDPresented: true),
-                gesture: .hold,
-                showsHUDWhenListeningStarts: true
+                gesture: .hold
             ),
-            .init(wantsListening: false, isHUDPresented: false)
+            .init(wantsListening: false, isHUDPresented: true)
         )
     }
 
-    func testHoldStopsListeningAndHidesHUD() {
+    func testHoldMinimizesHUDWithoutStoppingListening() {
         XCTAssertEqual(
             RightOptionInteractionReducer.reduce(
                 .init(wantsListening: true, isHUDPresented: true),
-                gesture: .hold,
-                showsHUDWhenListeningStarts: true
+                gesture: .hold
             ),
+            .init(wantsListening: true, isHUDPresented: false)
+        )
+    }
+
+    func testHoldRestoresHUDWithoutInterruptingListening() {
+        XCTAssertEqual(
+            RightOptionInteractionReducer.reduce(
+                .init(wantsListening: true, isHUDPresented: false),
+                gesture: .hold
+            ),
+            .init(wantsListening: true, isHUDPresented: true)
+        )
+    }
+
+    func testTapAndHoldSequenceMatchesListeningHUDLifecycle() {
+        var state = RightOptionInteractionState(
+            wantsListening: false,
+            isHUDPresented: false
+        )
+
+        state = RightOptionInteractionReducer.reduce(state, gesture: .tap)
+        XCTAssertEqual(
+            state,
+            .init(wantsListening: true, isHUDPresented: true)
+        )
+
+        state = RightOptionInteractionReducer.reduce(state, gesture: .hold)
+        XCTAssertEqual(
+            state,
+            .init(wantsListening: true, isHUDPresented: false)
+        )
+
+        state = RightOptionInteractionReducer.reduce(state, gesture: .hold)
+        XCTAssertEqual(
+            state,
+            .init(wantsListening: true, isHUDPresented: true)
+        )
+
+        state = RightOptionInteractionReducer.reduce(state, gesture: .tap)
+        XCTAssertEqual(
+            state,
             .init(wantsListening: false, isHUDPresented: false)
         )
     }

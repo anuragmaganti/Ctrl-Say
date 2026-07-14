@@ -13,8 +13,7 @@ struct RightOptionInteractionState: Equatable, Sendable {
 enum RightOptionInteractionReducer {
     static func reduce(
         _ state: RightOptionInteractionState,
-        gesture: RightOptionGesture,
-        showsHUDWhenListeningStarts: Bool
+        gesture: RightOptionGesture
     ) -> RightOptionInteractionState {
         var next = state
 
@@ -22,20 +21,15 @@ enum RightOptionInteractionReducer {
         case .tap:
             if state.wantsListening {
                 next.wantsListening = false
+                next.isHUDPresented = false
             } else {
                 next.wantsListening = true
-                if showsHUDWhenListeningStarts {
-                    next.isHUDPresented = true
-                }
+                next.isHUDPresented = true
             }
 
         case .hold:
-            if state.wantsListening {
-                next.wantsListening = false
-                next.isHUDPresented = false
-            } else {
-                next.isHUDPresented.toggle()
-            }
+            guard state.wantsListening else { return state }
+            next.isHUDPresented.toggle()
         }
 
         return next
@@ -43,8 +37,6 @@ enum RightOptionInteractionReducer {
 }
 
 enum CtrlSayPreferenceKey {
-    static let showHUDWhenRightOptionStartsListening =
-        "showHUDWhenRightOptionStartsListening"
     static let hudPositionsByDisplay = "clipboardHUDPositionsByDisplay"
     static let answeredLaunchAtLoginOnboarding =
         "answeredLaunchAtLoginOnboarding"

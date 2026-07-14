@@ -3,8 +3,6 @@ import SwiftUI
 struct CtrlSaySettingsView: View {
     let model: AppModel
 
-    @AppStorage(CtrlSayPreferenceKey.showHUDWhenRightOptionStartsListening)
-    private var showHUDWhenListeningStarts = true
     @State private var confirmsPermanentStorageReset = false
 
     var body: some View {
@@ -51,18 +49,6 @@ struct CtrlSaySettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.red)
                 }
-            }
-
-            Section("Clipboard HUD") {
-                Toggle(
-                    "Show Clipboard HUD when Right Option starts listening",
-                    isOn: $showHUDWhenListeningStarts
-                )
-                Text(
-                    "This affects tap-to-start only. Holding Right Option can always show or hide the HUD."
-                )
-                .font(.caption)
-                .foregroundStyle(.secondary)
             }
 
             Section("Permanent Copies") {

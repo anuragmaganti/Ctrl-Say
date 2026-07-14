@@ -28,7 +28,7 @@
 
 ## Interaction and UI
 
-- A tap of the physical Right Option key is the global command to start or stop Listening mode. Left Option must remain unaffected.
+- A tap of the physical Right Option key starts Listening and shows the Clipboard HUD, or stops Listening and hides it. While Listening remains active, holding Right Option toggles the HUD without stopping Listening. Left Option must remain unaffected.
 - The default rule is: if Command-C can copy the current selection in the source app, Ctrl-Say's normal copy command can capture it.
 - A Finder item must be selected before copying. A webpage image usually requires the browser's Copy Image action; hover-to-copy is a separate compatibility path to prototype, not behavior to assume from Command-C.
 - Run as a menu-bar app. Any optional clipboard dashboard must be passive/non-activating, must not steal focus from the copy or paste target, and must update outside the critical path.
