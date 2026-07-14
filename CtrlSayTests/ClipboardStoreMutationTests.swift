@@ -37,6 +37,74 @@ final class ClipboardStoreMutationTests: XCTestCase {
     }
 
     @MainActor
+    func testStreamingTemporaryNameRevisionPreservesPayloadAndOrder() throws {
+        let store = ClipboardStore()
+        let first = makeTextPayload("First")
+        let revised = makeTextPayload("Revised")
+        try store.setTemporaryNamed(first, named: "alpha")
+        try store.setTemporaryNamed(revised, named: "p")
+
+        XCTAssertEqual(
+            try store.reviseTemporaryNamed(
+                from: "p",
+                to: "pointer",
+                expectedPayloadID: revised.id
+            ),
+            "pointer"
+        )
+        XCTAssertEqual(
+            store.temporaryNamedSlots.map(\.name),
+            ["alpha", "pointer"]
+        )
+        XCTAssertNil(store.payload(temporaryNamed: "p"))
+        XCTAssertEqual(store.payload(temporaryNamed: "pointer"), revised)
+    }
+
+    @MainActor
+    func testStreamingTemporaryNameRevisionReplacesExistingDestination() throws {
+        let store = ClipboardStore()
+        let existing = makeTextPayload("Existing")
+        let revised = makeTextPayload("Revised")
+        try store.setTemporaryNamed(existing, named: "pointer")
+        try store.setTemporaryNamed(revised, named: "p")
+        let bytesBefore = store.totalByteCount
+
+        XCTAssertEqual(
+            try store.reviseTemporaryNamed(
+                from: "p",
+                to: "pointer",
+                expectedPayloadID: revised.id
+            ),
+            "pointer"
+        )
+        XCTAssertEqual(store.temporaryNamedSlots.map(\.name), ["pointer"])
+        XCTAssertEqual(store.payload(temporaryNamed: "pointer"), revised)
+        XCTAssertEqual(
+            store.totalByteCount,
+            bytesBefore - existing.byteCount
+        )
+    }
+
+    @MainActor
+    func testStreamingTemporaryNameRevisionIgnoresStalePayloadIdentity() throws {
+        let store = ClipboardStore()
+        let original = makeTextPayload("Original")
+        let replacement = makeTextPayload("Replacement")
+        try store.setTemporaryNamed(original, named: "p")
+        try store.setTemporaryNamed(replacement, named: "p")
+
+        XCTAssertNil(
+            try store.reviseTemporaryNamed(
+                from: "p",
+                to: "pointer",
+                expectedPayloadID: original.id
+            )
+        )
+        XCTAssertEqual(store.payload(temporaryNamed: "p"), replacement)
+        XCTAssertNil(store.payload(temporaryNamed: "pointer"))
+    }
+
+    @MainActor
     func testTemporaryNamedSlotsPreserveInsertionOrderAndStableReplacement() throws {
         let store = ClipboardStore()
         try store.setTemporaryNamed(makeTextPayload("First"), named: "zebra")

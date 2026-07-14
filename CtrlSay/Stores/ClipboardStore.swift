@@ -101,6 +101,38 @@ final class ClipboardStore {
         temporaryNamed[normalizedName] = payload
     }
 
+    /// Revises the label of a just-captured streaming named command without
+    /// copying the source selection again. The payload identity guard keeps a
+    /// late speech revision from moving a slot the user has since replaced.
+    @discardableResult
+    func reviseTemporaryNamed(
+        from currentName: String,
+        to revisedName: String,
+        expectedPayloadID: UUID
+    ) throws -> String? {
+        let oldName = VoiceCommandParser.normalizeName(currentName)
+        let newName = try validateTemporaryNameAvailable(revisedName)
+        guard let payload = temporaryNamed[oldName],
+              payload.id == expectedPayloadID else {
+            return nil
+        }
+        guard oldName != newName else { return newName }
+
+        if let replaced = temporaryNamed[newName] {
+            totalByteCount = max(0, totalByteCount - replaced.byteCount)
+            temporaryNamed[newName] = payload
+            temporaryNamed.removeValue(forKey: oldName)
+            temporaryNamedOrder.removeAll { $0 == oldName }
+        } else {
+            temporaryNamed[newName] = payload
+            temporaryNamed.removeValue(forKey: oldName)
+            if let index = temporaryNamedOrder.firstIndex(of: oldName) {
+                temporaryNamedOrder[index] = newName
+            }
+        }
+        return newName
+    }
+
     func payload(at number: Int) -> ClipboardPayload? {
         numbered[number]
     }

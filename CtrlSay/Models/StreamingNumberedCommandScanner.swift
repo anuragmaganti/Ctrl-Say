@@ -49,6 +49,7 @@ struct StreamingNumberedCommandCandidate: Equatable, Sendable {
     let range: SpeechResultRange
     let minimumConfidence: Double?
     let isReadyForDispatch: Bool
+    let isStableForCommit: Bool
 }
 
 enum StreamingNumberedCommandMutation: Equatable, Sendable {
@@ -103,6 +104,7 @@ struct StreamingNumberedCommandScanner {
         let range: SpeechResultRange
         let minimumConfidence: Double?
         let isReadyForDispatch: Bool
+        let isStableForCommit: Bool
         let order: Int
     }
 
@@ -114,6 +116,7 @@ struct StreamingNumberedCommandScanner {
         var range: SpeechResultRange
         var minimumConfidence: Double?
         var isReadyForDispatch: Bool
+        var isStableForCommit: Bool
         var order: Int
         var isPresent: Bool
         var isQueued: Bool
@@ -388,6 +391,10 @@ struct StreamingNumberedCommandScanner {
                         minimumConfidence: minimumConfidence,
                         knownNamedCopies: storedNamedCopies
                     ),
+                    isStableForCommit: isStableForCommit(
+                        command,
+                        argument: argument
+                    ),
                     order: snapshots.count
                 )
             )
@@ -453,6 +460,10 @@ struct StreamingNumberedCommandScanner {
                 command,
                 argument: argument
             ),
+            isStableForCommit: isStableForCommit(
+                command,
+                argument: argument
+            ),
             order: order
         )
     }
@@ -509,6 +520,16 @@ struct StreamingNumberedCommandScanner {
         }
     }
 
+    private func isStableForCommit(
+        _ command: VoiceCommand,
+        argument: ResolvedToken
+    ) -> Bool {
+        guard case .copyNamed = command else { return true }
+        return argument.hasExplicitPhraseBoundary
+            || argument.isFinalized
+            || argument.segmentRange.isFinalized(through: finalizedThrough)
+    }
+
     private func canBridge(_ verb: ResolvedToken, to argument: ResolvedToken) -> Bool {
         guard verb.segmentID != argument.segmentID else { return true }
         guard isNumeric(verb.range.end), isNumeric(argument.range.start) else {
@@ -561,6 +582,7 @@ struct StreamingNumberedCommandScanner {
             let index = assignment.stateIndex
             let priorCommand = candidates[index].command
             let wasReadyForDispatch = candidates[index].isReadyForDispatch
+            let wasStableForCommit = candidates[index].isStableForCommit
             let wasPresent = candidates[index].isPresent
 
             candidates[index].anchors = snapshot.anchors
@@ -572,6 +594,7 @@ struct StreamingNumberedCommandScanner {
             candidates[index].range = snapshot.range
             candidates[index].minimumConfidence = snapshot.minimumConfidence
             candidates[index].isReadyForDispatch = snapshot.isReadyForDispatch
+            candidates[index].isStableForCommit = snapshot.isStableForCommit
             candidates[index].order = snapshot.order
             candidates[index].isPresent = true
 
@@ -579,7 +602,8 @@ struct StreamingNumberedCommandScanner {
             guard !candidates[index].isQueued
                     || !wasPresent
                     || priorCommand != snapshot.command
-                    || wasReadyForDispatch != snapshot.isReadyForDispatch else {
+                    || wasReadyForDispatch != snapshot.isReadyForDispatch
+                    || wasStableForCommit != snapshot.isStableForCommit else {
                 continue
             }
 
@@ -589,7 +613,8 @@ struct StreamingNumberedCommandScanner {
                 command: snapshot.command,
                 range: candidates[index].range,
                 minimumConfidence: snapshot.minimumConfidence,
-                isReadyForDispatch: snapshot.isReadyForDispatch
+                isReadyForDispatch: snapshot.isReadyForDispatch,
+                isStableForCommit: snapshot.isStableForCommit
             )
             stagedMutations.append((snapshot.order, .upsert(candidate)))
         }
@@ -667,6 +692,7 @@ struct StreamingNumberedCommandScanner {
                 range: snapshot.range,
                 minimumConfidence: snapshot.minimumConfidence,
                 isReadyForDispatch: snapshot.isReadyForDispatch,
+                isStableForCommit: snapshot.isStableForCommit,
                 order: snapshot.order,
                 isPresent: false,
                 isQueued: false,

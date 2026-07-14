@@ -8,6 +8,8 @@ struct DebugPipelineSnapshot {
     var confidence = "—"
     var parseOutcome = "—"
     var recognitionLatency = "—"
+    var tokenization = "—"
+    var namedCopyRevision = "—"
     var queue = "Idle"
     var clipboardPath = "—"
     var target = "—"
@@ -34,12 +36,41 @@ struct DebugPipelineSnapshot {
         recognitionLatency = metadata.recognitionLatencyMilliseconds
             .map { String(format: "%.1f ms", $0) }
             ?? "Unavailable"
+        if result.inWordAttributeRunMergeCount > 0 {
+            tokenization = "\(result.tokens.count) words from \(result.attributeRunCount) runs • \(result.inWordAttributeRunMergeCount) in-word join(s), same result"
+        } else {
+            tokenization = "\(result.tokens.count) words from \(result.attributeRunCount) run(s) • no in-word joins"
+        }
     }
 
     mutating func queued(depth: Int, replacedRevision: Bool) {
         queue = replacedRevision
             ? "Revision replaced • depth \(depth)"
             : "Queued • depth \(depth)"
+    }
+
+    mutating func namedCopyCandidateStarted(
+        characterCount: Int,
+        isStable: Bool
+    ) {
+        namedCopyRevision = "First candidate • \(characterCount) chars • \(isStable ? "stable" : "revisable")"
+    }
+
+    mutating func namedCopyCandidateRevised(
+        previousCharacterCount: Int,
+        currentCharacterCount: Int,
+        revisionMilliseconds: Double,
+        totalMilliseconds: Double,
+        isStable: Bool
+    ) {
+        namedCopyRevision = String(
+            format: "%d→%d chars • +%.1f ms • %.1f ms total • %@",
+            previousCharacterCount,
+            currentCharacterCount,
+            revisionMilliseconds,
+            totalMilliseconds,
+            isStable ? "stable" : "revisable"
+        )
     }
 
     mutating func revoked(depth: Int) {

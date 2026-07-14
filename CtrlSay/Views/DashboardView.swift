@@ -431,6 +431,8 @@ struct DashboardView: View {
                 diagnosticRow("Confidence", model.debugDiagnostics.confidence)
                 diagnosticRow("Parser", model.debugDiagnostics.parseOutcome)
                 diagnosticRow("Recognition", model.debugDiagnostics.recognitionLatency)
+                diagnosticRow("Tokenization", model.debugDiagnostics.tokenization)
+                diagnosticRow("Name revision", model.debugDiagnostics.namedCopyRevision)
                 diagnosticRow("Queue", model.debugDiagnostics.queue)
                 diagnosticRow("Clipboard", model.debugDiagnostics.clipboardPath)
                 diagnosticRow("Target", model.debugDiagnostics.target)

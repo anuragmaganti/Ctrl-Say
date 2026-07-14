@@ -25,6 +25,7 @@
 		F90000000000000000000001 /* CtrlSay/Stores/PermanentMutationQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = F90000000000000000000002 /* CtrlSay/Stores/PermanentMutationQueue.swift */; };
 		FA10000000000000000000001 /* CtrlSay/Models/NotchFeedback.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA10000000000000000000002 /* CtrlSay/Models/NotchFeedback.swift */; };
 		FB10000000000000000000001 /* CtrlSay/Support/NotchPanelLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB10000000000000000000002 /* CtrlSay/Support/NotchPanelLayout.swift */; };
+		FC10000000000000000000001 /* CtrlSay/Models/SpeechTokenAssembler.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC10000000000000000000002 /* CtrlSay/Models/SpeechTokenAssembler.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -48,6 +49,7 @@
 		F90000000000000000000002 /* CtrlSay/Stores/PermanentMutationQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CtrlSay/Stores/PermanentMutationQueue.swift; sourceTree = SOURCE_ROOT; };
 		FA10000000000000000000002 /* CtrlSay/Models/NotchFeedback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CtrlSay/Models/NotchFeedback.swift; sourceTree = SOURCE_ROOT; };
 		FB10000000000000000000002 /* CtrlSay/Support/NotchPanelLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CtrlSay/Support/NotchPanelLayout.swift; sourceTree = SOURCE_ROOT; };
+		FC10000000000000000000002 /* CtrlSay/Models/SpeechTokenAssembler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CtrlSay/Models/SpeechTokenAssembler.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -121,6 +123,7 @@
 				F90000000000000000000002 /* CtrlSay/Stores/PermanentMutationQueue.swift */,
 				FA10000000000000000000002 /* CtrlSay/Models/NotchFeedback.swift */,
 				FB10000000000000000000002 /* CtrlSay/Support/NotchPanelLayout.swift */,
+				FC10000000000000000000002 /* CtrlSay/Models/SpeechTokenAssembler.swift */,
 			);
 			name = "Test Support Sources";
 			sourceTree = "<group>";
@@ -257,6 +260,7 @@
 				F90000000000000000000001 /* CtrlSay/Stores/PermanentMutationQueue.swift in Sources */,
 				FA10000000000000000000001 /* CtrlSay/Models/NotchFeedback.swift in Sources */,
 				FB10000000000000000000001 /* CtrlSay/Support/NotchPanelLayout.swift in Sources */,
+				FC10000000000000000000001 /* CtrlSay/Models/SpeechTokenAssembler.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

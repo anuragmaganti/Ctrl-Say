@@ -233,12 +233,18 @@ final class SpeechRecognitionService {
             do {
                 for try await result in transcriber.results {
                     guard let self else { return }
-                    self.onResult?(
-                        RecognizedSpeechResult(
-                            result,
-                            analysisStartedAtNanoseconds: self.analysisStartedAtNanoseconds
-                        )
+                    let recognizedResult = RecognizedSpeechResult(
+                        result,
+                        analysisStartedAtNanoseconds: self.analysisStartedAtNanoseconds
                     )
+#if DEBUG
+                    if recognizedResult.inWordAttributeRunMergeCount > 0 {
+                        Telemetry.speech.info(
+                            "Reassembled speech words in same result attribute_runs=\(recognizedResult.attributeRunCount, privacy: .public) lexical_tokens=\(recognizedResult.tokens.count, privacy: .public) in_word_joins=\(recognizedResult.inWordAttributeRunMergeCount, privacy: .public)"
+                        )
+                    }
+#endif
+                    self.onResult?(recognizedResult)
                 }
             } catch is CancellationError {
                 // Expected when Listening mode is stopped.
@@ -493,6 +499,8 @@ struct RecognizedSpeechResult: Sendable {
     let minimumConfidence: Double?
     let receivedAtNanoseconds: UInt64
     let audioEndUptimeNanoseconds: UInt64?
+    let attributeRunCount: Int
+    let inWordAttributeRunMergeCount: Int
     private let analysisStartedAtNanoseconds: UInt64?
 
 #if DEBUG
@@ -505,13 +513,17 @@ struct RecognizedSpeechResult: Sendable {
     ) {
         let attributedText = result.text
         text = String(attributedText.characters)
-        tokens = attributedText.runs.map { run in
-            StreamingNumberedCommandToken(
+        let fragments = attributedText.runs.map { run in
+            SpeechAttributedTextFragment(
                 String(attributedText[run.range].characters),
                 range: run.audioTimeRange.map(SpeechResultRange.init),
                 confidence: run.transcriptionConfidence
             )
         }
+        let tokenAssembly = SpeechTokenAssembler.assemble(fragments)
+        tokens = tokenAssembly.tokens
+        attributeRunCount = tokenAssembly.sourceFragmentCount
+        inWordAttributeRunMergeCount = tokenAssembly.inWordBoundaryMergeCount
         range = result.range
         finalizationTime = result.resultsFinalizationTime
         isFinal = result.isFinal
