@@ -3,14 +3,9 @@ import CoreGraphics
 import Observation
 import SwiftUI
 
-private final class ClipboardHUDPanel: NSPanel {
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { false }
-}
-
 @MainActor
 final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
-    private let panel: ClipboardHUDPanel
+    private let panel: NonactivatingPanel
     private let model: AppModel
     private let presentationState: ClipboardHUDPresentationState
     private let editingSession: DashboardEditingSession
@@ -39,7 +34,7 @@ final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
                 collection: .numbered
             )
         )
-        let panel = ClipboardHUDPanel(
+        let panel = NonactivatingPanel(
             contentRect: CGRect(origin: .zero, size: initialSize),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
@@ -139,6 +134,7 @@ final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
         let height = ClipboardHUDMetrics.height(
             itemCount: count,
             collection: presentationState.selectedCollection,
+            permanentStatusLayout: permanentStatusLayout,
             visibleFrame: screen.visibleFrame
         )
         let frame: CGRect
@@ -176,6 +172,7 @@ final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
             _ = model.slots.numbered.count
             _ = model.slots.temporaryNamed.count
             _ = model.slots.named.count
+            _ = model.permanentStorageState
             _ = presentationState.selectedCollection
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
@@ -193,6 +190,7 @@ final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
         let height = ClipboardHUDMetrics.height(
             itemCount: visibleItemCount,
             collection: presentationState.selectedCollection,
+            permanentStatusLayout: permanentStatusLayout,
             visibleFrame: screen.visibleFrame
         )
         let target = ClipboardHUDPlacement.resizedFrame(
@@ -207,6 +205,7 @@ final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
         let height = ClipboardHUDMetrics.height(
             itemCount: visibleItemCount,
             collection: presentationState.selectedCollection,
+            permanentStatusLayout: permanentStatusLayout,
             visibleFrame: screen.visibleFrame
         )
         let size = CGSize(width: ClipboardHUDMetrics.width, height: height)
@@ -276,6 +275,20 @@ final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
             model.slots.temporaryCopyCount
         case .permanent:
             model.slots.named.count
+        }
+    }
+
+    private var permanentStatusLayout: ClipboardHUDPermanentStatusLayout {
+        guard presentationState.selectedCollection == .permanent else {
+            return .none
+        }
+        switch model.permanentStorageState {
+        case .loading, .loadFailed:
+            return .replacesContent
+        case .saveFailed:
+            return .precedesContent
+        case .ready, .saving:
+            return .none
         }
     }
 

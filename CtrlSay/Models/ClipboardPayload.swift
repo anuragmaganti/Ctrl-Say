@@ -28,8 +28,8 @@ enum ClipboardContentKind: String, Hashable, Sendable {
 }
 
 struct ClipboardPayload: Identifiable, Hashable, Sendable {
-    private static let utf8PlainTextTypeIdentifier = "public.utf8-plain-text"
-    static let maximumInlineEditableTextBytes = 256 * 1_024
+    nonisolated private static let utf8PlainTextTypeIdentifier = "public.utf8-plain-text"
+    nonisolated static let maximumInlineEditableTextBytes = 256 * 1_024
 
     enum InlineTextEditability: Equatable, Sendable {
         case editable
@@ -46,7 +46,7 @@ struct ClipboardPayload: Identifiable, Hashable, Sendable {
     let capturedAt: Date
     private let hasValidInlineTextEncoding: Bool
 
-    init(
+    nonisolated init(
         id: UUID = UUID(),
         items: [PasteboardItemPayload],
         kind: ClipboardContentKind,
@@ -135,7 +135,7 @@ struct ClipboardPayload: Identifiable, Hashable, Sendable {
         return preview
     }
 
-    private static func hasValidInlineTextEncoding(
+    nonisolated private static func hasValidInlineTextEncoding(
         items: [PasteboardItemPayload],
         kind: ClipboardContentKind
     ) -> Bool {

@@ -19,6 +19,10 @@
 		F30000000000000000000001 /* CtrlSay/Support/ClipboardHUDLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000002 /* CtrlSay/Support/ClipboardHUDLayout.swift */; };
 		F40000000000000000000001 /* CtrlSay/Services/ClipboardThumbnailProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = F40000000000000000000002 /* CtrlSay/Services/ClipboardThumbnailProvider.swift */; };
 		F50000000000000000000001 /* CtrlSay/Support/Telemetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000002 /* CtrlSay/Support/Telemetry.swift */; };
+		F60000000000000000000001 /* CtrlSay/Models/PermanentCopySchema.swift in Sources */ = {isa = PBXBuildFile; fileRef = F60000000000000000000002 /* CtrlSay/Models/PermanentCopySchema.swift */; };
+		F70000000000000000000001 /* CtrlSay/Stores/PermanentCopyRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = F70000000000000000000002 /* CtrlSay/Stores/PermanentCopyRepository.swift */; };
+		F80000000000000000000001 /* CtrlSay/Models/PermanentCopyPersistenceState.swift in Sources */ = {isa = PBXBuildFile; fileRef = F80000000000000000000002 /* CtrlSay/Models/PermanentCopyPersistenceState.swift */; };
+		F90000000000000000000001 /* CtrlSay/Stores/PermanentMutationQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = F90000000000000000000002 /* CtrlSay/Stores/PermanentMutationQueue.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -36,6 +40,10 @@
 		F30000000000000000000002 /* CtrlSay/Support/ClipboardHUDLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CtrlSay/Support/ClipboardHUDLayout.swift; sourceTree = SOURCE_ROOT; };
 		F40000000000000000000002 /* CtrlSay/Services/ClipboardThumbnailProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CtrlSay/Services/ClipboardThumbnailProvider.swift; sourceTree = SOURCE_ROOT; };
 		F50000000000000000000002 /* CtrlSay/Support/Telemetry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CtrlSay/Support/Telemetry.swift; sourceTree = SOURCE_ROOT; };
+		F60000000000000000000002 /* CtrlSay/Models/PermanentCopySchema.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CtrlSay/Models/PermanentCopySchema.swift; sourceTree = SOURCE_ROOT; };
+		F70000000000000000000002 /* CtrlSay/Stores/PermanentCopyRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CtrlSay/Stores/PermanentCopyRepository.swift; sourceTree = SOURCE_ROOT; };
+		F80000000000000000000002 /* CtrlSay/Models/PermanentCopyPersistenceState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CtrlSay/Models/PermanentCopyPersistenceState.swift; sourceTree = SOURCE_ROOT; };
+		F90000000000000000000002 /* CtrlSay/Stores/PermanentMutationQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CtrlSay/Stores/PermanentMutationQueue.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -75,7 +83,7 @@
 				A10000000000000000000001 /* CtrlSay */,
 				B10000000000000000000008 /* CtrlSayTests */,
 				A10000000000000000000004 /* Products */,
-				F1E2377E3004C9570064EE6F /* Recovered References */,
+				F1E2377E3004C9570064EE6F /* Test Support Sources */,
 			);
 			sourceTree = "<group>";
 		};
@@ -88,7 +96,7 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
-		F1E2377E3004C9570064EE6F /* Recovered References */ = {
+		F1E2377E3004C9570064EE6F /* Test Support Sources */ = {
 			isa = PBXGroup;
 			children = (
 				B10000000000000000000005 /* CtrlSay/Models/VoiceCommand.swift */,
@@ -103,8 +111,12 @@
 				F30000000000000000000002 /* CtrlSay/Support/ClipboardHUDLayout.swift */,
 				F40000000000000000000002 /* CtrlSay/Services/ClipboardThumbnailProvider.swift */,
 				F50000000000000000000002 /* CtrlSay/Support/Telemetry.swift */,
+				F60000000000000000000002 /* CtrlSay/Models/PermanentCopySchema.swift */,
+				F70000000000000000000002 /* CtrlSay/Stores/PermanentCopyRepository.swift */,
+				F80000000000000000000002 /* CtrlSay/Models/PermanentCopyPersistenceState.swift */,
+				F90000000000000000000002 /* CtrlSay/Stores/PermanentMutationQueue.swift */,
 			);
-			name = "Recovered References";
+			name = "Test Support Sources";
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -233,6 +245,10 @@
 				F30000000000000000000001 /* CtrlSay/Support/ClipboardHUDLayout.swift in Sources */,
 				F40000000000000000000001 /* CtrlSay/Services/ClipboardThumbnailProvider.swift in Sources */,
 				F50000000000000000000001 /* CtrlSay/Support/Telemetry.swift in Sources */,
+				F60000000000000000000001 /* CtrlSay/Models/PermanentCopySchema.swift in Sources */,
+				F70000000000000000000001 /* CtrlSay/Stores/PermanentCopyRepository.swift in Sources */,
+				F80000000000000000000001 /* CtrlSay/Models/PermanentCopyPersistenceState.swift in Sources */,
+				F90000000000000000000001 /* CtrlSay/Stores/PermanentMutationQueue.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

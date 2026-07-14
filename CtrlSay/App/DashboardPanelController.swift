@@ -1,11 +1,6 @@
 import AppKit
 import SwiftUI
 
-private final class EditableDashboardPanel: NSPanel {
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { false }
-}
-
 @MainActor
 final class DashboardPanelController {
     private let panel: NSPanel
@@ -21,7 +16,7 @@ final class DashboardPanelController {
         rootView: DashboardView,
         editingSession: DashboardEditingSession
     ) {
-        let panel = EditableDashboardPanel(
+        let panel = NonactivatingPanel(
             contentRect: NSRect(
                 origin: .zero,
                 size: DashboardPanelMetrics.preferredSize
@@ -97,14 +92,6 @@ final class DashboardPanelController {
                 panel?.orderOut(nil)
                 panel?.orderFrontRegardless()
             }
-        }
-    }
-
-    func toggle(relativeTo button: NSStatusBarButton) {
-        if isShown {
-            hide()
-        } else {
-            show(relativeTo: button)
         }
     }
 

@@ -42,8 +42,8 @@ final class VoiceCommandParserTests: XCTestCase {
         )
     }
 
-    func testNonCoreVolatileCommandsStillRequireMeasuredConfidence() {
-        for command in [VoiceCommand.saveCurrentClipboard(2), .clearNumbered] {
+    func testClearVolatileCommandRequiresMeasuredConfidence() {
+        for command in [VoiceCommand.clearTemporary] {
             XCTAssertFalse(
                 VolatileCommandAcceptancePolicy.accepts(
                     command,
@@ -133,10 +133,6 @@ final class VoiceCommandParserTests: XCTestCase {
                 VoiceCommandParser.parse("copy \(spoken[number - 1])"),
                 .copyNumber(number)
             )
-            XCTAssertEqual(
-                VoiceCommandParser.parse("save clipboard \(spoken[number - 1])"),
-                .saveCurrentClipboard(number)
-            )
         }
 
         XCTAssertEqual(VoiceCommandParser.parse("copy 10"), .copyNumber(10))
@@ -150,6 +146,7 @@ final class VoiceCommandParserTests: XCTestCase {
             .permanentCopy("house")
         )
         XCTAssertNil(VoiceCommandParser.parse("permanent copy ten"))
+        XCTAssertNil(VoiceCommandParser.parse("save clipboard one"))
     }
 
     func testHighConfidenceNumberHomophonesAreScopedToNumberedCommands() {

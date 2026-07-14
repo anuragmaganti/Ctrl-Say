@@ -4,22 +4,20 @@ enum VoiceCommand: Equatable, Sendable {
     case copyNumber(Int)
     case pasteNumber(Int)
     case copyNamed(String)
-    case saveCurrentClipboard(Int)
     case permanentCopy(String)
     case pasteNamed(String)
     case deleteNamed(String)
-    case clearNumbered
+    case clearTemporary
 
     var telemetryName: String {
         switch self {
         case .copyNumber: "copy-number"
         case .pasteNumber: "paste-number"
         case .copyNamed: "copy-temporary-named"
-        case .saveCurrentClipboard: "save-current"
         case .permanentCopy: "copy-named"
         case .pasteNamed: "paste-named"
         case .deleteNamed: "delete-named"
-        case .clearNumbered: "clear-numbered"
+        case .clearTemporary: "clear-temporary"
         }
     }
 
@@ -27,7 +25,7 @@ enum VoiceCommand: Equatable, Sendable {
         switch self {
         case .copyNumber, .pasteNumber, .copyNamed, .permanentCopy, .pasteNamed:
             true
-        case .saveCurrentClipboard, .deleteNamed, .clearNumbered:
+        case .deleteNamed, .clearTemporary:
             false
         }
     }
@@ -67,7 +65,7 @@ enum VoiceCommandParser {
         let tokens = normalizedTokens(transcript)
 
         if tokens == ["clear", "copies"] || tokens == ["clear", "numbered", "copies"] {
-            return .clearNumbered
+            return .clearTemporary
         }
 
         if tokens.count == 2, tokens[0] == "copy" {
@@ -75,10 +73,6 @@ enum VoiceCommandParser {
                 return .copyNumber(number)
             }
             return validTemporaryNameTokens([tokens[1]]).map(VoiceCommand.copyNamed)
-        }
-
-        if tokens.count == 3, tokens[0] == "save", tokens[1] == "clipboard" {
-            return slotNumber(tokens[2]).map(VoiceCommand.saveCurrentClipboard)
         }
 
         if tokens.count == 2, isPasteVerb(tokens[0]) {
@@ -123,7 +117,7 @@ enum VoiceCommandParser {
         // Volatile recognition can publish "cop…" or "copy" before the
         // numbered argument arrives. Keep that range as an ordering barrier
         // without retaining the transcript itself.
-        let commandBeginnings = ["copy", "paste", "permanent", "delete", "save", "clear"]
+        let commandBeginnings = ["copy", "paste", "permanent", "delete", "clear"]
             + pasteVerbAliases
         return commandBeginnings.contains {
             $0.hasPrefix(first) || first.hasPrefix($0)
@@ -214,7 +208,7 @@ enum VolatileCommandAcceptancePolicy {
             }
             return nameExists && !hasLongerPrefixMatch
 
-        case .saveCurrentClipboard, .clearNumbered:
+        case .clearTemporary:
             return meetsGuardedConfidence(confidence)
         }
     }

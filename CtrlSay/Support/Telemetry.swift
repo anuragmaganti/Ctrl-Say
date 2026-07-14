@@ -9,4 +9,5 @@ nonisolated enum Telemetry {
     static let speech = Logger(subsystem: subsystem, category: "Speech")
     static let interface = Logger(subsystem: subsystem, category: "Interface")
     static let performance = Logger(subsystem: subsystem, category: "Performance")
+    static let persistence = Logger(subsystem: subsystem, category: "Persistence")
 }

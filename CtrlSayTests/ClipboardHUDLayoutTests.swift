@@ -64,6 +64,34 @@ final class ClipboardHUDLayoutTests: XCTestCase {
         )
     }
 
+    func testPermanentStorageStatusIsIncludedWithoutDuplicatingEmptyState() {
+        let loading = ClipboardHUDMetrics.idealHeight(
+            itemCount: 0,
+            collection: .permanent,
+            permanentStatusLayout: .replacesContent
+        )
+        let failedWithCopies = ClipboardHUDMetrics.idealHeight(
+            itemCount: 2,
+            collection: .permanent,
+            permanentStatusLayout: .precedesContent
+        )
+
+        XCTAssertEqual(
+            loading,
+            ClipboardHUDMetrics.headerHeight
+                + ClipboardHUDMetrics.pickerHeight
+                + ClipboardHUDMetrics.listVerticalPadding
+                + ClipboardHUDMetrics.permanentStatusHeight
+        )
+        XCTAssertEqual(
+            failedWithCopies - ClipboardHUDMetrics.permanentStatusHeight,
+            ClipboardHUDMetrics.idealHeight(
+                itemCount: 2,
+                collection: .permanent
+            )
+        )
+    }
+
     func testResizePreservesTopEdgeAndClampsBottom() {
         let visible = CGRect(x: 0, y: 25, width: 1_440, height: 875)
         let current = CGRect(x: 1_000, y: 500, width: 360, height: 250)

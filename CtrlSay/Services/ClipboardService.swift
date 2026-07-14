@@ -23,8 +23,6 @@ final class ClipboardService {
     private static let commandKeyCode: CGKeyCode = 55
 
     private let pasteboard = NSPasteboard.general
-    private let maximumRepresentationBytes = 64 * 1_024 * 1_024
-    private let maximumPayloadBytes = 128 * 1_024 * 1_024
     private var didRequestEventPostingAccess = false
     private var activationGeneration: UInt64 = 0
     private var activationObserver: NSObjectProtocol?
@@ -127,8 +125,8 @@ final class ClipboardService {
 
             for type in item.types {
                 guard let data = item.data(forType: type),
-                      data.count <= maximumRepresentationBytes,
-                      totalBytes + data.count <= maximumPayloadBytes else {
+                      data.count <= ClipboardStore.maximumRepresentationBytes,
+                      totalBytes + data.count <= ClipboardStore.maximumPayloadBytes else {
                     continue
                 }
 

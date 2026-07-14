@@ -15,12 +15,14 @@ final class AppModel {
     private(set) var hasEventPostingAccess = false
     private(set) var hasKeyboardMonitoringAccess = false
     private(set) var isClipboardHUDPresented = false
+    private(set) var permanentStorageState: PermanentCopyPersistenceState = .loading
 
 #if DEBUG
     private(set) var debugDiagnostics = DebugPipelineSnapshot()
 #endif
 
     @ObservationIgnored private let clipboard = ClipboardService()
+    @ObservationIgnored private let permanentRepository: any PermanentCopyPersisting
     @ObservationIgnored private var rightOptionMonitor: RightOptionKeyMonitor?
     @ObservationIgnored private var speechCommandGate = SpeechCommandGate()
     @ObservationIgnored private var numberedCommandScanner = StreamingNumberedCommandScanner()
@@ -35,6 +37,10 @@ final class AppModel {
         payloadID: UUID,
         storedAtNanoseconds: UInt64
     )?
+    @ObservationIgnored private var permanentRestoreTask: Task<Void, Never>?
+    @ObservationIgnored private var permanentPersistenceTask: Task<Void, Never>?
+    @ObservationIgnored private var permanentMutationQueue = PermanentMutationQueueState()
+    @ObservationIgnored private var didRestorePermanentStorage = false
 
     var isReadyForCommands: Bool {
         speech.microphoneAuthorization == .authorized
@@ -42,7 +48,10 @@ final class AppModel {
             && hasEventPostingAccess
     }
 
-    init() {
+    init(
+        permanentRepository: any PermanentCopyPersisting = PermanentCopyRepository()
+    ) {
+        self.permanentRepository = permanentRepository
         hasEventPostingAccess = clipboard.hasEventPostingAccess
         speech.onResult = { [weak self] result in
             self?.received(result)
@@ -57,6 +66,12 @@ final class AppModel {
         rightOptionMonitor = monitor
         hasKeyboardMonitoringAccess = monitor.hasGlobalMonitoringAccess
         monitor.start()
+        startPermanentStorageRestore()
+    }
+
+    var hasPendingPermanentWrites: Bool {
+        !permanentMutationQueue.isEmpty
+            || permanentMutationQueue.inFlightSequence != nil
     }
 
     func toggleListening() {
@@ -92,10 +107,6 @@ final class AppModel {
         Telemetry.commands.info(
             "Right Option gesture=\(gesture == .tap ? "tap" : "hold", privacy: .public) listening_requested=\(next.wantsListening, privacy: .public) hud=\(next.isHUDPresented, privacy: .public)"
         )
-    }
-
-    func submit(_ command: VoiceCommand) {
-        enqueueManual(command)
     }
 
     func pasteNumberedCopy(_ payload: ClipboardPayload) {
@@ -165,10 +176,17 @@ final class AppModel {
     }
 
     func deletePermanentCopy(_ payloadID: UUID) {
-        guard let name = slots.name(forPayloadID: payloadID),
-              slots.removeNamed(name) != nil else {
+        guard didRestorePermanentStorage else {
+            reportPermanentStorageUnavailable()
             return
         }
+        guard let name = slots.name(forPayloadID: payloadID),
+              let removed = slots.removeNamed(name) else {
+            return
+        }
+        enqueuePermanentMutation(
+            .delete(name: name, expectedPayloadID: removed.id)
+        )
         scheduleVocabularyRefresh()
         lastError = nil
         lastAction = "Deleted permanent copy"
@@ -179,6 +197,7 @@ final class AppModel {
         _ payloadID: UUID,
         to requestedName: String
     ) throws -> String {
+        try requirePermanentStorage()
         guard let currentName = slots.name(forPayloadID: payloadID) else {
             throw ClipboardStoreError.missingPermanentCopy
         }
@@ -194,6 +213,15 @@ final class AppModel {
             to: validation.normalizedName,
             expectedPayloadID: payloadID
         )
+        if normalizedName != currentName {
+            enqueuePermanentMutation(
+                .rename(
+                    from: currentName,
+                    to: normalizedName,
+                    expectedPayloadID: payloadID
+                )
+            )
+        }
         scheduleVocabularyRefresh()
         lastError = nil
         lastAction = "Renamed permanent copy"
@@ -201,6 +229,7 @@ final class AppModel {
     }
 
     func updatePermanentCopyText(_ payloadID: UUID, text: String) throws {
+        try requirePermanentStorage()
         guard let name = slots.name(forPayloadID: payloadID) else {
             throw ClipboardStoreError.missingPermanentCopy
         }
@@ -209,8 +238,78 @@ final class AppModel {
             text: text,
             expectedPayloadID: payloadID
         )
+        guard let updatedPayload = slots.payload(named: name) else {
+            throw ClipboardStoreError.missingPermanentCopy
+        }
+        enqueuePermanentMutation(.upsert(name: name, payload: updatedPayload))
         lastError = nil
         lastAction = "Updated permanent copy"
+    }
+
+    func retryPermanentStorage() {
+        switch permanentStorageState {
+        case .loadFailed:
+            startPermanentStorageRestore()
+        case .saveFailed:
+            startPermanentPersistenceDrainIfNeeded()
+        case .loading, .ready, .saving:
+            break
+        }
+    }
+
+    func resetPermanentStorage() async {
+        didRestorePermanentStorage = false
+        permanentStorageState = .loading
+        permanentPersistenceTask?.cancel()
+        permanentPersistenceTask = nil
+        permanentMutationQueue.removeAll()
+
+        do {
+            try await permanentRepository.reset()
+            slots.clearPermanentCopies()
+            didRestorePermanentStorage = true
+            permanentStorageState = .ready
+            scheduleVocabularyRefresh()
+            lastError = nil
+            lastAction = "Reset permanent storage"
+            Telemetry.persistence.notice("Permanent storage reset")
+        } catch {
+            didRestorePermanentStorage = false
+            permanentStorageState = .loadFailed
+            lastError = PermanentCopyPersistenceError.storageUnavailable.localizedDescription
+            Telemetry.persistence.error("Permanent storage reset failed")
+        }
+    }
+
+    func flushPermanentCopies() async throws {
+        if let permanentRestoreTask {
+            await permanentRestoreTask.value
+        }
+        guard didRestorePermanentStorage else {
+            throw PermanentCopyPersistenceError.storageUnavailable
+        }
+
+        while true {
+            if !permanentMutationQueue.isEmpty {
+                startPermanentPersistenceDrainIfNeeded()
+            }
+            if let permanentPersistenceTask {
+                await permanentPersistenceTask.value
+            }
+            guard permanentMutationQueue.isEmpty else {
+                throw PermanentCopyPersistenceError.unsavedChanges
+            }
+            try await permanentRepository.flush()
+            if permanentMutationQueue.isEmpty {
+                return
+            }
+        }
+    }
+
+    func waitForPermanentStorageRestore() async {
+        if let permanentRestoreTask {
+            await permanentRestoreTask.value
+        }
     }
 
     func requestEventPostingAccess() {
@@ -502,23 +601,6 @@ final class AppModel {
         }
     }
 
-    private func enqueueManual(_ command: VoiceCommand) {
-        let queued = QueuedCommand(
-            operation: .voice(command),
-            speechMetadata: nil,
-            target: command.requiresExternalTarget ? clipboard.currentCommandTarget() : nil
-        )
-        commandQueue.upsert(
-            queued,
-            identity: nil,
-            enqueuedAtNanoseconds: DispatchTime.now().uptimeNanoseconds
-        )
-#if DEBUG
-        debugDiagnostics.queued(depth: commandQueue.count, replacedRevision: false)
-#endif
-        startCommandWorkerIfNeeded()
-    }
-
     private func enqueueDashboard(
         _ operation: QueuedOperation,
         target: CommandTarget? = nil
@@ -581,6 +663,9 @@ final class AppModel {
         _ queued: QueuedCommand,
         queueWaitMilliseconds: Double
     ) async {
+        if let permanentRestoreTask {
+            await permanentRestoreTask.value
+        }
         let started = DispatchTime.now().uptimeNanoseconds
         lastError = nil
         var clipboardMilliseconds: Double?
@@ -610,6 +695,7 @@ final class AppModel {
                     lastAction = "Paste sent from \(number)"
 
                 case .copyNamed(let name):
+                    try requirePermanentStorage()
                     let normalizedName = try slots.validateTemporaryNameAvailable(
                         name
                     )
@@ -626,15 +712,16 @@ final class AppModel {
                     scheduleVocabularyRefresh()
                     lastAction = "Copied to \(normalizedName)"
 
-                case .saveCurrentClipboard(let number):
-                    let payload = try clipboard.snapshotCurrentClipboard()
-                    try slots.set(payload, at: number)
-                    markHUDStoreUpdate(for: payload.id)
-                    lastAction = "Saved clipboard to \(number)"
-
                 case .permanentCopy(let name):
+                    try requirePermanentStorage()
+                    guard let normalizedName = VoiceCommandParser.validNormalizedPermanentName(name) else {
+                        throw ClipboardStoreError.invalidPermanentName
+                    }
                     let capture = try await clipboard.captureSelection(target: queued.target)
-                    try slots.set(capture.payload, named: name)
+                    try slots.set(capture.payload, named: normalizedName)
+                    enqueuePermanentMutation(
+                        .upsert(name: normalizedName, payload: capture.payload)
+                    )
                     markHUDStoreUpdate(for: capture.payload.id)
                     clipboardMilliseconds = capture.milliseconds
                     targetStatus = .verified
@@ -642,8 +729,15 @@ final class AppModel {
                     lastAction = "Created permanent copy"
 
                 case .pasteNamed(let name):
-                    guard let payload = slots.payload(resolvingNamed: name) else {
-                        throw AppModelError.missingNamedCopy
+                    let payload: ClipboardPayload
+                    if let temporaryPayload = slots.payload(temporaryNamed: name) {
+                        payload = temporaryPayload
+                    } else {
+                        try requirePermanentStorage()
+                        guard let permanentPayload = slots.payload(named: name) else {
+                            throw AppModelError.missingNamedCopy
+                        }
+                        payload = permanentPayload
                     }
                     let metrics = try clipboard.paste(payload, target: queued.target)
                     clipboardMilliseconds = metrics.milliseconds
@@ -651,10 +745,13 @@ final class AppModel {
                     lastAction = "Named paste sent"
 
                 case .deleteNamed(let name):
-                    _ = removePermanentCopy(named: name)
+                    try requirePermanentStorage()
+                    guard removePermanentCopy(named: name) else {
+                        throw AppModelError.missingNamedCopy
+                    }
                     lastAction = "Deleted permanent copy"
 
-                case .clearNumbered:
+                case .clearTemporary:
                     slots.clearTemporary()
                     scheduleVocabularyRefresh()
                     lastAction = "Cleared temporary copies"
@@ -803,9 +900,118 @@ final class AppModel {
 
     @discardableResult
     private func removePermanentCopy(named name: String) -> Bool {
-        guard slots.removeNamed(name) != nil else { return false }
+        let normalizedName = VoiceCommandParser.normalizeName(name)
+        guard let removed = slots.removeNamed(normalizedName) else { return false }
+        enqueuePermanentMutation(
+            .delete(name: normalizedName, expectedPayloadID: removed.id)
+        )
         scheduleVocabularyRefresh()
         return true
+    }
+
+    private func requirePermanentStorage() throws {
+        guard didRestorePermanentStorage else {
+            throw PermanentCopyPersistenceError.storageUnavailable
+        }
+    }
+
+    private func reportPermanentStorageUnavailable() {
+        lastError = PermanentCopyPersistenceError.storageUnavailable.localizedDescription
+        lastAction = "Permanent storage unavailable"
+        NSSound.beep()
+    }
+
+    private func startPermanentStorageRestore() {
+        guard permanentRestoreTask == nil else { return }
+        permanentStorageState = .loading
+        let startedAt = DispatchTime.now().uptimeNanoseconds
+
+        permanentRestoreTask = Task(priority: .utility) { [weak self] in
+            guard let self else { return }
+            do {
+                let restored = try await permanentRepository.load()
+                try slots.restorePermanentCopies(restored)
+                didRestorePermanentStorage = true
+                permanentStorageState = .ready
+                lastError = nil
+                scheduleVocabularyRefresh()
+                let byteCount = restored.reduce(0) { $0 + $1.payload.byteCount }
+                let milliseconds = Double(
+                    DispatchTime.now().uptimeNanoseconds - startedAt
+                ) / 1_000_000
+                Telemetry.persistence.info(
+                    "Permanent load completed count=\(restored.count, privacy: .public) bytes=\(byteCount, privacy: .public) duration_ms=\(milliseconds, privacy: .public)"
+                )
+            } catch {
+                didRestorePermanentStorage = false
+                permanentStorageState = .loadFailed
+                lastError = PermanentCopyPersistenceError.storageUnavailable.localizedDescription
+                Telemetry.persistence.error("Permanent load failed")
+            }
+            permanentRestoreTask = nil
+        }
+    }
+
+    private func enqueuePermanentMutation(_ mutation: PermanentCopyMutation) {
+        permanentMutationQueue.enqueue(mutation)
+        startPermanentPersistenceDrainIfNeeded()
+    }
+
+    private func startPermanentPersistenceDrainIfNeeded() {
+        guard permanentPersistenceTask == nil,
+              !permanentMutationQueue.isEmpty,
+              didRestorePermanentStorage else {
+            return
+        }
+        permanentStorageState = .saving(
+            pendingCount: permanentMutationQueue.count
+        )
+        permanentPersistenceTask = Task(priority: .utility) { [weak self] in
+            await self?.drainPermanentPersistenceMutations()
+        }
+    }
+
+    private func drainPermanentPersistenceMutations() async {
+        while let pending = permanentMutationQueue.beginNext() {
+            if Task.isCancelled { break }
+            let startedAt = DispatchTime.now().uptimeNanoseconds
+
+            do {
+                try await permanentRepository.apply(pending.mutation)
+                if Task.isCancelled { return }
+                guard permanentMutationQueue.complete(pending.sequence) else {
+                    assertionFailure("Permanent-copy mutation order changed while saving")
+                    break
+                }
+                let milliseconds = Double(
+                    DispatchTime.now().uptimeNanoseconds - startedAt
+                ) / 1_000_000
+                Telemetry.persistence.info(
+                    "Permanent mutation saved sequence=\(pending.sequence, privacy: .public) bytes=\(pending.mutation.byteCount, privacy: .public) duration_ms=\(milliseconds, privacy: .public) remaining=\(self.permanentMutationQueue.count, privacy: .public)"
+                )
+            } catch {
+                permanentMutationQueue.fail(pending.sequence)
+                permanentStorageState = .saveFailed(
+                    pendingCount: permanentMutationQueue.count
+                )
+                lastError = PermanentCopyPersistenceError.unsavedChanges.localizedDescription
+                Telemetry.persistence.error(
+                    "Permanent mutation save failed sequence=\(pending.sequence, privacy: .public) pending=\(self.permanentMutationQueue.count, privacy: .public)"
+                )
+                permanentPersistenceTask = nil
+                return
+            }
+        }
+
+        permanentPersistenceTask = nil
+        if permanentMutationQueue.isEmpty {
+            permanentStorageState = .ready
+            if lastError == PermanentCopyPersistenceError.unsavedChanges.localizedDescription {
+                lastError = nil
+            }
+        } else if !Task.isCancelled {
+            startPermanentPersistenceDrainIfNeeded()
+        }
     }
 
     private func scheduleVocabularyRefresh() {

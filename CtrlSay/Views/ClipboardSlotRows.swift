@@ -63,7 +63,7 @@ struct NumberedCopyRow: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("Slot \(number)")
-                    .font(.callout.weight(.medium))
+                    .font(.callout.weight(.semibold))
                     .lineLimit(1)
                 Text(payload.preview)
                     .font(.caption)
@@ -72,16 +72,10 @@ struct NumberedCopyRow: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Button("Paste", action: paste)
-                .font(.caption.weight(.semibold))
-                .buttonStyle(.borderless)
-                .accessibilityLabel("Paste slot \(number)")
-                .help("Paste slot \(number)")
-
-            optionsMenu
+            rowActions
         }
-        .padding(.leading, 10)
-        .padding(.trailing, 5)
+        .padding(.leading, 12)
+        .padding(.trailing, 6)
         .frame(minHeight: style.minimumHeight)
         .contentShape(.rect(cornerRadius: 11))
         .background(
@@ -97,17 +91,31 @@ struct NumberedCopyRow: View {
 
     @ViewBuilder
     private var leadingView: some View {
-        if style.showsThumbnail, let thumbnailProvider {
+        if style.showsThumbnail,
+           payload.kind.benefitsFromThumbnail,
+           let thumbnailProvider {
             ClipboardPayloadThumbnailView(
                 payload: payload,
                 provider: thumbnailProvider
             )
-        } else {
+        } else if !style.showsThumbnail {
             Text("\(number)")
                 .font(.callout.monospacedDigit().weight(.semibold))
                 .frame(width: 30, height: 30)
                 .background(.quaternary, in: .rect(cornerRadius: 8))
                 .accessibilityHidden(true)
+        }
+    }
+
+    private var rowActions: some View {
+        HStack(spacing: 2) {
+            Button("Paste", action: paste)
+                .controlSize(.small)
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Paste slot \(number)")
+                .help("Paste slot \(number)")
+
+            optionsMenu
         }
     }
 
@@ -178,8 +186,8 @@ struct TemporaryNamedCopyRow: View {
             leadingView
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("Copy \(displayName)")
-                    .font(.callout.weight(.medium))
+                Text(displayName)
+                    .font(.callout.weight(.semibold))
                     .lineLimit(1)
                 Text(payload.preview)
                     .font(.caption)
@@ -188,16 +196,10 @@ struct TemporaryNamedCopyRow: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Button("Paste", action: paste)
-                .font(.caption.weight(.semibold))
-                .buttonStyle(.borderless)
-                .accessibilityLabel("Paste copy \(name)")
-                .help("Paste copy \(name)")
-
-            optionsMenu
+            rowActions
         }
-        .padding(.leading, 10)
-        .padding(.trailing, 5)
+        .padding(.leading, 12)
+        .padding(.trailing, 6)
         .frame(minHeight: style.minimumHeight)
         .contentShape(.rect(cornerRadius: 11))
         .background(
@@ -213,18 +215,32 @@ struct TemporaryNamedCopyRow: View {
 
     @ViewBuilder
     private var leadingView: some View {
-        if style.showsThumbnail, let thumbnailProvider {
+        if style.showsThumbnail,
+           payload.kind.benefitsFromThumbnail,
+           let thumbnailProvider {
             ClipboardPayloadThumbnailView(
                 payload: payload,
                 provider: thumbnailProvider
             )
-        } else {
+        } else if !style.showsThumbnail {
             Image(systemName: "tag.fill")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .frame(width: 30, height: 30)
                 .background(.quaternary, in: .rect(cornerRadius: 8))
                 .accessibilityHidden(true)
+        }
+    }
+
+    private var rowActions: some View {
+        HStack(spacing: 2) {
+            Button("Paste", action: paste)
+                .controlSize(.small)
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Paste copy \(name)")
+                .help("Paste copy \(name)")
+
+            optionsMenu
         }
     }
 
@@ -376,19 +392,13 @@ struct PermanentCopyRow: View {
             editorOrLabels
 
             if editingField == nil {
-                Button("Paste", action: paste)
-                    .font(.caption.weight(.semibold))
-                    .buttonStyle(.borderless)
-                    .accessibilityLabel("Paste permanent copy \(name)")
-                    .help("Paste permanent copy \(name)")
-
-                optionsMenu
+                rowActions
             } else {
                 editorControls
             }
         }
-        .padding(.leading, 10)
-        .padding(.trailing, 5)
+        .padding(.leading, 12)
+        .padding(.trailing, 6)
         .padding(.vertical, editingField == .content ? 8 : 0)
         .frame(minHeight: style.minimumHeight)
         .contentShape(.rect(cornerRadius: 11))
@@ -405,18 +415,32 @@ struct PermanentCopyRow: View {
 
     @ViewBuilder
     private var leadingView: some View {
-        if style.showsThumbnail, let thumbnailProvider {
+        if style.showsThumbnail,
+           payload.kind.benefitsFromThumbnail,
+           let thumbnailProvider {
             ClipboardPayloadThumbnailView(
                 payload: payload,
                 provider: thumbnailProvider
             )
-        } else {
+        } else if !style.showsThumbnail {
             Image(systemName: "pin.fill")
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .frame(width: 30, height: 30)
                 .background(.quaternary, in: .circle)
                 .accessibilityHidden(true)
+        }
+    }
+
+    private var rowActions: some View {
+        HStack(spacing: 2) {
+            Button("Paste", action: paste)
+                .controlSize(.small)
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Paste permanent copy \(name)")
+                .help("Paste permanent copy \(name)")
+
+            optionsMenu
         }
     }
 
@@ -436,8 +460,8 @@ struct PermanentCopyRow: View {
                     }
                     .accessibilityLabel("Permanent copy name")
             } else {
-                Text(name)
-                    .font(.callout.weight(.medium))
+                Text(displayName)
+                    .font(.callout.weight(.semibold))
                     .lineLimit(1)
                     .contentShape(.rect)
                     .onTapGesture(count: 2) {
@@ -568,6 +592,10 @@ struct PermanentCopyRow: View {
 
     private var canEditContents: Bool {
         payload.inlineTextEditability == .editable
+    }
+
+    private var displayName: String {
+        name.prefix(1).uppercased() + String(name.dropFirst())
     }
 
     private var contentHelp: String {
@@ -718,9 +746,20 @@ struct PermanentCopyRow: View {
                 }
             }
 
-            try? await Task.sleep(for: .milliseconds(200))
+            await Task.yield()
             guard editingField == field, editingToken == token else { return }
             focusLossIsArmed = true
+        }
+    }
+}
+
+private extension ClipboardContentKind {
+    var benefitsFromThumbnail: Bool {
+        switch self {
+        case .image, .files, .mixed:
+            true
+        case .text, .data:
+            false
         }
     }
 }

@@ -27,7 +27,7 @@ final class ClipboardStoreMutationTests: XCTestCase {
 
         try store.setTemporaryNamed(first, named: " HOUSE! ")
         XCTAssertEqual(store.payload(temporaryNamed: "house"), first)
-        XCTAssertEqual(store.payload(resolvingNamed: "HOUSE"), first)
+        XCTAssertNil(store.payload(named: "HOUSE"))
 
         try store.setTemporaryNamed(replacement, named: "house")
         XCTAssertEqual(store.payload(temporaryNamed: "house"), replacement)
@@ -120,7 +120,7 @@ final class ClipboardStoreMutationTests: XCTestCase {
                 .nameProtectedByPermanentCopy("house")
             )
         }
-        XCTAssertEqual(store.payload(resolvingNamed: "house"), permanent)
+        XCTAssertEqual(store.payload(named: "house"), permanent)
         XCTAssertNil(store.payload(temporaryNamed: "house"))
     }
 
@@ -135,7 +135,6 @@ final class ClipboardStoreMutationTests: XCTestCase {
 
         XCTAssertNil(store.payload(temporaryNamed: "house"))
         XCTAssertEqual(store.payload(named: "house"), permanent)
-        XCTAssertEqual(store.payload(resolvingNamed: "house"), permanent)
         XCTAssertEqual(store.totalByteCount, permanent.byteCount)
     }
 
@@ -152,7 +151,8 @@ final class ClipboardStoreMutationTests: XCTestCase {
         )
 
         XCTAssertEqual(store.allNamedKeys, ["draft", "house"])
-        XCTAssertNotNil(store.payload(resolvingNamed: "house"))
+        XCTAssertNotNil(store.payload(temporaryNamed: "draft"))
+        XCTAssertNotNil(store.payload(named: "house"))
     }
 
     @MainActor

@@ -4,6 +4,7 @@ import Observation
 @MainActor
 @Observable
 final class ClipboardStore {
+    static let maximumRepresentationBytes = 64 * 1_024 * 1_024
     static let maximumPayloadBytes = 128 * 1_024 * 1_024
     static let maximumTotalStoredBytes = 256 * 1_024 * 1_024
 
@@ -110,11 +111,6 @@ final class ClipboardStore {
 
     func payload(temporaryNamed name: String) -> ClipboardPayload? {
         temporaryNamed[VoiceCommandParser.normalizeName(name)]
-    }
-
-    func payload(resolvingNamed name: String) -> ClipboardPayload? {
-        let normalizedName = VoiceCommandParser.normalizeName(name)
-        return temporaryNamed[normalizedName] ?? named[normalizedName]
     }
 
     func name(forPayloadID payloadID: UUID) -> String? {
@@ -238,6 +234,54 @@ final class ClipboardStore {
         totalByteCount = max(0, totalByteCount - removedBytes)
     }
 
+    /// Validates an entire durable snapshot before publishing any of it. A
+    /// malformed or oversized store therefore cannot leave a partial restore
+    /// visible or corrupt the shared memory accounting.
+    func restorePermanentCopies(
+        _ restored: [PersistedPermanentCopy]
+    ) throws {
+        let existingTemporaryIDs = Set(numbered.values.map(\.id))
+            .union(temporaryNamed.values.map(\.id))
+        var names = Set<String>()
+        var payloadIDs = Set<UUID>()
+        var restoredNamed: [String: ClipboardPayload] = [:]
+        var restoredBytes = 0
+
+        for entry in restored {
+            guard let normalizedName = VoiceCommandParser.validNormalizedPermanentName(
+                entry.name
+            ), normalizedName == entry.name else {
+                throw ClipboardStoreError.invalidRestoredPermanentCopy
+            }
+            guard names.insert(normalizedName).inserted,
+                  payloadIDs.insert(entry.payload.id).inserted,
+                  !existingTemporaryIDs.contains(entry.payload.id) else {
+                throw ClipboardStoreError.duplicateRestoredPermanentCopy
+            }
+            try validateRestoredPayload(entry.payload)
+            restoredBytes = try addingWithoutOverflow(
+                restoredBytes,
+                entry.payload.byteCount
+            )
+            restoredNamed[normalizedName] = entry.payload
+        }
+
+        let temporaryBytes = numbered.values.reduce(0) { $0 + $1.byteCount }
+            + temporaryNamed.values.reduce(0) { $0 + $1.byteCount }
+        guard temporaryBytes <= Self.maximumTotalStoredBytes - restoredBytes else {
+            throw ClipboardStoreError.storageLimitExceeded
+        }
+
+        named = restoredNamed
+        totalByteCount = temporaryBytes + restoredBytes
+    }
+
+    func clearPermanentCopies() {
+        let removedBytes = named.values.reduce(0) { $0 + $1.byteCount }
+        named.removeAll(keepingCapacity: true)
+        totalByteCount = max(0, totalByteCount - removedBytes)
+    }
+
     private func ensureCapacity(
         replacingBytes: Int,
         with payload: ClipboardPayload
@@ -250,6 +294,42 @@ final class ClipboardStore {
         guard projectedBytes <= Self.maximumTotalStoredBytes else {
             throw ClipboardStoreError.storageLimitExceeded
         }
+    }
+
+    private func validateRestoredPayload(_ payload: ClipboardPayload) throws {
+        guard !payload.items.isEmpty,
+              payload.byteCount >= 0,
+              payload.byteCount <= Self.maximumPayloadBytes else {
+            throw ClipboardStoreError.invalidRestoredPermanentCopy
+        }
+
+        var measuredBytes = 0
+        for item in payload.items {
+            guard !item.representations.isEmpty else {
+                throw ClipboardStoreError.invalidRestoredPermanentCopy
+            }
+            for representation in item.representations {
+                guard !representation.typeIdentifier.isEmpty,
+                      representation.data.count <= Self.maximumRepresentationBytes else {
+                    throw ClipboardStoreError.invalidRestoredPermanentCopy
+                }
+                measuredBytes = try addingWithoutOverflow(
+                    measuredBytes,
+                    representation.data.count
+                )
+            }
+        }
+        guard measuredBytes == payload.byteCount else {
+            throw ClipboardStoreError.invalidRestoredPermanentCopy
+        }
+    }
+
+    private func addingWithoutOverflow(_ left: Int, _ right: Int) throws -> Int {
+        let (sum, overflow) = left.addingReportingOverflow(right)
+        guard !overflow else {
+            throw ClipboardStoreError.invalidRestoredPermanentCopy
+        }
+        return sum
     }
 }
 
@@ -266,6 +346,8 @@ enum ClipboardStoreError: LocalizedError, Equatable {
     case noneditableContent
     case payloadTooLarge
     case storageLimitExceeded
+    case invalidRestoredPermanentCopy
+    case duplicateRestoredPermanentCopy
 
     var errorDescription: String? {
         switch self {
@@ -293,6 +375,10 @@ enum ClipboardStoreError: LocalizedError, Equatable {
             "That copy exceeds Ctrl-Say’s 128 MB per-copy limit."
         case .storageLimitExceeded:
             "Ctrl-Say’s 256 MB clipboard memory limit is full. Delete a copy, then try again."
+        case .invalidRestoredPermanentCopy:
+            "Permanent storage contains invalid or oversized clipboard data."
+        case .duplicateRestoredPermanentCopy:
+            "Permanent storage contains duplicate clipboard records."
         }
     }
 }

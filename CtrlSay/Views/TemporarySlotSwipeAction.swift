@@ -12,7 +12,10 @@ extension View {
         }
     }
 
-    func temporarySlotListRow(verticalInset: CGFloat = 0) -> some View {
+    func temporarySlotListRow(
+        verticalInset: CGFloat = 0,
+        showsBottomSeparator: Bool = false
+    ) -> some View {
         listRowInsets(
             EdgeInsets(
                 top: verticalInset,
@@ -23,5 +26,16 @@ extension View {
         )
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
+            .clipboardRowSeparator(isVisible: showsBottomSeparator)
+    }
+
+    func clipboardRowSeparator(isVisible: Bool) -> some View {
+        overlay(alignment: .bottom) {
+            if isVisible {
+                Divider()
+                    .padding(.leading, 12)
+                    .padding(.trailing, 8)
+            }
+        }
     }
 }

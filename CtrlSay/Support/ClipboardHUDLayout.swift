@@ -1,11 +1,17 @@
 import CoreGraphics
 import Foundation
 
-enum ClipboardHUDCollection: String, CaseIterable, Identifiable, Sendable {
+enum ClipboardCollection: String, CaseIterable, Identifiable, Sendable {
     case numbered = "Temporary"
     case permanent = "Permanent"
 
     var id: Self { self }
+}
+
+enum ClipboardHUDPermanentStatusLayout: Sendable {
+    case none
+    case replacesContent
+    case precedesContent
 }
 
 enum ClipboardHUDMetrics {
@@ -19,14 +25,25 @@ enum ClipboardHUDMetrics {
     static let emptyListHeight: CGFloat = 50
     static let listVerticalPadding: CGFloat = 12
     static let numberedFooterHeight: CGFloat = 42
+    static let permanentStatusHeight: CGFloat = 48
 
     static func idealHeight(
         itemCount: Int,
-        collection: ClipboardHUDCollection
+        collection: ClipboardCollection,
+        permanentStatusLayout: ClipboardHUDPermanentStatusLayout = .none
     ) -> CGFloat {
-        let listHeight = itemCount == 0
+        let copyContentHeight = itemCount == 0
             ? emptyListHeight
             : CGFloat(itemCount) * rowHeight
+        let listHeight: CGFloat
+        switch permanentStatusLayout {
+        case .none:
+            listHeight = copyContentHeight
+        case .replacesContent:
+            listHeight = permanentStatusHeight
+        case .precedesContent:
+            listHeight = permanentStatusHeight + copyContentHeight
+        }
         let footerHeight = collection == .numbered
             ? numberedFooterHeight
             : 0
@@ -39,11 +56,16 @@ enum ClipboardHUDMetrics {
 
     static func height(
         itemCount: Int,
-        collection: ClipboardHUDCollection,
+        collection: ClipboardCollection,
+        permanentStatusLayout: ClipboardHUDPermanentStatusLayout = .none,
         visibleFrame: CGRect
     ) -> CGFloat {
         min(
-            idealHeight(itemCount: itemCount, collection: collection),
+            idealHeight(
+                itemCount: itemCount,
+                collection: collection,
+                permanentStatusLayout: permanentStatusLayout
+            ),
             max(0, visibleFrame.height * maximumHeightFraction)
         )
     }

@@ -8,14 +8,14 @@ struct CtrlSayApp: App {
 
     var body: some Scene {
         Settings {
-            CtrlSaySettingsView()
+            CtrlSaySettingsView(model: appDelegate.model)
         }
     }
 }
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private let model = AppModel()
+    let model: AppModel
     private let dashboardEditingSession = DashboardEditingSession()
     private lazy var hudEditingSession = DashboardEditingSession()
     private lazy var hudPresentationState = ClipboardHUDPresentationState()
@@ -29,6 +29,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     )
     private var statusItem: NSStatusItem?
     private var hudPanel: ClipboardHUDPanelController?
+    private var terminationTask: Task<Void, Never>?
+
+    override init() {
+#if DEBUG
+        if CommandLine.arguments.contains("-CtrlSaySeedHUDForTesting") {
+            model = AppModel(
+                permanentRepository: PermanentCopyRepository(location: .memory)
+            )
+        } else {
+            model = AppModel()
+        }
+#else
+        model = AppModel()
+#endif
+        super.init()
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -46,7 +62,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 #if DEBUG
         if CommandLine.arguments.contains("-CtrlSaySeedHUDForTesting") {
-            seedHUDForTesting()
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                await model.waitForPermanentStorageRestore()
+                seedHUDForTesting()
+            }
         }
         if CommandLine.arguments.contains("-CtrlSayShowHUDForTesting") {
             model.setClipboardHUDPresented(true)
@@ -60,11 +80,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        terminationTask?.cancel()
         dashboardPanel.hide()
         hudPanel?.hide()
         if let statusItem {
             NSStatusBar.system.removeStatusItem(statusItem)
         }
+    }
+
+    func applicationShouldTerminate(
+        _ sender: NSApplication
+    ) -> NSApplication.TerminateReply {
+        guard model.hasPendingPermanentWrites else {
+            return .terminateNow
+        }
+        guard terminationTask == nil else {
+            return .terminateLater
+        }
+
+        terminationTask = Task { @MainActor [weak self] in
+            guard let self else {
+                sender.reply(toApplicationShouldTerminate: false)
+                return
+            }
+            do {
+                try await flushPermanentCopiesBeforeQuit()
+                terminationTask = nil
+                sender.reply(toApplicationShouldTerminate: true)
+            } catch {
+                let shouldQuit = presentUnsavedChangesAlert()
+                terminationTask = nil
+                sender.reply(toApplicationShouldTerminate: shouldQuit)
+            }
+        }
+        return .terminateLater
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
@@ -260,5 +309,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         dashboardPanel.show(relativeTo: button)
         Telemetry.interface.info("First-run setup opened")
+    }
+
+    private func flushPermanentCopiesBeforeQuit() async throws {
+        try await withCheckedThrowingContinuation { continuation in
+            let race = QuitFlushRace(continuation: continuation)
+            Task { [model] in
+                do {
+                    try await model.flushPermanentCopies()
+                    await race.resolve(.success(()))
+                } catch {
+                    await race.resolve(.failure(error))
+                }
+            }
+            Task {
+                do {
+                    try await Task.sleep(for: .seconds(5))
+                    await race.resolve(
+                        .failure(PermanentCopyPersistenceError.flushTimedOut)
+                    )
+                } catch {
+                    // The app is already terminating or this task was canceled.
+                }
+            }
+        }
+    }
+
+    private func presentUnsavedChangesAlert() -> Bool {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Permanent copies couldn’t be saved"
+        alert.informativeText = "Quitting now may discard recent permanent-copy changes."
+        alert.addButton(withTitle: "Cancel Quit")
+        let destructiveButton = alert.addButton(withTitle: "Quit Without Saving")
+        destructiveButton.hasDestructiveAction = true
+        return alert.runModal() == .alertSecondButtonReturn
+    }
+}
+
+private actor QuitFlushRace {
+    private var continuation: CheckedContinuation<Void, any Error>?
+
+    init(continuation: CheckedContinuation<Void, any Error>) {
+        self.continuation = continuation
+    }
+
+    func resolve(_ result: Result<Void, any Error>) {
+        guard let continuation else { return }
+        self.continuation = nil
+        continuation.resume(with: result)
     }
 }

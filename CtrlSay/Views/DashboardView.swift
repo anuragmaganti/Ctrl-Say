@@ -2,17 +2,10 @@ import AppKit
 import SwiftUI
 
 struct DashboardView: View {
-    private enum CopyCollection: String, CaseIterable, Identifiable {
-        case numbered = "Temporary"
-        case permanent = "Permanent"
-
-        var id: Self { self }
-    }
-
     let model: AppModel
     let editingSession: DashboardEditingSession
 
-    @State private var selectedCollection: CopyCollection = .numbered
+    @State private var selectedCollection: ClipboardCollection = .numbered
 #if DEBUG
     @State private var showsDeveloperDiagnostics = false
 #endif
@@ -273,7 +266,7 @@ struct DashboardView: View {
             }
 
             Picker("Copy collection", selection: selectedCollectionBinding) {
-                ForEach(CopyCollection.allCases) { collection in
+                ForEach(ClipboardCollection.allCases) { collection in
                     Text(collection.rawValue)
                         .tag(collection)
                 }
@@ -346,38 +339,48 @@ struct DashboardView: View {
     @ViewBuilder
     private var permanentCopies: some View {
         let slots = model.slots.namedSlots
-        if slots.isEmpty {
-            emptyState(
-                icon: "pin",
-                title: "No permanent copies",
-                instruction: "Say “permanent copy house” with something selected."
+        VStack(spacing: 8) {
+            PermanentStorageStatusRow(
+                state: model.permanentStorageState,
+                retry: model.retryPermanentStorage
             )
-        } else {
-            LazyVStack(spacing: 2) {
-                ForEach(slots, id: \.name) { slot in
-                    PermanentCopyRow(
-                        name: slot.name,
-                        payload: slot.payload,
-                        editingSession: editingSession,
-                        paste: {
-                            model.pastePermanentCopy(slot.payload.id)
-                        },
-                        delete: {
-                            model.deletePermanentCopy(slot.payload.id)
-                        },
-                        rename: { payloadID, requestedName in
-                            try model.renamePermanentCopy(
-                                payloadID,
-                                to: requestedName
-                            )
-                        },
-                        updateText: { payloadID, text in
-                            try model.updatePermanentCopyText(
-                                payloadID,
-                                text: text
+
+            if !model.permanentStorageState.isLoading,
+               !model.permanentStorageState.isUnavailable {
+                if slots.isEmpty {
+                    emptyState(
+                        icon: "pin",
+                        title: "No permanent copies",
+                        instruction: "Say “permanent copy house” with something selected."
+                    )
+                } else {
+                    LazyVStack(spacing: 2) {
+                        ForEach(slots, id: \.name) { slot in
+                            PermanentCopyRow(
+                                name: slot.name,
+                                payload: slot.payload,
+                                editingSession: editingSession,
+                                paste: {
+                                    model.pastePermanentCopy(slot.payload.id)
+                                },
+                                delete: {
+                                    model.deletePermanentCopy(slot.payload.id)
+                                },
+                                rename: { payloadID, requestedName in
+                                    try model.renamePermanentCopy(
+                                        payloadID,
+                                        to: requestedName
+                                    )
+                                },
+                                updateText: { payloadID, text in
+                                    try model.updatePermanentCopyText(
+                                        payloadID,
+                                        text: text
+                                    )
+                                }
                             )
                         }
-                    )
+                    }
                 }
             }
         }
@@ -461,10 +464,10 @@ struct DashboardView: View {
             Image(systemName: "lock.fill")
                 .font(.caption2)
                 .accessibilityHidden(true)
-            Text("On-device speech")
-            Text("•")
-                .foregroundStyle(.tertiary)
-            Text("Clears when Ctrl-Say quits")
+            Text(
+                "On-device speech • Temporary copies clear on quit • Permanent copies stay on this Mac"
+            )
+            .lineLimit(2)
             Spacer(minLength: 8)
         }
         .font(.caption2)
@@ -581,7 +584,7 @@ struct DashboardView: View {
         return count == 1 ? "1 copy" : "\(count) copies"
     }
 
-    private var selectedCollectionBinding: Binding<CopyCollection> {
+    private var selectedCollectionBinding: Binding<ClipboardCollection> {
         Binding(
             get: { selectedCollection },
             set: { collection in

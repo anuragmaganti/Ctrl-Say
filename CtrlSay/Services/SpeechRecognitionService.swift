@@ -476,7 +476,7 @@ final class SpeechRecognitionService {
         var vocabulary = VoiceCommandParser.canonicalSpokenSlotNumbers.flatMap {
             ["copy \($0)", "paste \($0)"]
         }
-        vocabulary += ["permanent copy", "clear copies", "save clipboard"]
+        vocabulary += ["permanent copy", "clear copies"]
         vocabulary += namedCopies.flatMap {
             ["copy \($0)", "paste \($0)", "permanent copy \($0)"]
         }
