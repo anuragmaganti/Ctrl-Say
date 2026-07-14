@@ -6,8 +6,9 @@ extension View {
     ) -> some View {
         swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button(role: .destructive, action: action) {
-                Label("Delete Copy", systemImage: "trash")
+                Image(systemName: "trash")
             }
+            .accessibilityLabel("Delete copy")
             .tint(.red)
         }
     }

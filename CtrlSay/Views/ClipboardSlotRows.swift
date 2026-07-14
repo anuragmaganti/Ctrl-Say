@@ -102,28 +102,11 @@ struct NumberedCopyRow: View {
     }
 
     private var rowActions: some View {
-        HStack(spacing: 2) {
-            Button("Paste", action: paste)
-                .controlSize(.small)
-                .buttonStyle(.borderless)
-                .accessibilityLabel("Paste slot \(number)")
-                .help("Paste slot \(number)")
-
-            optionsMenu
-        }
-    }
-
-    private var optionsMenu: some View {
-        Menu { menuItems } label: {
-            Image(systemName: "ellipsis")
-                .frame(width: 24, height: 28)
-                .contentShape(.rect)
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .accessibilityLabel("Slot \(number) options")
-        .help("Slot \(number) options")
+        Button("Paste", action: paste)
+            .controlSize(.small)
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Paste slot \(number)")
+            .help("Paste slot \(number)")
     }
 
     @ViewBuilder
@@ -227,28 +210,11 @@ struct TemporaryNamedCopyRow: View {
     }
 
     private var rowActions: some View {
-        HStack(spacing: 2) {
-            Button("Paste", action: paste)
-                .controlSize(.small)
-                .buttonStyle(.borderless)
-                .accessibilityLabel("Paste copy \(name)")
-                .help("Paste copy \(name)")
-
-            optionsMenu
-        }
-    }
-
-    private var optionsMenu: some View {
-        Menu { menuItems } label: {
-            Image(systemName: "ellipsis")
-                .frame(width: 24, height: 28)
-                .contentShape(.rect)
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .accessibilityLabel("Copy \(name) options")
-        .help("Copy \(name) options")
+        Button("Paste", action: paste)
+            .controlSize(.small)
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Paste copy \(name)")
+            .help("Paste copy \(name)")
     }
 
     @ViewBuilder

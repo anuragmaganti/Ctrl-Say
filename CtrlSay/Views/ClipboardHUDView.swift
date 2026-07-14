@@ -45,27 +45,35 @@ struct ClipboardHUDView: View {
                 .accessibilityHidden(true)
 
             HStack {
-                ZStack {
-                    Circle()
-                        .fill(statusColor.opacity(0.14))
-                    Image(systemName: statusIcon)
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(statusColor)
+                Button {
+                    model.toggleListening()
+                } label: {
+                    ZStack {
+                        Circle()
+                            .fill(statusColor.opacity(0.14))
+                        Image(systemName: statusIcon)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(statusColor)
+                    }
+                    .frame(width: 32, height: 32)
+                    .contentShape(.circle)
                 }
-                .frame(width: 32, height: 32)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(statusAccessibilityLabel)
+                .buttonStyle(.plain)
+                .disabled(!model.isReadyForCommands && !model.speech.isActive)
+                .accessibilityLabel(listeningButtonTitle)
+                .accessibilityValue(statusAccessibilityLabel)
+                .help(listeningButtonTitle)
 
                 Spacer()
 
                 if model.isProcessingCommand {
                     ProgressView()
                         .controlSize(.mini)
+                        .allowsHitTesting(false)
                         .accessibilityLabel("Processing clipboard command")
                 }
             }
             .padding(.horizontal, 14)
-            .allowsHitTesting(false)
 
             collectionPicker
                 .frame(width: 184)
@@ -298,6 +306,21 @@ struct ClipboardHUDView: View {
             return "Voice control unavailable"
         case .stopped:
             return "Voice control inactive"
+        }
+    }
+
+    private var listeningButtonTitle: String {
+        switch model.speech.state {
+        case .requestingMicrophone, .preparing, .downloadingModel:
+            return "Cancel starting"
+        case .listening:
+            return "Stop listening"
+        case .stopping:
+            return "Start again"
+        case .stopped, .failed:
+            return model.isReadyForCommands
+                ? "Start listening"
+                : "Complete setup to listen"
         }
     }
 
