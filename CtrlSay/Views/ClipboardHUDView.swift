@@ -13,9 +13,6 @@ struct ClipboardHUDView: View {
             dragHeader
                 .frame(height: ClipboardHUDMetrics.headerHeight)
 
-            collectionPicker
-                .frame(height: ClipboardHUDMetrics.pickerHeight)
-
             copyList
                 .frame(maxHeight: .infinity)
 
@@ -40,46 +37,39 @@ struct ClipboardHUDView: View {
     }
 
     private var dragHeader: some View {
-        HStack(spacing: 10) {
-            ZStack {
-                Circle()
-                    .fill(statusColor.opacity(0.14))
-                Image(systemName: statusIcon)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(statusColor)
-            }
-            .frame(width: 32, height: 32)
-            .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(statusTitle)
-                    .font(.callout.weight(.semibold))
-                    .lineLimit(1)
-                Text("Hold Right Option to minimize")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-
-            Spacer(minLength: 8)
-
-            if model.isProcessingCommand {
-                ProgressView()
-                    .controlSize(.mini)
-                    .accessibilityLabel("Processing clipboard command")
-            }
-
-            Image(systemName: "line.3.horizontal")
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.tertiary)
+        ZStack {
+            Color.clear
+                .contentShape(.rect)
+                .gesture(WindowDragGesture())
+                .allowsWindowActivationEvents(true)
                 .accessibilityHidden(true)
+
+            HStack {
+                ZStack {
+                    Circle()
+                        .fill(statusColor.opacity(0.14))
+                    Image(systemName: statusIcon)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(statusColor)
+                }
+                .frame(width: 32, height: 32)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(statusAccessibilityLabel)
+
+                Spacer()
+
+                if model.isProcessingCommand {
+                    ProgressView()
+                        .controlSize(.mini)
+                        .accessibilityLabel("Processing clipboard command")
+                }
+            }
+            .padding(.horizontal, 14)
+            .allowsHitTesting(false)
+
+            collectionPicker
+                .frame(width: 184)
         }
-        .padding(.horizontal, 14)
-        .contentShape(.rect)
-        .gesture(WindowDragGesture())
-        .allowsWindowActivationEvents(true)
-        .accessibilityElement(children: .combine)
-        .accessibilityHint("Drag to move the Clipboard HUD")
     }
 
     private var collectionPicker: some View {
@@ -94,8 +84,6 @@ struct ClipboardHUDView: View {
         }
         .pickerStyle(.segmented)
         .labelsHidden()
-        .padding(.horizontal, 14)
-        .padding(.vertical, 7)
     }
 
     @ViewBuilder
@@ -297,19 +285,19 @@ struct ClipboardHUDView: View {
         )
     }
 
-    private var statusTitle: String {
-        if !model.isReadyForCommands { return "Setup required" }
+    private var statusAccessibilityLabel: String {
+        if !model.isReadyForCommands { return "Voice control setup required" }
         switch model.speech.state {
         case .requestingMicrophone, .preparing, .downloadingModel:
-            return "Starting listening…"
+            return "Voice control preparing"
         case .listening:
-            return "Listening"
+            return "Voice control active"
         case .stopping:
-            return "Stopping…"
+            return "Voice control becoming inactive"
         case .failed:
-            return "Listening unavailable"
+            return "Voice control unavailable"
         case .stopped:
-            return "Clipboard HUD"
+            return "Voice control inactive"
         }
     }
 

@@ -79,7 +79,6 @@ final class ClipboardHUDLayoutTests: XCTestCase {
         XCTAssertEqual(
             loading,
             ClipboardHUDMetrics.headerHeight
-                + ClipboardHUDMetrics.pickerHeight
                 + ClipboardHUDMetrics.listVerticalPadding
                 + ClipboardHUDMetrics.permanentStatusHeight
         )

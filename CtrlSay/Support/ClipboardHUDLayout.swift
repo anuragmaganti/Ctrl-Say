@@ -20,7 +20,6 @@ enum ClipboardHUDMetrics {
     static let defaultInset: CGFloat = 16
     static let maximumHeightFraction: CGFloat = 0.75
     static let headerHeight: CGFloat = 58
-    static let pickerHeight: CGFloat = 43
     static let rowHeight: CGFloat = 66
     static let emptyListHeight: CGFloat = 50
     static let listVerticalPadding: CGFloat = 12
@@ -48,7 +47,6 @@ enum ClipboardHUDMetrics {
             ? numberedFooterHeight
             : 0
         return headerHeight
-            + pickerHeight
             + listVerticalPadding
             + listHeight
             + footerHeight
