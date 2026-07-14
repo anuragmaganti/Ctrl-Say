@@ -38,14 +38,14 @@ final class ClipboardHUDLayoutTests: XCTestCase {
             collection: .numbered,
             visibleFrame: visible
         )
-        let ten = ClipboardHUDMetrics.height(
-            itemCount: 10,
+        let eleven = ClipboardHUDMetrics.height(
+            itemCount: 11,
             collection: .numbered,
             visibleFrame: visible
         )
 
         XCTAssertGreaterThan(one, empty)
-        XCTAssertEqual(ten, 750)
+        XCTAssertEqual(eleven, 750)
     }
 
     func testPermanentCollectionOmitsNumberedFooter() {
@@ -75,6 +75,13 @@ final class ClipboardHUDLayoutTests: XCTestCase {
         )
 
         XCTAssertEqual(numbered, permanent)
+    }
+
+    func testTemporaryFooterStaysAtMiniControlHeight() {
+        XCTAssertLessThanOrEqual(
+            ClipboardHUDMetrics.numberedFooterHeight,
+            18
+        )
     }
 
     func testPermanentStorageStatusIsIncludedWithoutDuplicatingEmptyState() {

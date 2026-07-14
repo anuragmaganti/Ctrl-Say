@@ -23,7 +23,7 @@ enum ClipboardHUDMetrics {
     static let rowHeight: CGFloat = 66
     static let emptyListHeight: CGFloat = 50
     static let listVerticalPadding: CGFloat = 12
-    static let numberedFooterHeight: CGFloat = 30
+    static let numberedFooterHeight: CGFloat = 18
     static let permanentStatusHeight: CGFloat = 48
 
     static func idealHeight(
