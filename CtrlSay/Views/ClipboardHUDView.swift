@@ -133,7 +133,10 @@ struct ClipboardHUDView: View {
                         number: slot.number,
                         payload: slot.payload,
                         paste: {
-                            model.pasteNumberedCopy(slot.payload)
+                            model.pasteNumberedCopy(
+                                slot.payload,
+                                number: slot.number
+                            )
                         },
                         delete: {
                             model.deleteNumberedCopy(slot.number)
@@ -155,7 +158,10 @@ struct ClipboardHUDView: View {
                         name: slot.name,
                         payload: slot.payload,
                         paste: {
-                            model.pasteTemporaryNamedCopy(slot.payload)
+                            model.pasteTemporaryNamedCopy(
+                                slot.payload,
+                                name: slot.name
+                            )
                         },
                         delete: {
                             model.deleteTemporaryNamedCopy(slot.name)

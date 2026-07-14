@@ -16,6 +16,7 @@ final class AppModel {
     private(set) var hasKeyboardMonitoringAccess = false
     private(set) var isClipboardHUDPresented = false
     private(set) var permanentStorageState: PermanentCopyPersistenceState = .loading
+    private(set) var notchFeedbackSignal: NotchFeedbackSignal?
 
 #if DEBUG
     private(set) var debugDiagnostics = DebugPipelineSnapshot()
@@ -41,6 +42,7 @@ final class AppModel {
     @ObservationIgnored private var permanentPersistenceTask: Task<Void, Never>?
     @ObservationIgnored private var permanentMutationQueue = PermanentMutationQueueState()
     @ObservationIgnored private var didRestorePermanentStorage = false
+    @ObservationIgnored private var notchFeedbackSequence: UInt64 = 0
 
     var isReadyForCommands: Bool {
         speech.microphoneAuthorization == .authorized
@@ -109,16 +111,16 @@ final class AppModel {
         )
     }
 
-    func pasteNumberedCopy(_ payload: ClipboardPayload) {
+    func pasteNumberedCopy(_ payload: ClipboardPayload, number: Int) {
         enqueueDashboard(
-            .pasteTemporary(payload: payload),
+            .pasteTemporary(payload: payload, label: String(number)),
             target: clipboard.currentCommandTarget()
         )
     }
 
-    func pasteTemporaryNamedCopy(_ payload: ClipboardPayload) {
+    func pasteTemporaryNamedCopy(_ payload: ClipboardPayload, name: String) {
         enqueueDashboard(
-            .pasteTemporary(payload: payload),
+            .pasteTemporary(payload: payload, label: name),
             target: clipboard.currentCommandTarget()
         )
     }
@@ -170,7 +172,7 @@ final class AppModel {
             return
         }
         enqueueDashboard(
-            .pastePermanent(payload: payload),
+            .pastePermanent(payload: payload, label: name),
             target: clipboard.currentCommandTarget()
         )
     }
@@ -362,10 +364,14 @@ final class AppModel {
         guard !shouldListen || isReadyForCommands || canStopActiveTransition else {
             lastError = "Complete the three setup permissions before listening."
             lastAction = "Setup required"
+            publishNotchFeedback(.commandFailed(message: "Setup required"))
             return false
         }
 
         desiredListening = shouldListen
+        publishNotchFeedback(
+            shouldListen ? .listeningRequested : .listeningStopped
+        )
         if !shouldListen {
             listeningTransitionTask?.cancel()
         }
@@ -669,6 +675,7 @@ final class AppModel {
         let started = DispatchTime.now().uptimeNanoseconds
         lastError = nil
         var clipboardMilliseconds: Double?
+        var successfulNotchFeedback: NotchFeedbackEvent?
         var targetStatus: TargetTelemetryStatus = queued.operation.requiresExternalTarget
             ? .notChecked
             : .notRequired
@@ -684,6 +691,10 @@ final class AppModel {
                     clipboardMilliseconds = capture.milliseconds
                     targetStatus = .verified
                     lastAction = "Copied to \(number)"
+                    successfulNotchFeedback = .commandSucceeded(
+                        action: .copy,
+                        label: String(number)
+                    )
 
                 case .pasteNumber(let number):
                     guard let payload = slots.payload(at: number) else {
@@ -693,6 +704,10 @@ final class AppModel {
                     clipboardMilliseconds = metrics.milliseconds
                     targetStatus = .verified
                     lastAction = "Paste sent from \(number)"
+                    successfulNotchFeedback = .commandSucceeded(
+                        action: .paste,
+                        label: String(number)
+                    )
 
                 case .copyNamed(let name):
                     try requirePermanentStorage()
@@ -711,6 +726,10 @@ final class AppModel {
                     targetStatus = .verified
                     scheduleVocabularyRefresh()
                     lastAction = "Copied to \(normalizedName)"
+                    successfulNotchFeedback = .commandSucceeded(
+                        action: .copy,
+                        label: normalizedName
+                    )
 
                 case .permanentCopy(let name):
                     try requirePermanentStorage()
@@ -727,6 +746,10 @@ final class AppModel {
                     targetStatus = .verified
                     scheduleVocabularyRefresh()
                     lastAction = "Created permanent copy"
+                    successfulNotchFeedback = .commandSucceeded(
+                        action: .copy,
+                        label: normalizedName
+                    )
 
                 case .pasteNamed(let name):
                     let payload: ClipboardPayload
@@ -743,6 +766,10 @@ final class AppModel {
                     clipboardMilliseconds = metrics.milliseconds
                     targetStatus = .verified
                     lastAction = "Named paste sent"
+                    successfulNotchFeedback = .commandSucceeded(
+                        action: .paste,
+                        label: name
+                    )
 
                 case .deleteNamed(let name):
                     try requirePermanentStorage()
@@ -757,17 +784,25 @@ final class AppModel {
                     lastAction = "Cleared temporary copies"
                 }
 
-            case .pasteTemporary(let payload):
+            case .pasteTemporary(let payload, let label):
                 let metrics = try clipboard.paste(payload, target: queued.target)
                 clipboardMilliseconds = metrics.milliseconds
                 targetStatus = .verified
                 lastAction = "Temporary paste sent"
+                successfulNotchFeedback = .commandSucceeded(
+                    action: .paste,
+                    label: label
+                )
 
-            case .pastePermanent(let payload):
+            case .pastePermanent(let payload, let label):
                 let metrics = try clipboard.paste(payload, target: queued.target)
                 clipboardMilliseconds = metrics.milliseconds
                 targetStatus = .verified
                 lastAction = "Permanent paste sent"
+                successfulNotchFeedback = .commandSucceeded(
+                    action: .paste,
+                    label: label
+                )
             }
 
             hasEventPostingAccess = clipboard.hasEventPostingAccess
@@ -790,6 +825,9 @@ final class AppModel {
                 )
             }
 #endif
+            if let successfulNotchFeedback {
+                publishNotchFeedback(successfulNotchFeedback)
+            }
         } catch {
             if queued.operation.requiresExternalTarget {
                 targetStatus = targetFailureStatus(error) ?? targetStatus
@@ -807,6 +845,9 @@ final class AppModel {
                 succeeded: false
             )
             Telemetry.commands.error("\(queued.operation.telemetryName, privacy: .public) failed: \(error.localizedDescription, privacy: .private)")
+            publishNotchFeedback(
+                .commandFailed(message: notchFailureMessage(for: error))
+            )
 #if DEBUG
             if queued.operation.requiresExternalTarget {
                 debugDiagnostics.targetStatus(targetStatus.debugLabel)
@@ -846,6 +887,75 @@ final class AppModel {
              .couldNotWriteClipboard, .couldNotCreateKeyboardEvent:
             return .verified
         }
+    }
+
+    private func publishNotchFeedback(_ event: NotchFeedbackEvent) {
+        notchFeedbackSequence &+= 1
+        notchFeedbackSignal = NotchFeedbackSignal(
+            sequence: notchFeedbackSequence,
+            event: event
+        )
+    }
+
+    private func notchFailureMessage(for error: Error) -> String {
+        if let appError = error as? AppModelError {
+            switch appError {
+            case .emptyNumberedSlot(let number):
+                return "Copy \(number) is empty"
+            case .missingNamedCopy:
+                return "Copy not found"
+            }
+        }
+
+        if let clipboardError = error as? ClipboardServiceError {
+            switch clipboardError {
+            case .accessibilityPermissionRequired:
+                return "Accessibility required"
+            case .clipboardIsEmpty, .copyTimedOut:
+                return "Nothing was copied"
+            case .unsupportedOrOversizedContent:
+                return "Copy is too large"
+            case .couldNotWriteClipboard:
+                return "Clipboard write failed"
+            case .couldNotCreateKeyboardEvent:
+                return "Command could not be sent"
+            case .commandTargetUnavailable:
+                return "No destination app"
+            case .commandTargetChanged:
+                return "App changed — try again"
+            }
+        }
+
+        if let storeError = error as? ClipboardStoreError {
+            switch storeError {
+            case .invalidTemporaryName, .invalidPermanentName:
+                return "Name not recognized"
+            case .nameProtectedByPermanentCopy:
+                return "Name is permanent"
+            case .temporaryNameAlreadyExists, .permanentNameAlreadyExists:
+                return "Name already exists"
+            case .missingPermanentCopy:
+                return "Copy not found"
+            case .permanentCopyChanged:
+                return "Copy changed — try again"
+            case .emptyContent:
+                return "Nothing was copied"
+            case .contentTooLarge, .payloadTooLarge:
+                return "Copy is too large"
+            case .noneditableContent:
+                return "Copy cannot be edited"
+            case .storageLimitExceeded:
+                return "Clipboard storage is full"
+            case .invalidRestoredPermanentCopy,
+                 .duplicateRestoredPermanentCopy:
+                return "Permanent storage unavailable"
+            }
+        }
+
+        if error is PermanentCopyPersistenceError {
+            return "Permanent storage unavailable"
+        }
+        return "Command failed"
     }
 
     private func startListeningTransitionIfNeeded() {
@@ -1054,8 +1164,8 @@ private struct QueuedCommand {
 
 private enum QueuedOperation {
     case voice(VoiceCommand)
-    case pasteTemporary(payload: ClipboardPayload)
-    case pastePermanent(payload: ClipboardPayload)
+    case pasteTemporary(payload: ClipboardPayload, label: String)
+    case pastePermanent(payload: ClipboardPayload, label: String)
 
     var telemetryName: String {
         switch self {

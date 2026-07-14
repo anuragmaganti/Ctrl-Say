@@ -20,6 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var hudEditingSession = DashboardEditingSession()
     private lazy var hudPresentationState = ClipboardHUDPresentationState()
     private lazy var thumbnailProvider = ClipboardThumbnailProvider()
+    private lazy var notchPresentationState = NotchFeedbackPresentationState()
     private lazy var dashboardPanel = DashboardPanelController(
         rootView: DashboardView(
             model: model,
@@ -29,6 +30,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     )
     private var statusItem: NSStatusItem?
     private var hudPanel: ClipboardHUDPanelController?
+    private var notchPanel: NotchFeedbackPanelController?
+    private var processedNotchFeedbackSequence: UInt64 = 0
     private var terminationTask: Task<Void, Never>?
 
     override init() {
@@ -59,6 +62,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateStatusItemPresentation()
         observeListeningState()
         observeHUDPresentation()
+        observeNotchFeedback()
 
 #if DEBUG
         if CommandLine.arguments.contains("-CtrlSaySeedHUDForTesting") {
@@ -70,6 +74,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if CommandLine.arguments.contains("-CtrlSayShowHUDForTesting") {
             model.setClipboardHUDPresented(true)
+        }
+        if CommandLine.arguments.contains("-CtrlSayShowNotchListeningForTesting") {
+            _ = ensureNotchPanel()
+            notchPresentationState.setListeningActivity(.listening)
+        }
+        if CommandLine.arguments.contains("-CtrlSayShowNotchCopyForTesting") {
+            _ = ensureNotchPanel()
+            notchPresentationState.setListeningActivity(.listening)
+            notchPresentationState.presentPersistentPreview(
+                .success(action: .copy, label: "House")
+            )
+        }
+        if CommandLine.arguments.contains("-CtrlSayStressNotchForTesting") {
+            runNotchStressPreview()
         }
 #endif
 
@@ -83,6 +101,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         terminationTask?.cancel()
         dashboardPanel.hide()
         hudPanel?.hide()
+        notchPresentationState.reset()
+        notchPanel?.hideImmediately()
         if let statusItem {
             NSStatusBar.system.removeStatusItem(statusItem)
         }
@@ -124,9 +144,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidChangeScreenParameters(_ notification: Notification) {
-        guard let button = statusItem?.button else { return }
-        dashboardPanel.reposition(relativeTo: button)
+        if let button = statusItem?.button {
+            dashboardPanel.reposition(relativeTo: button)
+        }
         hudPanel?.screenParametersDidChange()
+        notchPanel?.screenParametersDidChange()
     }
 
     @objc
@@ -196,9 +218,105 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.updateStatusItemPresentation()
+                self.updateNotchListeningPresentation()
                 self.observeListeningState()
             }
         }
+        updateNotchListeningPresentation()
+    }
+
+    private func observeNotchFeedback() {
+        withObservationTracking {
+            _ = model.notchFeedbackSignal
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.processLatestNotchFeedback()
+                self.observeNotchFeedback()
+            }
+        }
+        processLatestNotchFeedback()
+    }
+
+    private func processLatestNotchFeedback() {
+        guard let signal = model.notchFeedbackSignal,
+              signal.sequence > processedNotchFeedbackSequence else {
+            return
+        }
+        processedNotchFeedbackSequence = signal.sequence
+
+        switch signal.event {
+        case .listeningRequested:
+            _ = ensureNotchPanel()
+            notchPresentationState.setListeningActivity(.preparing)
+
+        case .listeningStopped:
+            notchPresentationState.setListeningActivity(.inactive)
+
+        case .commandSucceeded(let action, let label):
+            _ = ensureNotchPanel()
+            notchPresentationState.present(
+                .success(
+                    action: action,
+                    label: NotchFeedbackText.displayLabel(label)
+                )
+            )
+
+        case .commandFailed(let message):
+            _ = ensureNotchPanel()
+            notchPresentationState.present(
+                .failure(
+                    message: NotchFeedbackText.boundedMessage(message)
+                )
+            )
+        }
+    }
+
+    private func updateNotchListeningPresentation() {
+        switch model.speech.state {
+        case .stopped:
+            notchPresentationState.setListeningActivity(.inactive)
+
+        case .requestingMicrophone, .preparing, .downloadingModel:
+            _ = ensureNotchPanel()
+            notchPresentationState.setListeningActivity(.preparing)
+
+        case .listening:
+            _ = ensureNotchPanel()
+            notchPresentationState.setListeningActivity(.listening)
+
+        case .stopping:
+            notchPresentationState.setListeningActivity(.inactive)
+
+        case .failed(let message):
+            _ = ensureNotchPanel()
+            notchPresentationState.setListeningActivity(.inactive)
+            notchPresentationState.present(
+                .failure(message: conciseListeningFailure(message))
+            )
+        }
+    }
+
+    private func ensureNotchPanel() -> NotchFeedbackPanelController {
+        if let notchPanel {
+            return notchPanel
+        }
+        let panel = NotchFeedbackPanelController(
+            presentationState: notchPresentationState
+        )
+        notchPanel = panel
+        return panel
+    }
+
+    private func conciseListeningFailure(_ message: String) -> String {
+        if message.localizedCaseInsensitiveContains("microphone") {
+            return "Microphone unavailable"
+        }
+        if message.localizedCaseInsensitiveContains("model")
+            || message.localizedCaseInsensitiveContains("speech") {
+            return "Speech recognition unavailable"
+        }
+        return "Listening unavailable"
     }
 
     private func observeHUDPresentation() {
@@ -237,6 +355,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
 #if DEBUG
+    private func runNotchStressPreview() {
+        _ = ensureNotchPanel()
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let transitionCount = 360
+            for index in 0..<transitionCount {
+                switch index % 8 {
+                case 0:
+                    notchPresentationState.setListeningActivity(.preparing)
+                case 1, 7:
+                    notchPresentationState.setListeningActivity(.listening)
+                case 2:
+                    notchPresentationState.present(
+                        .success(action: .copy, label: "House")
+                    )
+                case 3:
+                    notchPresentationState.setListeningActivity(.inactive)
+                case 4:
+                    notchPresentationState.setListeningActivity(.preparing)
+                case 5:
+                    notchPresentationState.present(
+                        .success(action: .paste, label: "2")
+                    )
+                default:
+                    notchPresentationState.setListeningActivity(.inactive)
+                }
+                try? await Task.sleep(for: .milliseconds(12))
+            }
+            notchPresentationState.setListeningActivity(.listening)
+            Telemetry.interface.info(
+                "Notch stress complete transitions=\(transitionCount, privacy: .public)"
+            )
+        }
+    }
+
     private func seedHUDForTesting() {
         for number in 1...10 {
             let text = "Example clipboard content for slot \(number) with a bounded two-line preview."

@@ -23,6 +23,8 @@
 		F70000000000000000000001 /* CtrlSay/Stores/PermanentCopyRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = F70000000000000000000002 /* CtrlSay/Stores/PermanentCopyRepository.swift */; };
 		F80000000000000000000001 /* CtrlSay/Models/PermanentCopyPersistenceState.swift in Sources */ = {isa = PBXBuildFile; fileRef = F80000000000000000000002 /* CtrlSay/Models/PermanentCopyPersistenceState.swift */; };
 		F90000000000000000000001 /* CtrlSay/Stores/PermanentMutationQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = F90000000000000000000002 /* CtrlSay/Stores/PermanentMutationQueue.swift */; };
+		FA10000000000000000000001 /* CtrlSay/Models/NotchFeedback.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA10000000000000000000002 /* CtrlSay/Models/NotchFeedback.swift */; };
+		FB10000000000000000000001 /* CtrlSay/Support/NotchPanelLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB10000000000000000000002 /* CtrlSay/Support/NotchPanelLayout.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -44,6 +46,8 @@
 		F70000000000000000000002 /* CtrlSay/Stores/PermanentCopyRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CtrlSay/Stores/PermanentCopyRepository.swift; sourceTree = SOURCE_ROOT; };
 		F80000000000000000000002 /* CtrlSay/Models/PermanentCopyPersistenceState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CtrlSay/Models/PermanentCopyPersistenceState.swift; sourceTree = SOURCE_ROOT; };
 		F90000000000000000000002 /* CtrlSay/Stores/PermanentMutationQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CtrlSay/Stores/PermanentMutationQueue.swift; sourceTree = SOURCE_ROOT; };
+		FA10000000000000000000002 /* CtrlSay/Models/NotchFeedback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CtrlSay/Models/NotchFeedback.swift; sourceTree = SOURCE_ROOT; };
+		FB10000000000000000000002 /* CtrlSay/Support/NotchPanelLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CtrlSay/Support/NotchPanelLayout.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -115,6 +119,8 @@
 				F70000000000000000000002 /* CtrlSay/Stores/PermanentCopyRepository.swift */,
 				F80000000000000000000002 /* CtrlSay/Models/PermanentCopyPersistenceState.swift */,
 				F90000000000000000000002 /* CtrlSay/Stores/PermanentMutationQueue.swift */,
+				FA10000000000000000000002 /* CtrlSay/Models/NotchFeedback.swift */,
+				FB10000000000000000000002 /* CtrlSay/Support/NotchPanelLayout.swift */,
 			);
 			name = "Test Support Sources";
 			sourceTree = "<group>";
@@ -249,6 +255,8 @@
 				F70000000000000000000001 /* CtrlSay/Stores/PermanentCopyRepository.swift in Sources */,
 				F80000000000000000000001 /* CtrlSay/Models/PermanentCopyPersistenceState.swift in Sources */,
 				F90000000000000000000001 /* CtrlSay/Stores/PermanentMutationQueue.swift in Sources */,
+				FA10000000000000000000001 /* CtrlSay/Models/NotchFeedback.swift in Sources */,
+				FB10000000000000000000001 /* CtrlSay/Support/NotchPanelLayout.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
