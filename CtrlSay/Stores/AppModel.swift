@@ -669,9 +669,37 @@ final class AppModel {
         _ queued: QueuedCommand,
         queueWaitMilliseconds: Double
     ) async {
+        let restoreWaitStarted = DispatchTime.now().uptimeNanoseconds
         if let permanentRestoreTask {
             await permanentRestoreTask.value
         }
+        let restoreWaitMilliseconds = Double(
+            DispatchTime.now().uptimeNanoseconds - restoreWaitStarted
+        ) / 1_000_000
+        let effectiveQueueWaitMilliseconds = queueWaitMilliseconds
+            + restoreWaitMilliseconds
+
+        if case .voice(let command) = queued.operation,
+           command.requiresExternalTarget,
+           let metadata = queued.speechMetadata,
+           !SpeechCommandFreshnessPolicy.isFresh(
+                metadata,
+                at: DispatchTime.now().uptimeNanoseconds
+           ) {
+            recordPipeline(
+                queued,
+                queueWaitMilliseconds: effectiveQueueWaitMilliseconds,
+                executionMilliseconds: 0,
+                clipboardMilliseconds: nil,
+                targetStatus: .notChecked,
+                succeeded: false
+            )
+            Telemetry.commands.warning(
+                "\(queued.operation.telemetryName, privacy: .public) dropped because recognition was stale"
+            )
+            return
+        }
+
         let started = DispatchTime.now().uptimeNanoseconds
         lastError = nil
         var clipboardMilliseconds: Double?
@@ -809,7 +837,7 @@ final class AppModel {
             let milliseconds = Double(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000
             recordPipeline(
                 queued,
-                queueWaitMilliseconds: queueWaitMilliseconds,
+                queueWaitMilliseconds: effectiveQueueWaitMilliseconds,
                 executionMilliseconds: milliseconds,
                 clipboardMilliseconds: clipboardMilliseconds,
                 targetStatus: targetStatus,
@@ -838,7 +866,7 @@ final class AppModel {
             let milliseconds = Double(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000
             recordPipeline(
                 queued,
-                queueWaitMilliseconds: queueWaitMilliseconds,
+                queueWaitMilliseconds: effectiveQueueWaitMilliseconds,
                 executionMilliseconds: milliseconds,
                 clipboardMilliseconds: clipboardMilliseconds,
                 targetStatus: targetStatus,

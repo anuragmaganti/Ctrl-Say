@@ -68,15 +68,15 @@ final class VoiceCommandParserTests: XCTestCase {
         }
     }
 
-    func testVolatileNamedCommandsRequireKnownUnambiguousName() {
-        XCTAssertFalse(
+    func testVolatileNamedPasteUsesKnownUnambiguousNameWithoutConfidence() {
+        XCTAssertTrue(
             VolatileCommandAcceptancePolicy.accepts(
                 .pasteNamed("house"),
                 confidence: nil,
                 knownNamedCopies: ["house"]
             )
         )
-        XCTAssertFalse(
+        XCTAssertTrue(
             VolatileCommandAcceptancePolicy.accepts(
                 .pasteNamed("house"),
                 confidence: VolatileCommandAcceptancePolicy.minimumGuardedConfidence - 0.01,
@@ -114,7 +114,7 @@ final class VoiceCommandParserTests: XCTestCase {
         XCTAssertTrue(
             VolatileCommandAcceptancePolicy.accepts(
                 .pasteNamed("house"),
-                confidence: VolatileCommandAcceptancePolicy.minimumGuardedConfidence,
+                confidence: nil,
                 knownNamedCopies: ["house"]
             )
         )

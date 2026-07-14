@@ -2,6 +2,30 @@ import CoreMedia
 import XCTest
 
 final class SpeechCommandGateTests: XCTestCase {
+    func testSideEffectFreshnessRejectsDelayedSpeechWithoutAddingDelay() {
+        let maximum = SpeechCommandFreshnessPolicy
+            .maximumSideEffectAgeNanoseconds
+        let metadata = SpeechCommandMetadata(
+            resultReceivedAtNanoseconds: 1_000,
+            audioEndUptimeNanoseconds: 1_000,
+            minimumConfidence: nil,
+            isFinal: false
+        )
+
+        XCTAssertTrue(
+            SpeechCommandFreshnessPolicy.isFresh(
+                metadata,
+                at: 1_000 + maximum
+            )
+        )
+        XCTAssertFalse(
+            SpeechCommandFreshnessPolicy.isFresh(
+                metadata,
+                at: 1_001 + maximum
+            )
+        )
+    }
+
     func testVolatileAndFinalRevisionExecuteOnlyOnce() {
         var gate = SpeechCommandGate()
         let range = makeRange(start: 0, end: 1)

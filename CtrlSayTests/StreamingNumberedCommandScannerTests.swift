@@ -310,9 +310,9 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
         XCTAssertFalse(paste.isReadyForDispatch)
     }
 
-    func testNamedPasteWaitsForItsArgumentToFinalize() throws {
+    func testKnownNamedPasteWithoutConfidenceDispatchesBeforeFinalization() throws {
         var scanner = StreamingNumberedCommandScanner()
-        let pending = scanner.ingest(
+        let immediate = scanner.ingest(
             StreamingNumberedCommandSegment(
                 range: timeRange(0, 1),
                 tokens: [
@@ -322,10 +322,11 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
             ),
             knownNamedCopies: ["house"]
         )
-        let pendingCandidate = try XCTUnwrap(upserts(in: pending).first)
-        XCTAssertFalse(pendingCandidate.isReadyForDispatch)
+        let candidate = try XCTUnwrap(upserts(in: immediate).first)
+        XCTAssertTrue(candidate.isReadyForDispatch)
+        scanner.markCommitted(candidate.id)
 
-        let finalized = scanner.ingest(
+        let finalEcho = scanner.ingest(
             StreamingNumberedCommandSegment(
                 range: timeRange(0, 1),
                 tokens: [
@@ -336,10 +337,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
             ),
             knownNamedCopies: ["house"]
         )
-        let readyCandidate = try XCTUnwrap(upserts(in: finalized).first)
-
-        XCTAssertEqual(readyCandidate.id, pendingCandidate.id)
-        XCTAssertTrue(readyCandidate.isReadyForDispatch)
+        XCTAssertTrue(finalEcho.mutations.isEmpty)
     }
 
     func testNumberedCommandKeepsVolatileFastPath() throws {

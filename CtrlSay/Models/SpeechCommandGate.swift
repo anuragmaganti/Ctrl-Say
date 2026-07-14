@@ -62,6 +62,25 @@ struct SpeechCommandMetadata: Equatable, Sendable {
     }
 }
 
+enum SpeechCommandFreshnessPolicy {
+    // A delayed side effect is more dangerous than an ignored ambiguous
+    // command. This adds no wait; it only prevents an old recognition result
+    // or a command stalled behind startup work from firing much later.
+    static let maximumSideEffectAgeNanoseconds: UInt64 = 1_500_000_000
+
+    static func isFresh(
+        _ metadata: SpeechCommandMetadata,
+        at uptimeNanoseconds: UInt64
+    ) -> Bool {
+        guard let audioEnd = metadata.audioEndUptimeNanoseconds,
+              uptimeNanoseconds >= audioEnd else {
+            return true
+        }
+        return uptimeNanoseconds - audioEnd
+            <= maximumSideEffectAgeNanoseconds
+    }
+}
+
 struct SpeechCommandObservation: Sendable {
     let range: SpeechResultRange
     let finalizationTime: CMTime

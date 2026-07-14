@@ -11,12 +11,17 @@ struct NotchFeedbackView: View {
         GeometryReader { proxy in
             if presentationState.visualState.isVisible {
                 let surface = surfaceShape(in: proxy.size)
-                let border = borderShape(in: proxy.size)
                 ZStack {
                     surface
                         .fill(Color.black)
 
-                    cyclingBorder(border)
+                    NotchBorderLayerView(
+                        visualState: presentationState.visualState,
+                        interactionMode: presentationState.interactionMode,
+                        surfaceStyle: windowContext.surfaceStyle,
+                        reduceMotion: reduceMotion,
+                        increasedContrast: contrast == .increased
+                    )
 
                     positionedFeedbackContent
                 }
@@ -97,121 +102,6 @@ struct NotchFeedbackView: View {
         }
     }
 
-    private func cyclingBorder(_ border: AnyShape) -> some View {
-        TimelineView(
-            .animation(
-                minimumInterval: 1.0 / 30.0,
-                paused: !shouldCycleListeningColors || reduceMotion
-            )
-        ) { context in
-            let rotation = listeningColorRotation(at: context.date)
-            let style = edgeStyle(rotation: rotation)
-
-            ZStack {
-                border
-                    .stroke(
-                        style,
-                        style: StrokeStyle(
-                            lineWidth: contrast == .increased ? 2.8 : 2.2,
-                            lineCap: .round,
-                            lineJoin: .round
-                        )
-                    )
-                    .blur(radius: contrast == .increased ? 2 : 4)
-                    .opacity(glowOpacity)
-
-                border
-                    .stroke(
-                        style,
-                        style: StrokeStyle(
-                            lineWidth: contrast == .increased ? 1.8 : 1.4,
-                            lineCap: .round,
-                            lineJoin: .round
-                        )
-                    )
-                    .opacity(0.95)
-            }
-        }
-    }
-
-    private var shouldCycleListeningColors: Bool {
-        switch presentationState.visualState {
-        case .preparing, .listening:
-            true
-        case .hidden, .success, .failure:
-            false
-        }
-    }
-
-    private func listeningColorRotation(at date: Date) -> Angle {
-        guard shouldCycleListeningColors, !reduceMotion else { return .zero }
-        let cycleDuration = 12.0
-        let progress = date.timeIntervalSinceReferenceDate
-            .truncatingRemainder(dividingBy: cycleDuration)
-            / cycleDuration
-        return .degrees(progress * 360)
-    }
-
-    private func edgeStyle(rotation: Angle) -> AnyShapeStyle {
-        switch presentationState.visualState {
-        case .failure:
-            return AnyShapeStyle(
-                LinearGradient(
-                    colors: [.orange, .red, .pink],
-                    startPoint: .bottomLeading,
-                    endPoint: .topTrailing
-                )
-            )
-        case .success(let action, _):
-            return AnyShapeStyle(
-                LinearGradient(
-                    colors: action == .copy
-                        ? [.blue, .cyan, .purple]
-                        : [.purple, .pink, .orange],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                )
-            )
-        case .hidden, .preparing, .listening:
-            return AnyShapeStyle(
-                listeningEdgeGradient(rotation: rotation)
-            )
-        }
-    }
-
-    private func listeningEdgeGradient(rotation: Angle) -> AngularGradient {
-        AngularGradient(
-            colors: [
-                .blue,
-                .indigo,
-                .purple,
-                .pink,
-                .red,
-                .orange,
-                .purple,
-                .blue,
-            ],
-            center: .center,
-            startAngle: .degrees(-90 + rotation.degrees),
-            endAngle: .degrees(270 + rotation.degrees)
-        )
-    }
-
-    private var glowOpacity: Double {
-        switch presentationState.visualState {
-        case .hidden:
-            0
-        case .preparing:
-            0.72
-        case .listening:
-            1
-        case .success:
-            0.82
-        case .failure:
-            0.9
-        }
-    }
-
     private func surfaceShape(in size: CGSize) -> AnyShape {
         switch windowContext.surfaceStyle {
         case .attached(_, let notchHeight):
@@ -222,36 +112,6 @@ struct NotchFeedbackView: View {
                 AttachedNotchSurfaceShape(
                     horizontalCanvasOutset: NotchPanelLayoutCalculator
                         .attachedHorizontalCanvasOutset,
-                    surfaceHeight: surfaceHeight,
-                    bottomCornerRadius: NotchPanelLayoutCalculator
-                        .attachedBottomCornerRadius(notchHeight: notchHeight)
-                )
-            )
-        case .floating:
-            return AnyShape(
-                RoundedRectangle(
-                    cornerRadius: min(20, size.height / 2),
-                    style: .continuous
-                )
-            )
-        }
-    }
-
-    private func borderShape(in size: CGSize) -> AnyShape {
-        switch windowContext.surfaceStyle {
-        case .attached(_, let notchHeight):
-            let surfaceHeight = presentationState.interactionMode == .passive
-                ? notchHeight
-                : size.height
-            // This is intentionally an open path. The physical display edge is
-            // the notch's top edge, so drawing there creates a false rainbow
-            // seam across the top of the screen.
-            return AnyShape(
-                AttachedNotchBorderShape(
-                    horizontalCanvasOutset: NotchPanelLayoutCalculator
-                        .attachedHorizontalCanvasOutset,
-                    visibleBorderOutset: NotchPanelLayoutCalculator
-                        .attachedVisibleBorderOutset,
                     surfaceHeight: surfaceHeight,
                     bottomCornerRadius: NotchPanelLayoutCalculator
                         .attachedBottomCornerRadius(notchHeight: notchHeight)
@@ -347,60 +207,6 @@ private struct AttachedNotchSurfaceShape: Shape {
             to: CGPoint(x: surfaceRect.maxX, y: surfaceRect.minY)
         )
         path.closeSubpath()
-        return path
-    }
-}
-
-private struct AttachedNotchBorderShape: Shape {
-    let horizontalCanvasOutset: CGFloat
-    let visibleBorderOutset: CGFloat
-    let surfaceHeight: CGFloat
-    let bottomCornerRadius: CGFloat
-
-    func path(in rect: CGRect) -> Path {
-        let left = rect.minX
-            + horizontalCanvasOutset
-            - visibleBorderOutset
-        let right = rect.maxX
-            - horizontalCanvasOutset
-            + visibleBorderOutset
-        let bottom = min(
-            rect.maxY,
-            rect.minY + surfaceHeight + visibleBorderOutset
-        )
-        let radius = min(
-            bottomCornerRadius + visibleBorderOutset,
-            max(0, (right - left) / 2)
-        )
-        let curveControl = radius * 0.552_284_75
-
-        var path = Path()
-        path.move(to: CGPoint(x: left, y: rect.minY))
-        path.addLine(to: CGPoint(x: left, y: bottom - radius))
-        path.addCurve(
-            to: CGPoint(x: left + radius, y: bottom),
-            control1: CGPoint(
-                x: left,
-                y: bottom - radius + curveControl
-            ),
-            control2: CGPoint(
-                x: left + radius - curveControl,
-                y: bottom
-            )
-        )
-        path.addLine(to: CGPoint(x: right - radius, y: bottom))
-        path.addCurve(
-            to: CGPoint(x: right, y: bottom - radius),
-            control1: CGPoint(
-                x: right - radius + curveControl,
-                y: bottom
-            ),
-            control2: CGPoint(
-                x: right,
-                y: bottom - radius + curveControl
-            )
-        )
-        path.addLine(to: CGPoint(x: right, y: rect.minY))
         return path
     }
 }

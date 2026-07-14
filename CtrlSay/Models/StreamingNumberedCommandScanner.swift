@@ -463,9 +463,10 @@ struct StreamingNumberedCommandScanner {
             return isFinalized
 
         case .pasteNamed:
-            // Pasting can use the guarded volatile fast path because its name
-            // must already exist. Prefix collisions and low/missing confidence
-            // remain pending until Apple finalizes the result.
+            // Pasting can use the volatile fast path because its name must
+            // already exist. Exact known-name membership is the closed-
+            // vocabulary guard; prefix collisions remain pending until Apple
+            // finalizes the result.
             return isFinalized
                 || VolatileCommandAcceptancePolicy.accepts(
                     command,

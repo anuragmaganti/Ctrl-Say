@@ -170,9 +170,9 @@ enum VoiceCommandParser {
 }
 
 enum VolatileCommandAcceptancePolicy {
-    // Confidence is only a secondary guard for commands that are not the core
-    // two-token interaction. Apple can omit confidence on volatile results,
-    // so numbered copy/paste must not depend on this value for responsiveness.
+    // Confidence remains a guard for commands without a closed-vocabulary
+    // identity. Apple can omit it on volatile results, so numbered slots and
+    // exact known-name pastes must not depend on it for responsiveness.
     static let minimumGuardedConfidence = 0.45
 
     static func accepts<Names: Sequence>(
@@ -196,7 +196,11 @@ enum VolatileCommandAcceptancePolicy {
             return false
 
         case .pasteNamed(let name):
-            guard meetsGuardedConfidence(confidence) else { return false }
+            // Existing names form a closed vocabulary just like numbered
+            // slots. Apple can omit confidence from otherwise complete
+            // volatile results, so requiring it here forces a known paste to
+            // wait several seconds for finalization. Exact membership plus the
+            // prefix-collision guard is the safety boundary.
             let normalizedName = VoiceCommandParser.normalizeName(name)
             var nameExists = false
             var hasLongerPrefixMatch = false
