@@ -43,6 +43,7 @@
 
 ## Portability and distribution
 
+- Never write an unsigned Ctrl-Say build into Xcode's shared DerivedData. Preserve the stable bundle ID, Team ID, and Apple Development signature for Debug/tests; use an isolated temporary DerivedData path for any intentionally unsigned artifact and never launch it.
 - The shipped app must not depend on Apple Shortcuts, Automator, AppleScript, shell commands, developer tools, localhost services, hard-coded user paths, DerivedData, or project-only generated files. Development scripts must remain outside the app bundle.
 - Use public Apple-native runtime APIs and system-managed Speech assets. Do not bundle a machine-local speech model or require a network service for command recognition.
 - Before external testing, build Release from a clean checkout and fresh DerivedData, scan the bundle for local paths and non-system dynamic libraries, and verify both `arm64` and `x86_64` unless supported architectures are intentionally narrowed.

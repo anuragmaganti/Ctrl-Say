@@ -14,6 +14,16 @@ struct DashboardView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 14)
 
+            if !model.isReadyForCommands {
+                Divider()
+                    .padding(.horizontal, 12)
+
+                setupRecovery
+                    .padding(.horizontal, 16)
+                    .padding(.top, 10)
+                    .padding(.bottom, 14)
+            }
+
 #if DEBUG
             developerDiagnostics
                 .padding(.horizontal, 12)
@@ -86,6 +96,87 @@ struct DashboardView: View {
             .accessibilityLabel("Ctrl-Say options")
             .help("Ctrl-Say options")
         }
+    }
+
+    private var setupRecovery: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Finish setup")
+                        .font(.callout.weight(.semibold))
+                    Text("Required for voice copy and paste")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: 8)
+
+                Text("\(grantedPermissionCount) of 3")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+            }
+
+            permissionRow(
+                icon: "mic.fill",
+                title: "Microphone",
+                isGranted: model.speech.microphoneAuthorization == .authorized,
+                action: model.requestMicrophoneAccess
+            )
+            permissionRow(
+                icon: "waveform.path",
+                title: "Input Monitoring",
+                isGranted: model.hasKeyboardMonitoringAccess,
+                action: model.requestKeyboardMonitoringAccess
+            )
+            permissionRow(
+                icon: "accessibility",
+                title: "Accessibility",
+                isGranted: model.hasEventPostingAccess,
+                action: model.requestEventPostingAccess
+            )
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private func permissionRow(
+        icon: String,
+        title: String,
+        isGranted: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        HStack(spacing: 9) {
+            Image(systemName: isGranted ? "checkmark.circle.fill" : icon)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(isGranted ? .green : .orange)
+                .frame(width: 20)
+                .accessibilityHidden(true)
+
+            Text(title)
+                .font(.callout)
+
+            Spacer(minLength: 8)
+
+            if isGranted {
+                Text("Allowed")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Button("Allow", action: action)
+                    .buttonStyle(.glass)
+                    .controlSize(.small)
+                    .accessibilityLabel("Allow \(title)")
+            }
+        }
+        .frame(minHeight: 24)
+        .accessibilityElement(children: isGranted ? .combine : .contain)
+    }
+
+    private var grantedPermissionCount: Int {
+        var count = 0
+        if model.speech.microphoneAuthorization == .authorized { count += 1 }
+        if model.hasKeyboardMonitoringAccess { count += 1 }
+        if model.hasEventPostingAccess { count += 1 }
+        return count
     }
 
 #if DEBUG

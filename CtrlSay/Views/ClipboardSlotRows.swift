@@ -66,7 +66,9 @@ private struct ClipboardPreview: View {
         if let previewHelp {
             previewLabel
                 .contentShape(.rect)
-                .help(Text(verbatim: previewHelp))
+                .background {
+                    NativeTooltipRegion(text: previewHelp)
+                }
         } else {
             previewLabel
         }

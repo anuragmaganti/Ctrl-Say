@@ -11,6 +11,7 @@ final class DashboardPresentationState {
 @MainActor
 final class DashboardPanelController {
     private let panel: NSPanel
+    private let model: AppModel
     private let presentationState: DashboardPresentationState
     private weak var anchorButton: NSStatusBarButton?
     private var outsideClickMonitor: Any?
@@ -28,12 +29,17 @@ final class DashboardPanelController {
 
     init(
         rootView: DashboardView,
+        model: AppModel,
         presentationState: DashboardPresentationState
     ) {
         let panel = NonactivatingPanel(
             contentRect: NSRect(
                 origin: .zero,
-                size: DashboardPanelMetrics.preferredSize
+                size: DashboardPanelMetrics.preferredSize(
+                    showsDeveloperDiagnostics: presentationState
+                        .showsDeveloperDiagnostics,
+                    showsSetupRecovery: !model.isReadyForCommands
+                )
             ),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
@@ -96,6 +102,7 @@ final class DashboardPanelController {
         hostingController.view.layer?.masksToBounds = true
 
         self.panel = panel
+        self.model = model
         self.presentationState = presentationState
         observePreferredSize()
     }
@@ -222,6 +229,7 @@ final class DashboardPanelController {
     private func observePreferredSize() {
         withObservationTracking {
             _ = presentationState.showsDeveloperDiagnostics
+            _ = model.isReadyForCommands
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -296,7 +304,8 @@ final class DashboardPanelController {
     private var preferredSize: CGSize {
         DashboardPanelMetrics.preferredSize(
             showsDeveloperDiagnostics: presentationState
-                .showsDeveloperDiagnostics
+                .showsDeveloperDiagnostics,
+            showsSetupRecovery: !model.isReadyForCommands
         )
     }
 

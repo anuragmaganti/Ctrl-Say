@@ -18,7 +18,6 @@ final class AppModel {
     private(set) var isClipboardHUDPresented = false
     private(set) var permanentStorageState: PermanentCopyPersistenceState = .loading
     private(set) var notchFeedbackSignal: NotchFeedbackSignal?
-    private(set) var hasAnsweredLaunchAtLoginOnboarding: Bool
 
 #if DEBUG
     private(set) var debugDiagnostics = DebugPipelineSnapshot()
@@ -59,9 +58,6 @@ final class AppModel {
         permanentRepository: any PermanentCopyPersisting = PermanentCopyRepository()
     ) {
         self.permanentRepository = permanentRepository
-        hasAnsweredLaunchAtLoginOnboarding = UserDefaults.standard.bool(
-            forKey: CtrlSayPreferenceKey.answeredLaunchAtLoginOnboarding
-        )
         hasEventPostingAccess = clipboard.hasEventPostingAccess
         speech.onResult = { [weak self] result in
             self?.received(result)
@@ -79,36 +75,8 @@ final class AppModel {
         startPermanentStorageRestore()
     }
 
-    func completeLaunchAtLoginOnboarding(enable: Bool) {
-        let updated = enable ? launchAtLogin.setEnabled(true) : true
-        hasAnsweredLaunchAtLoginOnboarding = true
-        UserDefaults.standard.set(
-            true,
-            forKey: CtrlSayPreferenceKey.answeredLaunchAtLoginOnboarding
-        )
-
-        if enable {
-            if launchAtLogin.state == .requiresApproval {
-                launchAtLogin.openSystemSettings()
-            }
-            if updated {
-                lastAction = "Launch at Login enabled"
-            } else {
-                lastError = launchAtLogin.errorMessage
-                lastAction = "Login Item setting unavailable"
-            }
-        } else {
-            lastAction = "Launch at Login skipped"
-        }
-    }
-
     func setLaunchAtLoginEnabled(_ isEnabled: Bool) {
         _ = launchAtLogin.setEnabled(isEnabled)
-        hasAnsweredLaunchAtLoginOnboarding = true
-        UserDefaults.standard.set(
-            true,
-            forKey: CtrlSayPreferenceKey.answeredLaunchAtLoginOnboarding
-        )
     }
 
     func refreshLaunchAtLogin() {

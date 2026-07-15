@@ -26,6 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             model: model,
             presentationState: dashboardPresentationState
         ),
+        model: model,
         presentationState: dashboardPresentationState
     )
     private var statusItem: NSStatusItem?
@@ -218,8 +219,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let symbolName: String
         let toolTip: String
 
-        if !model.isReadyForCommands
-            || !model.hasAnsweredLaunchAtLoginOnboarding {
+        if !model.isReadyForCommands {
             symbolName = "checklist"
             toolTip = "Ctrl-Say — Complete setup"
         } else {
@@ -260,7 +260,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             _ = model.speech.microphoneAuthorization
             _ = model.hasKeyboardMonitoringAccess
             _ = model.hasEventPostingAccess
-            _ = model.hasAnsweredLaunchAtLoginOnboarding
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -661,9 +660,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func presentSetupIfNeeded() {
         model.refreshPermissions()
-        model.refreshLaunchAtLogin()
-        guard (!model.isReadyForCommands
-                || !model.hasAnsweredLaunchAtLoginOnboarding),
+        guard !model.isReadyForCommands,
               !dashboardPanel.isShown,
               let button = statusItem?.button else {
             return

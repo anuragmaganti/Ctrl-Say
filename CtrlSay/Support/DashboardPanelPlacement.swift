@@ -4,6 +4,7 @@ import Foundation
 enum DashboardPanelMetrics {
     static let width: CGFloat = 388
     static let compactHeight: CGFloat = 64
+    static let setupRecoveryAdditionalHeight: CGFloat = 156
 #if DEBUG
     static let diagnosticsCollapsedHeight: CGFloat = 112
     static let diagnosticsExpandedHeight: CGFloat = 350
@@ -17,15 +18,18 @@ enum DashboardPanelMetrics {
     }
 
     static func preferredSize(
-        showsDeveloperDiagnostics: Bool
+        showsDeveloperDiagnostics: Bool,
+        showsSetupRecovery: Bool = false
     ) -> CGSize {
 #if DEBUG
-        let height = showsDeveloperDiagnostics
+        let baseHeight = showsDeveloperDiagnostics
             ? diagnosticsExpandedHeight
             : diagnosticsCollapsedHeight
 #else
-        let height = compactHeight
+        let baseHeight = compactHeight
 #endif
+        let height = baseHeight
+            + (showsSetupRecovery ? setupRecoveryAdditionalHeight : 0)
         return CGSize(width: width, height: height)
     }
 }

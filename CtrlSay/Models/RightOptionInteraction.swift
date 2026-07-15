@@ -37,8 +37,6 @@ enum RightOptionInteractionReducer {
 
 enum CtrlSayPreferenceKey {
     static let hudPositionsByDisplay = "clipboardHUDPositionsByDisplay"
-    static let answeredLaunchAtLoginOnboarding =
-        "answeredLaunchAtLoginOnboarding"
 }
 
 enum RightOptionEventFilter {

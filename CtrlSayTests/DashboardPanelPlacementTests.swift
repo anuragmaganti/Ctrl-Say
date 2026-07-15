@@ -17,6 +17,23 @@ final class DashboardPanelPlacementTests: XCTestCase {
 #endif
     }
 
+    func testSetupRecoveryAddsOnlyItsConditionalHeight() {
+        let normal = DashboardPanelMetrics.preferredSize(
+            showsDeveloperDiagnostics: false,
+            showsSetupRecovery: false
+        )
+        let setup = DashboardPanelMetrics.preferredSize(
+            showsDeveloperDiagnostics: false,
+            showsSetupRecovery: true
+        )
+
+        XCTAssertEqual(normal.width, setup.width)
+        XCTAssertEqual(
+            setup.height - normal.height,
+            DashboardPanelMetrics.setupRecoveryAdditionalHeight
+        )
+    }
+
     func testFrameUpdatesIgnoreSubpixelJitter() {
         let current = CGRect(x: 100, y: 200, width: 388, height: 540)
 
