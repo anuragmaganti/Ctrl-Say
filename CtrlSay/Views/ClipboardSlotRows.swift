@@ -98,7 +98,6 @@ private struct ClipboardPreview: View {
 struct NumberedCopyRow: View {
     let number: Int
     let payload: ClipboardPayload
-    let copyToClipboard: () -> Void
     let paste: () -> Void
     let delete: @MainActor @Sendable () -> Void
     let style: ClipboardSlotRowStyle
@@ -109,7 +108,6 @@ struct NumberedCopyRow: View {
     init(
         number: Int,
         payload: ClipboardPayload,
-        copyToClipboard: @escaping () -> Void,
         paste: @escaping () -> Void,
         delete: @escaping @MainActor @Sendable () -> Void,
         style: ClipboardSlotRowStyle = .hud,
@@ -117,7 +115,6 @@ struct NumberedCopyRow: View {
     ) {
         self.number = number
         self.payload = payload
-        self.copyToClipboard = copyToClipboard
         self.paste = paste
         self.delete = delete
         self.style = style
@@ -126,13 +123,9 @@ struct NumberedCopyRow: View {
 
     var body: some View {
         row
-            .onTapGesture(perform: copyToClipboard)
             .temporarySlotSwipeToDelete(action: delete)
             .contextMenu { menuItems }
             .accessibilityElement(children: .contain)
-            .accessibilityAction(named: "Copy slot \(number) to clipboard") {
-                copyToClipboard()
-            }
             .accessibilityAction(named: "Paste slot \(number)") {
                 paste()
             }
@@ -211,7 +204,6 @@ struct NumberedCopyRow: View {
 struct TemporaryNamedCopyRow: View {
     let name: String
     let payload: ClipboardPayload
-    let copyToClipboard: () -> Void
     let paste: () -> Void
     let delete: @MainActor @Sendable () -> Void
     let style: ClipboardSlotRowStyle
@@ -222,7 +214,6 @@ struct TemporaryNamedCopyRow: View {
     init(
         name: String,
         payload: ClipboardPayload,
-        copyToClipboard: @escaping () -> Void,
         paste: @escaping () -> Void,
         delete: @escaping @MainActor @Sendable () -> Void,
         style: ClipboardSlotRowStyle = .hud,
@@ -230,7 +221,6 @@ struct TemporaryNamedCopyRow: View {
     ) {
         self.name = name
         self.payload = payload
-        self.copyToClipboard = copyToClipboard
         self.paste = paste
         self.delete = delete
         self.style = style
@@ -239,13 +229,9 @@ struct TemporaryNamedCopyRow: View {
 
     var body: some View {
         row
-            .onTapGesture(perform: copyToClipboard)
             .temporarySlotSwipeToDelete(action: delete)
             .contextMenu { menuItems }
             .accessibilityElement(children: .contain)
-            .accessibilityAction(named: "Copy \(name) to clipboard") {
-                copyToClipboard()
-            }
             .accessibilityAction(named: "Paste copy \(name)") {
                 paste()
             }
@@ -341,7 +327,6 @@ struct PermanentCopyRow: View {
     let name: String
     let payload: ClipboardPayload
     let editingSession: DashboardEditingSession
-    let copyToClipboard: () -> Void
     let paste: () -> Void
     let delete: () -> Void
     let rename: (UUID, String) throws -> String
@@ -365,7 +350,6 @@ struct PermanentCopyRow: View {
         name: String,
         payload: ClipboardPayload,
         editingSession: DashboardEditingSession,
-        copyToClipboard: @escaping () -> Void,
         paste: @escaping () -> Void,
         delete: @escaping () -> Void,
         rename: @escaping (UUID, String) throws -> String,
@@ -376,7 +360,6 @@ struct PermanentCopyRow: View {
         self.name = name
         self.payload = payload
         self.editingSession = editingSession
-        self.copyToClipboard = copyToClipboard
         self.paste = paste
         self.delete = delete
         self.rename = rename
@@ -436,12 +419,8 @@ struct PermanentCopyRow: View {
 
     private var idleRowActions: some View {
         row
-            .onTapGesture(perform: copyToClipboard)
             .contextMenu { menuItems }
             .accessibilityElement(children: .contain)
-            .accessibilityAction(named: "Copy permanent copy \(name) to clipboard") {
-                copyToClipboard()
-            }
             .accessibilityAction(named: "Paste permanent copy \(name)") {
                 paste()
             }

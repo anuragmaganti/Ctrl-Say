@@ -13,10 +13,6 @@ struct PasteDispatchMetrics: Equatable, Sendable {
     let milliseconds: Double
 }
 
-struct ClipboardWriteMetrics: Equatable, Sendable {
-    let milliseconds: Double
-}
-
 struct ClipboardCaptureResult: Sendable {
     let payload: ClipboardPayload
     let milliseconds: Double
@@ -176,32 +172,6 @@ final class ClipboardService {
         let target = try requireCurrentTarget(requestedTarget)
 
         let started = DispatchTime.now().uptimeNanoseconds
-        try write(payload)
-
-        // Revalidate after the pasteboard write so an intentional app switch
-        // cannot send a paste to a different destination.
-        _ = try requireCurrentTarget(target)
-        try postCommandKey(keyCode: 9, target: target) // V
-        let milliseconds = Double(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000
-        Telemetry.clipboard.info("Paste dispatched in \(milliseconds, privacy: .public) ms")
-        return PasteDispatchMetrics(milliseconds: milliseconds)
-    }
-
-    func writeToSystemClipboard(
-        _ payload: ClipboardPayload
-    ) throws -> ClipboardWriteMetrics {
-        let started = DispatchTime.now().uptimeNanoseconds
-        try write(payload)
-        let milliseconds = Double(
-            DispatchTime.now().uptimeNanoseconds - started
-        ) / 1_000_000
-        Telemetry.clipboard.info(
-            "Clipboard written in \(milliseconds, privacy: .public) ms"
-        )
-        return ClipboardWriteMetrics(milliseconds: milliseconds)
-    }
-
-    private func write(_ payload: ClipboardPayload) throws {
         let items = payload.items.map { payloadItem in
             let item = NSPasteboardItem()
             for representation in payloadItem.representations {
@@ -217,6 +187,14 @@ final class ClipboardService {
         guard pasteboard.writeObjects(items) else {
             throw ClipboardServiceError.couldNotWriteClipboard
         }
+
+        // Revalidate after the pasteboard write so an intentional app switch
+        // cannot send a paste to a different destination.
+        _ = try requireCurrentTarget(target)
+        try postCommandKey(keyCode: 9, target: target) // V
+        let milliseconds = Double(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000
+        Telemetry.clipboard.info("Paste dispatched in \(milliseconds, privacy: .public) ms")
+        return PasteDispatchMetrics(milliseconds: milliseconds)
     }
 
     private func postCommandKey(

@@ -133,9 +133,6 @@ struct ClipboardHUDView: View {
                     NumberedCopyRow(
                         number: slot.number,
                         payload: slot.payload,
-                        copyToClipboard: {
-                            model.copyToSystemClipboard(slot.payload)
-                        },
                         paste: {
                             model.pasteNumberedCopy(
                                 slot.payload,
@@ -161,9 +158,6 @@ struct ClipboardHUDView: View {
                     TemporaryNamedCopyRow(
                         name: slot.name,
                         payload: slot.payload,
-                        copyToClipboard: {
-                            model.copyToSystemClipboard(slot.payload)
-                        },
                         paste: {
                             model.pasteTemporaryNamedCopy(
                                 slot.payload,
@@ -209,12 +203,10 @@ struct ClipboardHUDView: View {
     private var permanentCopies: some View {
         let slots = model.slots.namedSlots
         VStack(spacing: 8) {
-            if model.permanentStorageState.userMessage != nil {
-                PermanentStorageStatusRow(
-                    state: model.permanentStorageState,
-                    retry: model.retryPermanentStorage
-                )
-            }
+            PermanentStorageStatusRow(
+                state: model.permanentStorageState,
+                retry: model.retryPermanentStorage
+            )
 
             if !model.permanentStorageState.isLoading,
                !model.permanentStorageState.isUnavailable {
@@ -231,9 +223,6 @@ struct ClipboardHUDView: View {
                                 name: slot.name,
                                 payload: slot.payload,
                                 editingSession: editingSession,
-                                copyToClipboard: {
-                                    model.copyToSystemClipboard(slot.payload)
-                                },
                                 paste: {
                                     model.pastePermanentCopy(slot.payload.id)
                                 },

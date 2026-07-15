@@ -136,19 +136,6 @@ final class AppModel {
         )
     }
 
-    func copyToSystemClipboard(_ payload: ClipboardPayload) {
-        do {
-            _ = try clipboard.writeToSystemClipboard(payload)
-            lastError = nil
-            lastAction = "Copied to clipboard"
-        } catch {
-            lastError = error.localizedDescription
-            lastAction = "Clipboard copy failed"
-            NSSound.beep()
-            Telemetry.clipboard.error("HUD clipboard write failed")
-        }
-    }
-
     func deleteNumberedCopy(_ number: Int) {
         guard slots.removeNumbered(number) != nil else { return }
         lastError = nil
