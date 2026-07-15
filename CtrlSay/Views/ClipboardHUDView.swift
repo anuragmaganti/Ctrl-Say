@@ -280,17 +280,20 @@ struct ClipboardHUDView: View {
     }
 
     private var numberedFooter: some View {
-        ZStack(alignment: .trailing) {
-            Button("Clear All", systemImage: "trash") {
+        HStack(spacing: 0) {
+            Spacer(minLength: 0)
+
+            Button {
                 model.clearTemporaryCopies()
+            } label: {
+                Label("Clear All", systemImage: "trash")
+                    .font(.caption2)
             }
-            .font(.caption2)
-            .buttonStyle(.borderless)
-            .controlSize(.mini)
+            .buttonStyle(.plain)
+            .offset(x: -8, y: -4)
             .accessibilityLabel("Clear all temporary copies")
-            .padding(.trailing, 8)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.trailing, 8)
     }
 
     private var selectedCollectionBinding: Binding<ClipboardCollection> {

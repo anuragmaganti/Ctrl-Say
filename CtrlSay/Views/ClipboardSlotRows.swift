@@ -187,8 +187,8 @@ struct NumberedCopyRow: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.leading, 12)
-        .padding(.trailing, 6)
+        .padding(.leading, 8)
+        .padding(.trailing, 4)
         .frame(minHeight: style.minimumHeight)
         .contentShape(.rect(cornerRadius: 11))
         .background(
@@ -293,8 +293,8 @@ struct TemporaryNamedCopyRow: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.leading, 12)
-        .padding(.trailing, 6)
+        .padding(.leading, 8)
+        .padding(.trailing, 4)
         .frame(minHeight: style.minimumHeight)
         .contentShape(.rect(cornerRadius: 11))
         .background(
@@ -475,8 +475,8 @@ struct PermanentCopyRow: View {
                 editorControls
             }
         }
-        .padding(.leading, 12)
-        .padding(.trailing, 6)
+        .padding(.leading, 8)
+        .padding(.trailing, 4)
         .padding(.vertical, editingField == .content ? 8 : 0)
         .frame(minHeight: style.minimumHeight)
         .contentShape(.rect(cornerRadius: 11))
