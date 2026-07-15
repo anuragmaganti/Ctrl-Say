@@ -557,7 +557,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
         }
     }
 
-    func testPermanentNamedCopyUsesResultFinalizationWithoutBecomingTemporary() throws {
+    func testPermanentNamedCopyUsesImmediateRevisableNamedPath() throws {
         var scanner = StreamingNumberedCommandScanner()
         let pending = scanner.ingest(
             StreamingNumberedCommandSegment(
@@ -571,13 +571,15 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
         )
         let pendingCandidate = try XCTUnwrap(upserts(in: pending).first)
         XCTAssertEqual(pendingCandidate.command, .permanentCopy("house"))
-        XCTAssertFalse(pendingCandidate.isReadyForDispatch)
+        XCTAssertTrue(pendingCandidate.isReadyForDispatch)
+        XCTAssertFalse(pendingCandidate.isStableForCommit)
 
         let finalized = scanner.advanceFinalization(to: time(1.20))
         let readyCandidate = try XCTUnwrap(upserts(in: finalized).first)
         XCTAssertEqual(readyCandidate.id, pendingCandidate.id)
         XCTAssertEqual(readyCandidate.command, .permanentCopy("house"))
         XCTAssertTrue(readyCandidate.isReadyForDispatch)
+        XCTAssertTrue(readyCandidate.isStableForCommit)
     }
 
     func testPermanentFinalWordPartitionReleasesWithoutWholePhraseResult() throws {
@@ -667,10 +669,10 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
         XCTAssertEqual(candidates[0].command, .permanentCopy("name"))
         XCTAssertTrue(candidates[0].isReadyForDispatch)
         XCTAssertEqual(candidates[1].command, .permanentCopy("named"))
-        XCTAssertFalse(candidates[1].isReadyForDispatch)
+        XCTAssertTrue(candidates[1].isReadyForDispatch)
     }
 
-    func testRepeatedCanonicalPermanentResultsCloseTheEarlierAttempt() throws {
+    func testRepeatedCanonicalPermanentResultsCreateDistinctImmediateAttempts() throws {
         var scanner = StreamingNumberedCommandScanner()
         let first = scanner.ingest(
             StreamingNumberedCommandSegment(
@@ -681,7 +683,9 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
                 isFinal: false
             )
         )
-        XCTAssertFalse(try XCTUnwrap(upserts(in: first).first).isReadyForDispatch)
+        let firstCandidate = try XCTUnwrap(upserts(in: first).first)
+        XCTAssertEqual(firstCandidate.command, .permanentCopy("named"))
+        XCTAssertTrue(firstCandidate.isReadyForDispatch)
 
         let retry = scanner.ingest(
             StreamingNumberedCommandSegment(
@@ -694,11 +698,11 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
         )
         let candidates = upserts(in: retry)
 
-        XCTAssertEqual(candidates.count, 2)
-        XCTAssertEqual(candidates[0].command, .permanentCopy("named"))
-        XCTAssertTrue(candidates[0].isReadyForDispatch)
-        XCTAssertEqual(candidates[1].command, .permanentCopy("name"))
-        XCTAssertFalse(candidates[1].isReadyForDispatch)
+        let retryCandidate = try XCTUnwrap(candidates.first)
+        XCTAssertEqual(candidates.count, 1)
+        XCTAssertNotEqual(retryCandidate.id, firstCandidate.id)
+        XCTAssertEqual(retryCandidate.command, .permanentCopy("name"))
+        XCTAssertTrue(retryCandidate.isReadyForDispatch)
     }
 
     func testAndThenCommandClosesPendingPermanentName() throws {
@@ -721,17 +725,69 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
         XCTAssertTrue(candidates[1].isReadyForDispatch)
     }
 
-    func testPermanentMultiwordNameDoesNotCommitOneWordPrefix() {
+    func testPermanentMultiwordNameUsesSameAccumulatorAsTemporaryName() throws {
+        var scanner = StreamingNumberedCommandScanner()
+        let initialUpdate = scanner.ingest(
+            StreamingNumberedCommandSegment(
+                range: timeRange(0, 2),
+                tokens: [
+                    token("permanent", 0.10, 0.25),
+                    token("copy", 0.26, 0.40),
+                    token("my", 0.41, 0.55),
+                ]
+            )
+        )
+        let initial = try XCTUnwrap(upserts(in: initialUpdate).first)
+        XCTAssertEqual(initial.command, .permanentCopy("my"))
+        XCTAssertTrue(initial.isReadyForDispatch)
+        XCTAssertFalse(initial.isStableForCommit)
+
+        let expandedUpdate = scanner.ingest(
+            StreamingNumberedCommandSegment(
+                range: timeRange(0, 2),
+                tokens: [
+                    token("permanent", 0.10, 0.25),
+                    token("copy", 0.26, 0.40),
+                    token("my", 0.41, 0.55),
+                    token("very", 0.56, 0.70),
+                    token("important", 0.71, 0.85),
+                    token("home", 0.86, 1.00),
+                    token("address", 1.01, 1.20),
+                ]
+            )
+        )
+        let expanded = try XCTUnwrap(upserts(in: expandedUpdate).first)
+
+        XCTAssertEqual(expanded.id, initial.id)
+        XCTAssertEqual(
+            expanded.command,
+            .permanentCopy("my very important home address")
+        )
+        XCTAssertTrue(expanded.isReadyForDispatch)
+        XCTAssertFalse(expanded.isStableForCommit)
+    }
+
+    func testMultiwordPermanentCopyAndFollowingCommandRemainSeparate() throws {
         var scanner = StreamingNumberedCommandScanner()
         let update = scanner.ingest(
             segment(
-                0...1.6,
-                words: ["permanent", "copy", "shipping", "address"],
+                0...3,
+                words: [
+                    "permanent", "copy", "my", "new", "york", "address",
+                    "and", "copy", "one",
+                ],
                 isFinal: true
             )
         )
+        let candidates = upserts(in: update)
 
-        XCTAssertTrue(update.mutations.isEmpty)
+        XCTAssertEqual(candidates.count, 2)
+        XCTAssertEqual(
+            candidates[0].command,
+            .permanentCopy("my new york address")
+        )
+        XCTAssertEqual(candidates[1].command, .copyNumber(1))
+        XCTAssertTrue(candidates.allSatisfy(\.isReadyForDispatch))
     }
 
     func testRecognizesScopedNumberAliasesAndAllSlots() throws {

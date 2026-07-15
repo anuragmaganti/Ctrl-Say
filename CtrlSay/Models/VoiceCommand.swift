@@ -38,14 +38,26 @@ enum VoiceCommand: Equatable, Sendable {
     }
 }
 
+extension VoiceCommand {
+    var isRevisableNamedCopy: Bool {
+        switch self {
+        case .copyNamed, .permanentCopy:
+            true
+        default:
+            false
+        }
+    }
+}
+
 enum VoiceCommandParser {
     static let canonicalSpokenSlotNumbers = [
         "one", "two", "three", "four", "five",
         "six", "seven", "eight", "nine", "ten",
     ]
     static let numberedSlotRange = 1...canonicalSpokenSlotNumbers.count
-    static let temporaryNameWordRange = 1...5
-    static let permanentNameWordRange = 1...3
+    static let namedCopyWordRange = 1...5
+    static let temporaryNameWordRange = namedCopyWordRange
+    static let permanentNameWordRange = namedCopyWordRange
 
     // Scoped to the command verb position. These are common on-device
     // transcriptions of a spoken "paste" and must never rewrite slot names or

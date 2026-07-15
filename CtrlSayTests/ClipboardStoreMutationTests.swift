@@ -178,6 +178,29 @@ final class ClipboardStoreMutationTests: XCTestCase {
     }
 
     @MainActor
+    func testPermanentNamedCopyUsesSameFiveWordLimit() throws {
+        let store = ClipboardStore()
+        let payload = makeTextPayload("Permanent")
+
+        try store.set(payload, named: "My Very Important Home Address")
+        XCTAssertEqual(
+            store.payload(named: "my very important home address"),
+            payload
+        )
+        XCTAssertThrowsError(
+            try store.set(
+                payload,
+                named: "my very important new home address"
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? ClipboardStoreError,
+                .invalidPermanentName
+            )
+        }
+    }
+
+    @MainActor
     func testVoiceStyleTemporaryRenamePreservesPayloadAndInsertionOrder() throws {
         let store = ClipboardStore()
         let first = makeTextPayload("First")
@@ -400,7 +423,7 @@ final class ClipboardStoreMutationTests: XCTestCase {
             "two",
             "too",
             "one place",
-            "this name has four words",
+            "this name has more than five words",
         ]
 
         for invalidName in invalidNames {

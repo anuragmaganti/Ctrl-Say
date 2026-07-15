@@ -69,6 +69,38 @@ final class PermanentMutationQueueTests: XCTestCase {
         XCTAssertEqual(queue.beginNext(), mutation)
     }
 
+    func testStreamingPermanentNameRevisionsRemainOrderedAfterInitialUpsert() {
+        var queue = PermanentMutationQueueState()
+        let copiedPayload = payload("Address")
+        let upsert = queue.enqueue(
+            .upsert(name: "my", payload: copiedPayload)
+        )
+        let firstRevision = queue.enqueue(
+            .rename(
+                from: "my",
+                to: "my new",
+                expectedPayloadID: copiedPayload.id
+            )
+        )
+        let finalRevision = queue.enqueue(
+            .rename(
+                from: "my new",
+                to: "my new york address",
+                expectedPayloadID: copiedPayload.id
+            )
+        )
+
+        XCTAssertEqual(
+            queue.entries.map(\.sequence),
+            [upsert.sequence, firstRevision.sequence, finalRevision.sequence]
+        )
+        for expected in [upsert, firstRevision, finalRevision] {
+            XCTAssertEqual(queue.beginNext(), expected)
+            XCTAssertTrue(queue.complete(expected.sequence))
+        }
+        XCTAssertTrue(queue.isEmpty)
+    }
+
     private func payload(_ text: String) -> ClipboardPayload {
         let data = Data(text.utf8)
         return ClipboardPayload(

@@ -246,6 +246,10 @@ final class VoiceCommandParserTests: XCTestCase {
             "shipping address"
         )
         XCTAssertEqual(
+            VoiceCommandParser.parse("permanent copy my very important home address"),
+            .permanentCopy("my very important home address")
+        )
+        XCTAssertEqual(
             VoiceCommandParser.parse("paste main home"),
             .pasteNamed("main home")
         )
@@ -256,7 +260,7 @@ final class VoiceCommandParserTests: XCTestCase {
             "two",
             "too",
             "one place",
-            "this name has four words",
+            "this name has more than five words",
         ] {
             XCTAssertNil(
                 VoiceCommandParser.validNormalizedPermanentName(invalidName),
@@ -357,13 +361,25 @@ final class VoiceCommandParserTests: XCTestCase {
         )
     }
 
-    func testPromotionRetainsPermanentNameLimit() {
+    func testPromotionUsesSharedFiveWordNameLimit() {
         XCTAssertEqual(
             VoiceCommandParser.parse("make shipping address permanent"),
             .promoteTemporaryNamed("shipping address")
         )
+        XCTAssertEqual(
+            VoiceCommandParser.parse("make my new york address permanent"),
+            .promoteTemporaryNamed("my new york address")
+        )
+        XCTAssertEqual(
+            VoiceCommandParser.parse(
+                "make my very important home address permanent"
+            ),
+            .promoteTemporaryNamed("my very important home address")
+        )
         XCTAssertNil(
-            VoiceCommandParser.parse("make my new york address permanent")
+            VoiceCommandParser.parse(
+                "make my very important new home address permanent"
+            )
         )
     }
 }

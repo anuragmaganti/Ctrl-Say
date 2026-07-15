@@ -445,16 +445,10 @@ final class AppModel {
 
         let gatedCommand: VoiceCommand?
         switch exactCommand {
-        case .copyNumber, .pasteNumber, .copyNamed:
+        case .copyNumber, .pasteNumber, .copyNamed, .permanentCopy:
             // Fast copy and paste commands are owned by the timeline scanner.
             // Sending an exact match through both paths would execute final
             // echoes twice.
-            gatedCommand = nil
-        case .permanentCopy(let name) where !name.contains(" "):
-            // The timeline scanner owns one-word permanent copies so it can
-            // release them as soon as Apple's result containing the name
-            // finalizes. Multiword permanent names keep the whole-phrase gate
-            // because their end is otherwise ambiguous.
             gatedCommand = nil
         case .pasteNamed:
             // The timeline scanner owns all known-name pastes, including
@@ -569,7 +563,7 @@ final class AppModel {
             )
 #endif
             let identity = SpeechCommandIdentity.numbered(candidate.id)
-            if case .copyNamed = candidate.command {
+            if candidate.command.isRevisableNamedCopy {
                 if updateActiveNamedCopyCommand(
                     with: candidate,
                     receivedAtNanoseconds: resultReceivedAtNanoseconds
@@ -678,7 +672,16 @@ final class AppModel {
         with candidate: StreamingNumberedCommandCandidate,
         receivedAtNanoseconds: UInt64
     ) -> Bool {
-        guard case .copyNamed(let rawName) = candidate.command else {
+        let storage: NamedCopyStorage
+        let rawName: String
+        switch candidate.command {
+        case .copyNamed(let name):
+            storage = .temporary
+            rawName = name
+        case .permanentCopy(let name):
+            storage = .permanent
+            rawName = name
+        default:
             return false
         }
         let name = VoiceCommandParser.normalizeName(rawName)
@@ -688,6 +691,7 @@ final class AppModel {
                 latestName: name,
                 storedName: nil,
                 payloadID: nil,
+                storage: storage,
                 // Treat the serialized capture as active immediately. Apple
                 // can close the phrase before the worker gets its first Main
                 // Actor turn; that must not finalize away the queued copy.
@@ -703,6 +707,14 @@ final class AppModel {
                 isStable: candidate.isStableForCommit
             )
 #endif
+            return false
+        }
+        guard active.storage == storage else {
+            assertionFailure("A named-copy candidate changed storage lifetime")
+            cancelActiveNamedCopyCommand(
+                candidate.id,
+                removeStoredCopy: true
+            )
             return false
         }
 
@@ -738,15 +750,42 @@ final class AppModel {
            let payloadID = active.payloadID,
            storedName != name {
             do {
-                if let revisedName = try slots.reviseTemporaryNamed(
-                    from: storedName,
-                    to: name,
-                    expectedPayloadID: payloadID
-                ) {
+                let revisedName: String?
+                switch active.storage {
+                case .temporary:
+                    revisedName = try slots.reviseTemporaryNamed(
+                        from: storedName,
+                        to: name,
+                        expectedPayloadID: payloadID
+                    )
+                case .permanent:
+                    guard slots.payload(named: storedName)?.id == payloadID else {
+                        revisedName = nil
+                        break
+                    }
+                    let normalizedName = try slots.renameNamed(
+                        from: storedName,
+                        to: name,
+                        expectedPayloadID: payloadID
+                    )
+                    if normalizedName != storedName {
+                        enqueuePermanentMutation(
+                            .rename(
+                                from: storedName,
+                                to: normalizedName,
+                                expectedPayloadID: payloadID
+                            )
+                        )
+                    }
+                    revisedName = normalizedName
+                }
+                if let revisedName {
                     active.storedName = revisedName
                     scheduleVocabularyRefresh()
                     lastError = nil
-                    lastAction = "Copied to \(revisedName)"
+                    lastAction = active.storage == .temporary
+                        ? "Copied to \(revisedName)"
+                        : "Created permanent copy"
                     publishNotchFeedback(
                         .commandSucceeded(action: .copy, label: revisedName)
                     )
@@ -793,11 +832,24 @@ final class AppModel {
         }
         guard removeStoredCopy,
               let storedName = active.storedName,
-              let payloadID = active.payloadID,
-              slots.payload(temporaryNamed: storedName)?.id == payloadID else {
+              let payloadID = active.payloadID else {
             return
         }
-        slots.removeTemporaryNamed(storedName)
+        switch active.storage {
+        case .temporary:
+            guard slots.payload(temporaryNamed: storedName)?.id == payloadID else {
+                return
+            }
+            slots.removeTemporaryNamed(storedName)
+        case .permanent:
+            guard slots.payload(named: storedName)?.id == payloadID,
+                  slots.removeNamed(storedName) != nil else {
+                return
+            }
+            enqueuePermanentMutation(
+                .delete(name: storedName, expectedPayloadID: payloadID)
+            )
+        }
         scheduleVocabularyRefresh()
     }
 
@@ -811,6 +863,83 @@ final class AppModel {
         cancelActiveNamedCopyCommand(candidateID, removeStoredCopy: true)
         numberedCommandScanner.markCommitted(candidateID)
         capturedSpeechTargets.removeValue(forKey: .numbered(candidateID))
+    }
+
+    private func captureNamedCopy(
+        requestedName: String,
+        storage: NamedCopyStorage,
+        identity: SpeechCommandIdentity?,
+        target: CommandTarget?
+    ) async throws -> NamedCopyCaptureResult {
+        if storage == .permanent {
+            try requirePermanentStorage()
+        }
+
+        let candidateID: StreamingNumberedCommandID?
+        if case .numbered(let id) = identity {
+            guard var active = activeNamedCopyCommands[id],
+                  active.storage == storage else {
+                throw CancellationError()
+            }
+            active.isExecuting = true
+            activeNamedCopyCommands[id] = active
+            candidateID = id
+        } else {
+            candidateID = nil
+        }
+
+        let capture = try await clipboard.captureSelection(target: target)
+        let currentName: String
+        if let candidateID {
+            guard let active = activeNamedCopyCommands[candidateID] else {
+                throw CancellationError()
+            }
+            currentName = active.latestName
+        } else {
+            currentName = requestedName
+        }
+
+        let normalizedName: String
+        switch storage {
+        case .temporary:
+            normalizedName = try slots.validateTemporaryNameAvailable(
+                currentName
+            )
+            try slots.setTemporaryNamed(
+                capture.payload,
+                named: normalizedName
+            )
+        case .permanent:
+            guard let validName = VoiceCommandParser.validNormalizedPermanentName(
+                currentName
+            ) else {
+                throw ClipboardStoreError.invalidPermanentName
+            }
+            normalizedName = validName
+            try slots.set(capture.payload, named: normalizedName)
+            enqueuePermanentMutation(
+                .upsert(name: normalizedName, payload: capture.payload)
+            )
+        }
+
+        if let candidateID,
+           var active = activeNamedCopyCommands[candidateID] {
+            active.isExecuting = false
+            active.storedName = normalizedName
+            active.payloadID = capture.payload.id
+            activeNamedCopyCommands[candidateID] = active
+            capturedSpeechTargets.removeValue(forKey: .numbered(candidateID))
+            if active.isStableForCommit {
+                finishActiveNamedCopyCommand(candidateID)
+            }
+        }
+
+        markHUDStoreUpdate(for: capture.payload.id)
+        scheduleVocabularyRefresh()
+        return NamedCopyCaptureResult(
+            capture: capture,
+            normalizedName: normalizedName
+        )
     }
 
     private func milliseconds(from start: UInt64, to end: UInt64) -> Double {
@@ -853,9 +982,9 @@ final class AppModel {
                 case .gated(let utteranceID):
                     speechCommandGate.markCommitted(utteranceID)
                 case .numbered(let candidateID):
-                    // A temporary named copy captures immediately but remains
-                    // revisable until Apple closes the volatile phrase. Its
-                    // later text revisions rename the same stored payload.
+                    // A named copy captures immediately but remains revisable
+                    // until Apple closes the volatile phrase. Later text
+                    // revisions rename the same stored payload.
                     if activeNamedCopyCommands[candidateID] == nil {
                         numberedCommandScanner.markCommitted(candidateID)
                     }
@@ -964,73 +1093,33 @@ final class AppModel {
                     )
 
                 case .copyNamed(let name):
-                    let candidateID: StreamingNumberedCommandID?
-                    if case .numbered(let id) = identity {
-                        candidateID = id
-                        activeNamedCopyCommands[id]?.isExecuting = true
-                    } else {
-                        candidateID = nil
-                    }
-                    let capture = try await clipboard.captureSelection(
+                    let result = try await captureNamedCopy(
+                        requestedName: name,
+                        storage: .temporary,
+                        identity: identity,
                         target: queued.target
                     )
-                    let currentName: String
-                    if let candidateID {
-                        guard let active = activeNamedCopyCommands[candidateID] else {
-                            throw CancellationError()
-                        }
-                        currentName = active.latestName
-                    } else {
-                        currentName = name
-                    }
-                    let normalizedName = try slots.validateTemporaryNameAvailable(
-                        currentName
-                    )
-                    try slots.setTemporaryNamed(
-                        capture.payload,
-                        named: normalizedName
-                    )
-                    if let candidateID,
-                       var active = activeNamedCopyCommands[candidateID] {
-                        active.isExecuting = false
-                        active.storedName = normalizedName
-                        active.payloadID = capture.payload.id
-                        activeNamedCopyCommands[candidateID] = active
-                        capturedSpeechTargets.removeValue(
-                            forKey: .numbered(candidateID)
-                        )
-                        if active.isStableForCommit {
-                            finishActiveNamedCopyCommand(candidateID)
-                        }
-                    }
-                    markHUDStoreUpdate(for: capture.payload.id)
-                    clipboardMilliseconds = capture.milliseconds
+                    clipboardMilliseconds = result.capture.milliseconds
                     targetStatus = .verified
-                    scheduleVocabularyRefresh()
-                    lastAction = "Copied to \(normalizedName)"
+                    lastAction = "Copied to \(result.normalizedName)"
                     successfulNotchFeedback = .commandSucceeded(
                         action: .copy,
-                        label: normalizedName
+                        label: result.normalizedName
                     )
 
                 case .permanentCopy(let name):
-                    try requirePermanentStorage()
-                    guard let normalizedName = VoiceCommandParser.validNormalizedPermanentName(name) else {
-                        throw ClipboardStoreError.invalidPermanentName
-                    }
-                    let capture = try await clipboard.captureSelection(target: queued.target)
-                    try slots.set(capture.payload, named: normalizedName)
-                    enqueuePermanentMutation(
-                        .upsert(name: normalizedName, payload: capture.payload)
+                    let result = try await captureNamedCopy(
+                        requestedName: name,
+                        storage: .permanent,
+                        identity: identity,
+                        target: queued.target
                     )
-                    markHUDStoreUpdate(for: capture.payload.id)
-                    clipboardMilliseconds = capture.milliseconds
+                    clipboardMilliseconds = result.capture.milliseconds
                     targetStatus = .verified
-                    scheduleVocabularyRefresh()
                     lastAction = "Created permanent copy"
                     successfulNotchFeedback = .commandSucceeded(
                         action: .copy,
-                        label: normalizedName
+                        label: result.normalizedName
                     )
 
                 case .pasteNamed(let name):
@@ -1515,11 +1604,22 @@ private struct ActiveNamedCopyCommand {
     var latestName: String
     var storedName: String?
     var payloadID: UUID?
+    let storage: NamedCopyStorage
     var isExecuting: Bool
     var isStableForCommit: Bool
     let firstObservedAtNanoseconds: UInt64
     var lastObservedAtNanoseconds: UInt64
     var lastCharacterCount: Int
+}
+
+private enum NamedCopyStorage {
+    case temporary
+    case permanent
+}
+
+private struct NamedCopyCaptureResult {
+    let capture: ClipboardCaptureResult
+    let normalizedName: String
 }
 
 private enum SpeechCommandIdentity: Hashable {

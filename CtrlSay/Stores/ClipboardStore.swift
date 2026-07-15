@@ -410,7 +410,7 @@ enum ClipboardStoreError: LocalizedError, Equatable {
         case .invalidTemporaryName:
             "Use a name of one to five words that does not begin with a number."
         case .invalidPermanentName:
-            "Use a name of one to three words that does not begin with a number."
+            "Use a name of one to five words that does not begin with a number."
         case .nameProtectedByPermanentCopy(let name):
             "“\(name)” is a permanent copy. Delete it or use a different temporary name."
         case .temporaryNameAlreadyExists(let name):

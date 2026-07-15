@@ -61,9 +61,9 @@ struct StreamingNumberedCommandScannerUpdate: Equatable, Sendable {
     let mutations: [StreamingNumberedCommandMutation]
 }
 
-/// Extracts numbered, temporary named, and one-word permanent-copy commands
-/// from a revisable speech timeline. Temporary names may contain up to five
-/// words and expand under the same audio identity as Apple revises the result.
+/// Extracts numbered and named copy/paste commands from a revisable speech
+/// timeline. Temporary and permanent names both contain up to five words and
+/// expand under the same audio identity as Apple revises the result.
 ///
 /// A candidate stays mutable until `markCommitted(_:)` is called. A committed
 /// candidate becomes a tombstone, so Apple's final-result echo or a later text
@@ -351,7 +351,7 @@ struct StreamingNumberedCommandScanner {
                 continue
             }
             switch candidate.command {
-            case .copyNamed(let name):
+            case .copyNamed(let name), .permanentCopy(let name):
                 availableNamedCopies.insert(
                     VoiceCommandParser.normalizeName(name)
                 )
@@ -389,7 +389,7 @@ struct StreamingNumberedCommandScanner {
         ), case .pasteNumber = numberedCommand {
             arguments = [firstArgument]
         } else if canonicalVerb == "copy" {
-            arguments = temporaryNameArguments(
+            arguments = namedCopyArguments(
                 startingAt: index + 1,
                 in: tokens
             )
@@ -442,7 +442,7 @@ struct StreamingNumberedCommandScanner {
         )
     }
 
-    private func temporaryNameArguments(
+    private func namedCopyArguments(
         startingAt start: Int,
         in tokens: [ResolvedToken]
     ) -> [ResolvedToken] {
@@ -454,7 +454,7 @@ struct StreamingNumberedCommandScanner {
             if let previous, !canBridge(previous, to: token) { break }
             if !arguments.isEmpty, isExplicitCommandBoundary(token.text) { break }
             if beginsCommandTransition(at: index, in: tokens) { break }
-            guard arguments.count < VoiceCommandParser.temporaryNameWordRange.upperBound else {
+            guard arguments.count < VoiceCommandParser.namedCopyWordRange.upperBound else {
                 break
             }
             arguments.append(token)
@@ -477,7 +477,7 @@ struct StreamingNumberedCommandScanner {
             let token = tokens[index]
             if let previous, !canBridge(previous, to: token) { break }
             if !arguments.isEmpty, isExplicitCommandBoundary(token.text) { break }
-            guard arguments.count < VoiceCommandParser.temporaryNameWordRange.upperBound else {
+            guard arguments.count < VoiceCommandParser.namedCopyWordRange.upperBound else {
                 break
             }
             arguments.append(token)
@@ -519,65 +519,49 @@ struct StreamingNumberedCommandScanner {
         guard index + 2 < tokens.count else { return nil }
         let modifier = tokens[index]
         let verb = tokens[index + 1]
-        let argument = tokens[index + 2]
+        let firstArgument = tokens[index + 2]
 
         guard VoiceCommandParser.isPotentialPermanentModifier(modifier.text),
               VoiceCommandParser.canonicalNumberedCommandVerb(
                   verb.text
               ) == "copy",
               canBridge(modifier, to: verb),
-              canBridge(verb, to: argument),
-              let name = VoiceCommandParser.validNormalizedPermanentName(
-                  argument.text
-              ) else {
+              canBridge(verb, to: firstArgument) else {
             return nil
         }
 
-        var hasFollowingCommandBoundary = false
-        // If Apple has already supplied another ordinary word in the same
-        // result, the permanent name may be multiword. Leave that case on the
-        // whole-phrase gate instead of prematurely capturing only its prefix.
-        if index + 3 < tokens.count {
-            let following = tokens[index + 3]
-            if !canBridge(argument, to: following) {
-                hasFollowingCommandBoundary = true
-            } else if isExplicitCommandBoundary(following.text)
-                        || beginsCommandTransition(at: index + 3, in: tokens) {
-                hasFollowingCommandBoundary = true
-            } else {
-                return nil
-            }
-        }
+        let arguments = namedCopyArguments(
+            startingAt: index + 2,
+            in: tokens
+        )
+        guard let finalArgument = arguments.last,
+              let name = VoiceCommandParser.validNormalizedPermanentName(
+                  arguments.map(\.text).joined(separator: " ")
+              ) else { return nil }
 
         let command = VoiceCommand.permanentCopy(name)
-        let range = modifier.range.union(verb.range).union(argument.range)
-        let confidences = [
-            modifier.confidence,
-            verb.confidence,
-            argument.confidence,
-        ]
+        let commandTokens = [modifier, verb] + arguments
+        let range = commandTokens.dropFirst().reduce(modifier.range) {
+            $0.union($1.range)
+        }
+        let confidences = commandTokens.map(\.confidence)
         let minimumConfidence = confidences.allSatisfy { $0 != nil }
             ? confidences.compactMap { $0 }.min()
             : nil
 
         return CandidateSnapshot(
-            anchors: [modifier.anchor, verb.anchor, argument.anchor],
-            sourceSegmentIDs: [
-                modifier.segmentID,
-                verb.segmentID,
-                argument.segmentID,
-            ],
+            anchors: commandTokens.map(\.anchor),
+            sourceSegmentIDs: Set(commandTokens.map(\.segmentID)),
             command: command,
             range: range,
             minimumConfidence: minimumConfidence,
             isReadyForDispatch: isReadyForDispatch(
                 command,
-                argument: argument,
-                hasFollowingCommandBoundary: hasFollowingCommandBoundary
+                argument: finalArgument
             ),
             isStableForCommit: isStableForCommit(
                 command,
-                argument: argument
+                argument: finalArgument
             ),
             order: order
         )
@@ -592,7 +576,6 @@ struct StreamingNumberedCommandScanner {
     private func isReadyForDispatch(
         _ command: VoiceCommand,
         argument: ResolvedToken,
-        hasFollowingCommandBoundary: Bool = false,
         minimumConfidence: Double? = nil,
         knownNamedCopies: Set<String> = []
     ) -> Bool {
@@ -600,22 +583,11 @@ struct StreamingNumberedCommandScanner {
             || argument.segmentRange.isFinalized(through: finalizedThrough)
 
         switch command {
-        case .copyNamed:
-            // Temporary named copies are latency-first, just like numbered
-            // copies. Trust Apple's complete volatile two-token command; its
-            // audio identity still deduplicates later punctuation and final
-            // echoes. Do not wait for result finalization.
+        case .copyNamed, .permanentCopy:
+            // Named copies are latency-first, just like numbered copies. The
+            // stable audio identity lets later words revise the same capture
+            // without sending another native Copy action.
             return true
-
-        case .permanentCopy:
-            // Keep replacing unfinished volatile prefixes, but trust Apple's
-            // explicit phrase boundary as soon as it appears. The boundary is
-            // dispatch metadata only; punctuation never becomes part of the
-            // normalized slot name. Finalization remains the fallback for
-            // results that contain no explicit boundary.
-            return argument.hasExplicitPhraseBoundary
-                || hasFollowingCommandBoundary
-                || isFinalized
 
         case .pasteNamed:
             // Pasting can use the volatile fast path because its name must
@@ -642,7 +614,7 @@ struct StreamingNumberedCommandScanner {
         _ command: VoiceCommand,
         argument: ResolvedToken
     ) -> Bool {
-        guard case .copyNamed = command else { return true }
+        guard command.isRevisableNamedCopy else { return true }
         return argument.hasExplicitPhraseBoundary
             || argument.isFinalized
             || argument.segmentRange.isFinalized(through: finalizedThrough)
