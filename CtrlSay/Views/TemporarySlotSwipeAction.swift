@@ -5,11 +5,27 @@ extension View {
         action: @escaping @MainActor @Sendable () -> Void
     ) -> some View {
         swipeActions(edge: .trailing, allowsFullSwipe: true) {
-            Button(role: .destructive, action: action) {
-                Image(systemName: "trash")
+            Button(action: action) {
+                Label("Delete copy", systemImage: "trash")
+                    .labelStyle(.iconOnly)
+                    .foregroundStyle(.white)
+                    .frame(
+                        maxWidth: .infinity,
+                        maxHeight: .infinity,
+                        alignment: .center
+                    )
             }
+            .buttonStyle(.plain)
+            .frame(
+                minWidth: 56,
+                maxWidth: .infinity,
+                maxHeight: .infinity,
+                alignment: .center
+            )
+            .background(.red)
+            .contentShape(.rect)
             .accessibilityLabel("Delete copy")
-            .tint(.red)
+            .accessibilityHint("Deletes this temporary copy")
         }
     }
 

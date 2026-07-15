@@ -71,7 +71,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 await model.waitForPermanentStorageRestore()
-                seedHUDForTesting()
+                seedHUDForTesting(
+                    singleTemporaryOnly: CommandLine.arguments.contains(
+                        "-CtrlSaySeedSingleTemporaryForTesting"
+                    )
+                )
             }
         }
         if CommandLine.arguments.contains("-CtrlSayShowHUDPermanentForTesting") {
@@ -93,6 +97,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 try? await Task.sleep(for: .milliseconds(250))
                 guard let self, let button = statusItem.button else { return }
                 dashboardPanel.show(relativeTo: button)
+            }
+        }
+        if CommandLine.arguments.contains("-CtrlSayClickStatusItemForTesting")
+            || CommandLine.arguments.contains("-CtrlSayClickStatusItemTwiceForTesting") {
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(250))
+                guard let self, let button = statusItem.button else { return }
+                button.performClick(nil)
+                try? await Task.sleep(for: .milliseconds(250))
+                Telemetry.interface.info(
+                    "Status item synthetic_click panel_visible=\(self.dashboardPanel.isShown, privacy: .public) native_highlight=\(self.dashboardPanel.isStatusItemNativelyHighlightedForTesting, privacy: .public)"
+                )
+                if CommandLine.arguments.contains("-CtrlSayClickStatusItemTwiceForTesting") {
+                    button.performClick(nil)
+                    try? await Task.sleep(for: .milliseconds(250))
+                    Telemetry.interface.info(
+                        "Status item synthetic_second_click panel_visible=\(self.dashboardPanel.isShown, privacy: .public) native_highlight=\(self.dashboardPanel.isStatusItemNativelyHighlightedForTesting, privacy: .public)"
+                    )
+                }
             }
         }
         if CommandLine.arguments.contains("-CtrlSayShowNotchListeningForTesting") {
@@ -220,10 +243,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         guard let button = statusItem?.button else { return }
-        button.image = NSImage(
+        let image = NSImage(
             systemSymbolName: symbolName,
             accessibilityDescription: "Ctrl-Say"
         )
+        image?.isTemplate = true
+        button.image = image
         button.imagePosition = .imageOnly
         button.title = ""
         button.toolTip = toolTip
@@ -569,8 +594,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
     }
 
-    private func seedHUDForTesting() {
-        for number in 1...10 {
+    private func seedHUDForTesting(singleTemporaryOnly: Bool = false) {
+        let numberedSeedCount = singleTemporaryOnly ? 1 : 10
+        for number in 1...numberedSeedCount {
             let text = "Example clipboard content for slot \(number) with a bounded two-line preview."
             let data = Data(text.utf8)
             let payload = ClipboardPayload(
@@ -590,6 +616,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             )
             try? model.slots.set(payload, at: number)
         }
+
+        guard !singleTemporaryOnly else { return }
 
         let temporaryText = "Session-only content stored under a memorable spoken name."
         let temporaryData = Data(temporaryText.utf8)

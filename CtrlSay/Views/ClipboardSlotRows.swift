@@ -170,17 +170,22 @@ struct NumberedCopyRow: View {
             leadingView
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("\(number)")
-                    .font(.callout.weight(.semibold))
-                    .lineLimit(1)
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text("\(number)")
+                        .font(.callout.weight(.semibold))
+                        .lineLimit(1)
+
+                    Spacer(minLength: 8)
+
+                    pasteButton
+                }
+
                 ExpandableClipboardPreview(
                     payload: payload,
                     style: style
                 )
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-
-            rowActions
         }
         .padding(.leading, 12)
         .padding(.trailing, 6)
@@ -209,7 +214,7 @@ struct NumberedCopyRow: View {
         }
     }
 
-    private var rowActions: some View {
+    private var pasteButton: some View {
         Button("Paste", action: paste)
             .controlSize(.small)
             .buttonStyle(.borderless)
@@ -271,17 +276,22 @@ struct TemporaryNamedCopyRow: View {
             leadingView
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(displayName)
-                    .font(.callout.weight(.semibold))
-                    .lineLimit(1)
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(displayName)
+                        .font(.callout.weight(.semibold))
+                        .lineLimit(1)
+
+                    Spacer(minLength: 8)
+
+                    pasteButton
+                }
+
                 ExpandableClipboardPreview(
                     payload: payload,
                     style: style
                 )
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-
-            rowActions
         }
         .padding(.leading, 12)
         .padding(.trailing, 6)
@@ -317,7 +327,7 @@ struct TemporaryNamedCopyRow: View {
         }
     }
 
-    private var rowActions: some View {
+    private var pasteButton: some View {
         Button("Paste", action: paste)
             .controlSize(.small)
             .buttonStyle(.borderless)

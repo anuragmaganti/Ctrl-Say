@@ -15,10 +15,16 @@ final class DashboardPanelController {
     private weak var anchorButton: NSStatusBarButton?
     private var outsideClickMonitor: Any?
     private var deferredShowTask: Task<Void, Never>?
+    private var deferredHighlightTask: Task<Void, Never>?
     private var wantsToBeShown = false
     private var isSizeUpdateScheduled = false
 
     var isShown: Bool { panel.isVisible || wantsToBeShown }
+#if DEBUG
+    var isStatusItemNativelyHighlightedForTesting: Bool {
+        anchorButton?.cell?.isHighlighted == true
+    }
+#endif
 
     init(
         rootView: DashboardView,
@@ -106,7 +112,7 @@ final class DashboardPanelController {
         if panel.isVisible {
             wantsToBeShown = false
             _ = position(relativeTo: button)
-            button.highlight(true)
+            setAnchorHighlighted(true)
             installOutsideClickMonitor()
             return
         }
@@ -133,7 +139,7 @@ final class DashboardPanelController {
                     return
                 }
                 self.wantsToBeShown = false
-                self.anchorButton?.highlight(false)
+                self.setAnchorHighlighted(false)
                 Telemetry.interface.error(
                     "Dashboard could not attach to the status item"
                 )
@@ -161,7 +167,7 @@ final class DashboardPanelController {
             .processIdentifier
 #endif
         panel.orderFrontRegardless()
-        anchorButton?.highlight(true)
+        setAnchorHighlighted(true)
         installOutsideClickMonitor()
 #if DEBUG
         Task { @MainActor in
@@ -179,9 +185,38 @@ final class DashboardPanelController {
         wantsToBeShown = false
         deferredShowTask?.cancel()
         deferredShowTask = nil
-        anchorButton?.highlight(false)
+        setAnchorHighlighted(false)
         panel.orderOut(nil)
         removeOutsideClickMonitor()
+    }
+
+    /// `NSStatusBarButton` is momentary, so AppKit clears its pressed highlight
+    /// after the action returns on mouse-up. Our dashboard is a separate panel,
+    /// not `NSStatusItem.menu`, so reassert the native highlight after tracking
+    /// completes and keep it until the panel closes.
+    private func setAnchorHighlighted(_ isHighlighted: Bool) {
+        deferredHighlightTask?.cancel()
+        deferredHighlightTask = nil
+        guard let button = anchorButton else { return }
+
+        button.highlight(isHighlighted)
+        button.needsDisplay = true
+
+        guard isHighlighted else { return }
+        deferredHighlightTask = Task { @MainActor [weak self, weak button] in
+            guard let self else { return }
+            await self.waitForNextMainRunLoopTurn()
+            guard !Task.isCancelled,
+                  self.panel.isVisible,
+                  let button,
+                  self.anchorButton === button else {
+                return
+            }
+
+            button.highlight(true)
+            button.needsDisplay = true
+            self.deferredHighlightTask = nil
+        }
     }
 
     private func observePreferredSize() {

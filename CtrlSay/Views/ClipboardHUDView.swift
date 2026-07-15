@@ -6,6 +6,8 @@ struct ClipboardHUDView: View {
     let editingSession: DashboardEditingSession
     let thumbnailProvider: ClipboardThumbnailProvider
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         VStack(spacing: 0) {
             dragHeader
@@ -48,10 +50,16 @@ struct ClipboardHUDView: View {
                             .fill(statusColor.opacity(0.14))
                         Image(systemName: statusIcon)
                             .font(.system(size: 15, weight: .semibold))
+                            .symbolRenderingMode(.hierarchical)
                             .foregroundStyle(statusColor)
+                            .contentTransition(.symbolEffect(.replace))
                     }
                     .frame(width: 32, height: 32)
                     .contentShape(.circle)
+                    .animation(
+                        reduceMotion ? nil : .smooth(duration: 0.24),
+                        value: statusIcon
+                    )
                 }
                 .buttonStyle(.plain)
                 .disabled(!model.isReadyForCommands && !model.speech.isActive)
@@ -174,8 +182,15 @@ struct ClipboardHUDView: View {
         .scrollContentBackground(.hidden)
         .contentMargins(.horizontal, 8, for: .scrollContent)
         .contentMargins(
-            .vertical,
+            .top,
             ClipboardHUDMetrics.listVerticalPadding / 2,
+            for: .scrollContent
+        )
+        .contentMargins(
+            .bottom,
+            model.slots.hasTemporaryCopies
+                ? 0
+                : ClipboardHUDMetrics.listVerticalPadding / 2,
             for: .scrollContent
         )
         .scrollIndicators(.automatic)
@@ -265,7 +280,7 @@ struct ClipboardHUDView: View {
     }
 
     private var numberedFooter: some View {
-        ZStack(alignment: .bottomTrailing) {
+        ZStack(alignment: .trailing) {
             Button("Clear All", systemImage: "trash") {
                 model.clearTemporaryCopies()
             }
@@ -274,7 +289,6 @@ struct ClipboardHUDView: View {
             .controlSize(.mini)
             .accessibilityLabel("Clear all temporary copies")
             .padding(.trailing, 8)
-            .padding(.bottom, 5)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -322,14 +336,10 @@ struct ClipboardHUDView: View {
 
     private var statusIcon: String {
         switch model.speech.state {
-        case .listening:
-            return "waveform"
-        case .requestingMicrophone, .preparing, .downloadingModel, .stopping:
-            return "ellipsis"
-        case .failed:
-            return "exclamationmark"
-        case .stopped:
-            return model.isReadyForCommands ? "doc.on.clipboard" : "checklist"
+        case .requestingMicrophone, .preparing, .downloadingModel, .listening:
+            return "mic.fill"
+        case .stopping, .failed, .stopped:
+            return "mic.slash.fill"
         }
     }
 
