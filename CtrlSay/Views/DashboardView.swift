@@ -1,12 +1,54 @@
 import AppKit
 import SwiftUI
 
+struct MenuBarStatusLabel: View {
+    let model: AppModel
+
+    var body: some View {
+        Image(systemName: symbolName)
+            .accessibilityLabel("Ctrl-Say")
+            .accessibilityValue(statusDescription)
+            .help("Ctrl-Say — \(statusDescription)")
+    }
+
+    private var symbolName: String {
+        if !model.isReadyForCommands { return "checklist" }
+        switch model.speech.state {
+        case .stopped, .requestingMicrophone, .preparing, .downloadingModel, .stopping:
+            return "waveform.circle"
+        case .listening:
+            return "waveform.circle.fill"
+        case .failed:
+            return "exclamationmark.triangle"
+        }
+    }
+
+    private var statusDescription: String {
+        if !model.isReadyForCommands { return "Complete setup" }
+        switch model.speech.state {
+        case .stopped:
+            return "Not listening"
+        case .requestingMicrophone, .preparing, .downloadingModel:
+            return "Starting on-device listening"
+        case .listening:
+            return "Listening"
+        case .stopping:
+            return "Stopping listening"
+        case .failed:
+            return "Listening failed"
+        }
+    }
+}
+
 /// The menu-bar surface stays deliberately compact. Clipboard management lives
-/// in the floating HUD so this panel only carries status, app-level actions,
+/// in the floating HUD so this menu only carries status, app-level actions,
 /// and Debug diagnostics.
 struct DashboardView: View {
     let model: AppModel
-    let presentationState: DashboardPresentationState
+
+#if DEBUG
+    @State private var showsDeveloperDiagnostics = false
+#endif
 
     var body: some View {
         VStack(spacing: 0) {
@@ -18,7 +60,7 @@ struct DashboardView: View {
                 Divider()
                     .padding(.horizontal, 12)
 
-                setupRecovery
+                CtrlSayPermissionSetupView(model: model)
                     .padding(.horizontal, 16)
                     .padding(.top, 10)
                     .padding(.bottom, 14)
@@ -30,8 +72,7 @@ struct DashboardView: View {
                 .padding(.bottom, 12)
 #endif
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .containerShape(.rect(cornerRadius: DashboardPanelMetrics.cornerRadius))
+        .frame(width: 388, alignment: .top)
         .onAppear {
             model.refreshPermissions()
         }
@@ -98,7 +139,47 @@ struct DashboardView: View {
         }
     }
 
-    private var setupRecovery: some View {
+}
+
+struct CtrlSaySetupView: View {
+    let model: AppModel
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(spacing: 12) {
+                Image(systemName: "waveform.circle.fill")
+                    .font(.system(size: 34, weight: .medium))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(Color.accentColor)
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Set Up Ctrl-Say")
+                        .font(.title2.weight(.semibold))
+                    Text("Allow three system permissions for voice copy and paste.")
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            CtrlSayPermissionSetupView(model: model)
+        }
+        .padding(24)
+        .frame(width: 430)
+        .onAppear {
+            model.refreshPermissions()
+        }
+        .onChange(of: model.isReadyForCommands) { _, isReady in
+            if isReady { dismiss() }
+        }
+    }
+}
+
+private struct CtrlSayPermissionSetupView: View {
+    let model: AppModel
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -178,8 +259,10 @@ struct DashboardView: View {
         if model.hasEventPostingAccess { count += 1 }
         return count
     }
+}
 
 #if DEBUG
+private extension DashboardView {
     private var developerDiagnostics: some View {
         DisclosureGroup(isExpanded: diagnosticsExpansion) {
             ScrollView {
@@ -215,8 +298,9 @@ struct DashboardView: View {
                 .font(.caption2.monospaced())
                 .padding(.top, 8)
             }
+            .frame(maxHeight: 230)
             .scrollIndicators(.automatic)
-            .scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
+            .scrollEdgeEffectStyle(.hard, for: [.top, .bottom])
         } label: {
             Label("Developer diagnostics", systemImage: "wrench.and.screwdriver")
                 .font(.caption.weight(.semibold))
@@ -227,8 +311,8 @@ struct DashboardView: View {
 
     private var diagnosticsExpansion: Binding<Bool> {
         Binding(
-            get: { presentationState.showsDeveloperDiagnostics },
-            set: { presentationState.showsDeveloperDiagnostics = $0 }
+            get: { showsDeveloperDiagnostics },
+            set: { showsDeveloperDiagnostics = $0 }
         )
     }
 
@@ -242,8 +326,10 @@ struct DashboardView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
+}
 #endif
 
+private extension DashboardView {
     private var statusTitle: String {
         if !model.isReadyForCommands { return "Setup required" }
         return model.speech.state.label
@@ -266,13 +352,6 @@ struct DashboardView: View {
 
 #if DEBUG
 #Preview {
-    DashboardView(
-        model: AppModel(),
-        presentationState: DashboardPresentationState()
-    )
-    .frame(
-        width: DashboardPanelMetrics.preferredSize.width,
-        height: DashboardPanelMetrics.preferredSize.height
-    )
+    DashboardView(model: AppModel())
 }
 #endif

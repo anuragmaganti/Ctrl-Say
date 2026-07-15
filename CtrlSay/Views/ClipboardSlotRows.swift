@@ -1,32 +1,17 @@
 import AppKit
 import SwiftUI
 
-struct ClipboardSlotRowStyle {
-    let previewLineLimit: Int
-    let minimumHeight: CGFloat
-    let showsThumbnail: Bool
-
-    static let hud = ClipboardSlotRowStyle(
-        previewLineLimit: 2,
-        minimumHeight: ClipboardHUDMetrics.rowHeight,
-        showsThumbnail: true
-    )
-}
-
 private struct ClipboardPreview: View {
     let payload: ClipboardPayload
-    let style: ClipboardSlotRowStyle
     let additionalHelp: String?
 
     @State private var isPreviewTruncated = false
 
     init(
         payload: ClipboardPayload,
-        style: ClipboardSlotRowStyle,
         additionalHelp: String? = nil
     ) {
         self.payload = payload
-        self.style = style
         self.additionalHelp = additionalHelp
     }
 
@@ -38,7 +23,7 @@ private struct ClipboardPreview: View {
         Text(displayedText)
             .font(.callout)
             .foregroundStyle(.secondary)
-            .lineLimit(style.previewLineLimit)
+            .lineLimit(2)
             .truncationMode(.tail)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -92,7 +77,6 @@ struct NumberedCopyRow: View {
     let copyToClipboard: () -> Void
     let paste: () -> Void
     let delete: @MainActor @Sendable () -> Void
-    let style: ClipboardSlotRowStyle
     let thumbnailProvider: ClipboardThumbnailProvider?
 
     @State private var isHovered = false
@@ -103,7 +87,6 @@ struct NumberedCopyRow: View {
         copyToClipboard: @escaping () -> Void,
         paste: @escaping () -> Void,
         delete: @escaping @MainActor @Sendable () -> Void,
-        style: ClipboardSlotRowStyle = .hud,
         thumbnailProvider: ClipboardThumbnailProvider? = nil
     ) {
         self.number = number
@@ -111,7 +94,6 @@ struct NumberedCopyRow: View {
         self.copyToClipboard = copyToClipboard
         self.paste = paste
         self.delete = delete
-        self.style = style
         self.thumbnailProvider = thumbnailProvider
     }
 
@@ -148,7 +130,7 @@ struct NumberedCopyRow: View {
         }
         .padding(.leading, 8)
         .padding(.trailing, 8)
-        .frame(minHeight: style.minimumHeight)
+        .frame(minHeight: ClipboardHUDMetrics.rowHeight)
         .contentShape(.rect(cornerRadius: 11))
         .background(
             isHovered ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear),
@@ -163,8 +145,7 @@ struct NumberedCopyRow: View {
 
     @ViewBuilder
     private var leadingCopyButton: some View {
-        if style.showsThumbnail,
-           payload.kind.benefitsFromThumbnail,
+        if payload.kind.benefitsFromThumbnail,
            let thumbnailProvider {
             Button(action: copyToClipboard) {
                 ClipboardPayloadThumbnailView(
@@ -192,8 +173,7 @@ struct NumberedCopyRow: View {
     private var previewCopyButton: some View {
         Button(action: copyToClipboard) {
             ClipboardPreview(
-                payload: payload,
-                style: style
+                payload: payload
             )
             .contentShape(.rect)
         }
@@ -225,7 +205,6 @@ struct TemporaryNamedCopyRow: View {
     let copyToClipboard: () -> Void
     let paste: () -> Void
     let delete: @MainActor @Sendable () -> Void
-    let style: ClipboardSlotRowStyle
     let thumbnailProvider: ClipboardThumbnailProvider?
 
     @State private var isHovered = false
@@ -236,7 +215,6 @@ struct TemporaryNamedCopyRow: View {
         copyToClipboard: @escaping () -> Void,
         paste: @escaping () -> Void,
         delete: @escaping @MainActor @Sendable () -> Void,
-        style: ClipboardSlotRowStyle = .hud,
         thumbnailProvider: ClipboardThumbnailProvider? = nil
     ) {
         self.name = name
@@ -244,7 +222,6 @@ struct TemporaryNamedCopyRow: View {
         self.copyToClipboard = copyToClipboard
         self.paste = paste
         self.delete = delete
-        self.style = style
         self.thumbnailProvider = thumbnailProvider
     }
 
@@ -281,7 +258,7 @@ struct TemporaryNamedCopyRow: View {
         }
         .padding(.leading, 8)
         .padding(.trailing, 8)
-        .frame(minHeight: style.minimumHeight)
+        .frame(minHeight: ClipboardHUDMetrics.rowHeight)
         .contentShape(.rect(cornerRadius: 11))
         .background(
             isHovered ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear),
@@ -296,24 +273,13 @@ struct TemporaryNamedCopyRow: View {
 
     @ViewBuilder
     private var leadingCopyButton: some View {
-        if style.showsThumbnail,
-           payload.kind.benefitsFromThumbnail,
+        if payload.kind.benefitsFromThumbnail,
            let thumbnailProvider {
             Button(action: copyToClipboard) {
                 ClipboardPayloadThumbnailView(
                     payload: payload,
                     provider: thumbnailProvider
                 )
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Copy \(name) to clipboard")
-        } else if !style.showsThumbnail {
-            Button(action: copyToClipboard) {
-                Image(systemName: "tag.fill")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 30, height: 30)
-                    .background(.quaternary, in: .rect(cornerRadius: 8))
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Copy \(name) to clipboard")
@@ -335,8 +301,7 @@ struct TemporaryNamedCopyRow: View {
     private var previewCopyButton: some View {
         Button(action: copyToClipboard) {
             ClipboardPreview(
-                payload: payload,
-                style: style
+                payload: payload
             )
             .contentShape(.rect)
         }
@@ -374,13 +339,12 @@ struct PermanentCopyRow: View {
 
     let name: String
     let payload: ClipboardPayload
-    let editingSession: DashboardEditingSession
+    let editingSession: ClipboardHUDEditingSession
     let copyToClipboard: () -> Void
     let paste: () -> Void
     let delete: () -> Void
     let rename: (UUID, String) throws -> String
     let updateText: (UUID, String) throws -> Void
-    let style: ClipboardSlotRowStyle
     let thumbnailProvider: ClipboardThumbnailProvider?
 
     @State private var editingField: EditingField?
@@ -388,23 +352,23 @@ struct PermanentCopyRow: View {
     @State private var contentDraft = ""
     @State private var validationMessage: String?
     @State private var isHovered = false
-    @State private var editingToken: DashboardEditingSession.Token?
+    @State private var editingToken: ClipboardHUDEditingSession.Token?
     @State private var editingPayloadID: UUID?
     @State private var editingPayloadSnapshot: ClipboardPayload?
     @State private var editingOriginalName: String?
+    @State private var nameSelection: TextSelection?
     @State private var focusLossIsArmed = false
     @FocusState private var focusedField: EditingField?
 
     init(
         name: String,
         payload: ClipboardPayload,
-        editingSession: DashboardEditingSession,
+        editingSession: ClipboardHUDEditingSession,
         copyToClipboard: @escaping () -> Void,
         paste: @escaping () -> Void,
         delete: @escaping () -> Void,
         rename: @escaping (UUID, String) throws -> String,
         updateText: @escaping (UUID, String) throws -> Void,
-        style: ClipboardSlotRowStyle = .hud,
         thumbnailProvider: ClipboardThumbnailProvider? = nil
     ) {
         self.name = name
@@ -415,7 +379,6 @@ struct PermanentCopyRow: View {
         self.delete = delete
         self.rename = rename
         self.updateText = updateText
-        self.style = style
         self.thumbnailProvider = thumbnailProvider
     }
 
@@ -499,9 +462,9 @@ struct PermanentCopyRow: View {
             }
         }
         .padding(.leading, 8)
-        .padding(.trailing, 4)
+        .padding(.trailing, 8)
         .padding(.vertical, editingField == .content ? 8 : 0)
-        .frame(minHeight: style.minimumHeight)
+        .frame(minHeight: ClipboardHUDMetrics.rowHeight)
         .contentShape(.rect(cornerRadius: 11))
         .background(
             isHovered ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear),
@@ -516,8 +479,7 @@ struct PermanentCopyRow: View {
 
     @ViewBuilder
     private var leadingControl: some View {
-        if style.showsThumbnail,
-           payload.kind.benefitsFromThumbnail,
+        if payload.kind.benefitsFromThumbnail,
            let thumbnailProvider {
             if editingField == nil {
                 Button(action: copyToClipboard) {
@@ -534,26 +496,7 @@ struct PermanentCopyRow: View {
                     provider: thumbnailProvider
                 )
             }
-        } else if !style.showsThumbnail {
-            if editingField == nil {
-                Button(action: copyToClipboard) {
-                    permanentPin
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Copy permanent copy \(name) to clipboard")
-            } else {
-                permanentPin
-                    .accessibilityHidden(true)
-            }
         }
-    }
-
-    private var permanentPin: some View {
-        Image(systemName: "pin.fill")
-            .font(.system(size: 14, weight: .semibold))
-            .foregroundStyle(.secondary)
-            .frame(width: 30, height: 30)
-            .background(.quaternary, in: .circle)
     }
 
     private var rowActions: some View {
@@ -572,7 +515,11 @@ struct PermanentCopyRow: View {
     private var editorOrLabels: some View {
         VStack(alignment: .leading, spacing: 2) {
             if editingField == .name {
-                TextField("Permanent copy name", text: $nameDraft)
+                TextField(
+                    "Permanent copy name",
+                    text: $nameDraft,
+                    selection: $nameSelection
+                )
                     .textFieldStyle(.roundedBorder)
                     .focused($focusedField, equals: .name)
                     .onSubmit {
@@ -626,7 +573,6 @@ struct PermanentCopyRow: View {
                 Button(action: copyToClipboard) {
                     ClipboardPreview(
                         payload: payload,
-                        style: style,
                         additionalHelp: contentHelp
                     )
                     .contentShape(.rect)
@@ -865,6 +811,7 @@ struct PermanentCopyRow: View {
 
     private func clearDrafts() {
         nameDraft = String()
+        nameSelection = nil
         contentDraft = String()
     }
 
@@ -874,13 +821,10 @@ struct PermanentCopyRow: View {
             await Task.yield()
             guard editingField == field, editingToken == token else { return }
             focusedField = field
-            if selectingAll {
-                await Task.yield()
-                if editingField == field,
-                   editingToken == token,
-                   let fieldEditor = NSApplication.shared.keyWindow?.firstResponder as? NSTextView {
-                    fieldEditor.selectAll(nil)
-                }
+            if selectingAll, field == .name {
+                nameSelection = TextSelection(
+                    range: nameDraft.startIndex..<nameDraft.endIndex
+                )
             }
 
             await Task.yield()

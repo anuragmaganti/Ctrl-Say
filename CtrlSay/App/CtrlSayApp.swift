@@ -7,6 +7,22 @@ struct CtrlSayApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
+        MenuBarExtra {
+            DashboardView(model: appDelegate.model)
+        } label: {
+            MenuBarStatusLabel(model: appDelegate.model)
+        }
+        .menuBarExtraStyle(.window)
+
+        Window("Set Up Ctrl-Say", id: "setup") {
+            CtrlSaySetupView(model: appDelegate.model)
+        }
+        .windowResizability(.contentSize)
+        .restorationBehavior(.disabled)
+        .defaultLaunchBehavior(
+            appDelegate.model.isReadyForCommands ? .suppressed : .presented
+        )
+
         Settings {
             CtrlSaySettingsView(model: appDelegate.model)
         }
@@ -16,20 +32,10 @@ struct CtrlSayApp: App {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let model: AppModel
-    private let dashboardPresentationState = DashboardPresentationState()
-    private lazy var hudEditingSession = DashboardEditingSession()
+    private lazy var hudEditingSession = ClipboardHUDEditingSession()
     private lazy var hudPresentationState = ClipboardHUDPresentationState()
     private lazy var thumbnailProvider = ClipboardThumbnailProvider()
     private lazy var notchPresentationState = NotchFeedbackPresentationState()
-    private lazy var dashboardPanel = DashboardPanelController(
-        rootView: DashboardView(
-            model: model,
-            presentationState: dashboardPresentationState
-        ),
-        model: model,
-        presentationState: dashboardPresentationState
-    )
-    private var statusItem: NSStatusItem?
     private var hudPanel: ClipboardHUDPanelController?
     private var notchPanel: NotchFeedbackPanelController?
     private var processedNotchFeedbackSequence: UInt64 = 0
@@ -53,16 +59,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        self.statusItem = statusItem
-
-        if let button = statusItem.button {
-            button.target = self
-            button.action = #selector(togglePopover(_:))
-            button.toolTip = "Ctrl-Say"
-        }
-
-        updateStatusItemPresentation()
         observeListeningState()
         observeHUDPresentation()
         observeNotchFeedback()
@@ -85,39 +81,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if CommandLine.arguments.contains("-CtrlSayShowHUDForTesting")
             || CommandLine.arguments.contains("-CtrlSayShowHUDPermanentForTesting") {
             model.setClipboardHUDPresented(true)
-        }
-        if CommandLine.arguments.contains("-CtrlSayShowDashboardForTesting") {
-            if CommandLine.arguments.contains("-CtrlSayExpandDashboardDiagnosticsForTesting") {
-                dashboardPresentationState.showsDeveloperDiagnostics = true
-            }
-            Task { @MainActor [weak self] in
-                // The validation launcher can run before AppKit has attached
-                // the status item to its window. Real user clicks occur after
-                // attachment; this Debug-only pause makes the automated render
-                // exercise that same state.
-                try? await Task.sleep(for: .milliseconds(250))
-                guard let self, let button = statusItem.button else { return }
-                dashboardPanel.show(relativeTo: button)
-            }
-        }
-        if CommandLine.arguments.contains("-CtrlSayClickStatusItemForTesting")
-            || CommandLine.arguments.contains("-CtrlSayClickStatusItemTwiceForTesting") {
-            Task { @MainActor [weak self] in
-                try? await Task.sleep(for: .milliseconds(250))
-                guard let self, let button = statusItem.button else { return }
-                button.performClick(nil)
-                try? await Task.sleep(for: .milliseconds(250))
-                Telemetry.interface.info(
-                    "Status item synthetic_click panel_visible=\(self.dashboardPanel.isShown, privacy: .public) native_highlight=\(self.dashboardPanel.isStatusItemNativelyHighlightedForTesting, privacy: .public)"
-                )
-                if CommandLine.arguments.contains("-CtrlSayClickStatusItemTwiceForTesting") {
-                    button.performClick(nil)
-                    try? await Task.sleep(for: .milliseconds(250))
-                    Telemetry.interface.info(
-                        "Status item synthetic_second_click panel_visible=\(self.dashboardPanel.isShown, privacy: .public) native_highlight=\(self.dashboardPanel.isStatusItemNativelyHighlightedForTesting, privacy: .public)"
-                    )
-                }
-            }
         }
         if CommandLine.arguments.contains("-CtrlSayShowNotchListeningForTesting") {
             _ = ensureNotchPanel()
@@ -142,21 +105,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 #endif
 
-        Task { @MainActor [weak self] in
-            await Task.yield()
-            self?.presentSetupIfNeeded()
-        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         terminationTask?.cancel()
-        dashboardPanel.hide()
         hudPanel?.hide()
         notchPresentationState.reset()
         notchPanel?.hideImmediately()
-        if let statusItem {
-            NSStatusBar.system.removeStatusItem(statusItem)
-        }
     }
 
     func applicationShouldTerminate(
@@ -192,78 +147,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // immediately after the user grants Input Monitoring access.
         model.refreshPermissions()
         model.refreshLaunchAtLogin()
-        updateStatusItemPresentation()
     }
 
     func applicationDidChangeScreenParameters(_ notification: Notification) {
-        if let button = statusItem?.button {
-            dashboardPanel.reposition(relativeTo: button)
-        }
         hudPanel?.screenParametersDidChange()
         notchPanel?.screenParametersDidChange()
-    }
-
-    @objc
-    private func togglePopover(_ sender: NSStatusBarButton) {
-        if dashboardPanel.isShown {
-            dashboardPanel.hide()
-            Telemetry.interface.info("Dashboard closed")
-            return
-        }
-
-        dashboardPanel.show(relativeTo: sender)
-        Telemetry.interface.info("Dashboard opened")
-    }
-
-    private func updateStatusItemPresentation() {
-        let symbolName: String
-        let toolTip: String
-
-        if !model.isReadyForCommands {
-            symbolName = "checklist"
-            toolTip = "Ctrl-Say — Complete setup"
-        } else {
-            switch model.speech.state {
-            case .stopped:
-                symbolName = "waveform.circle"
-                toolTip = "Ctrl-Say — Not listening"
-            case .requestingMicrophone, .preparing, .downloadingModel:
-                symbolName = "waveform.circle"
-                toolTip = "Ctrl-Say — Starting on-device listening"
-            case .listening:
-                symbolName = "waveform.circle.fill"
-                toolTip = "Ctrl-Say — Listening"
-            case .stopping:
-                symbolName = "waveform.circle"
-                toolTip = "Ctrl-Say — Stopping listening"
-            case .failed:
-                symbolName = "exclamationmark.triangle"
-                toolTip = "Ctrl-Say — Listening failed"
-            }
-        }
-
-        guard let button = statusItem?.button else { return }
-        let image = NSImage(
-            systemSymbolName: symbolName,
-            accessibilityDescription: "Ctrl-Say"
-        )
-        image?.isTemplate = true
-        button.image = image
-        button.imagePosition = .imageOnly
-        button.title = ""
-        button.toolTip = toolTip
     }
 
     private func observeListeningState() {
         withObservationTracking {
             _ = model.speech.state
-            _ = model.speech.microphoneAuthorization
-            _ = model.hasKeyboardMonitoringAccess
-            _ = model.hasEventPostingAccess
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                self.updateStatusItemPresentation()
                 self.updateNotchListeningPresentation()
                 self.observeListeningState()
             }
@@ -408,31 +304,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task { @MainActor [weak self] in
             guard let self else { return }
             await model.waitForPermanentStorageRestore()
-            // Automated launch can reach this task before the status item has
-            // a window. A physical click cannot, so wait only in this Debug
-            // stress harness until it can exercise real panel attachment.
-            for _ in 0..<10 where statusItem?.button?.window == nil {
-                try? await Task.sleep(for: .milliseconds(25))
-            }
-            guard let statusButton = statusItem?.button,
-                  statusButton.window != nil else {
-                Telemetry.interface.error(
-                    "Presentation surface stress missing status item"
-                )
-                return
-            }
-            // Let the system finish its initial status-item reflow before the
-            // harness deliberately starts rapid hide/show and resize cycles.
-            try? await Task.sleep(for: .milliseconds(500))
 
             hudPanel.show()
-            dashboardPanel.show(relativeTo: statusButton)
             notchPresentationState.setListeningActivity(.listening)
 
             let transitionCount = 480
             for index in 0..<transitionCount {
                 let payload = stressPayload(index: index)
-                switch index % 12 {
+                switch index % 10 {
                 case 0:
                     try? model.slots.set(payload, at: 1)
                 case 1:
@@ -464,23 +343,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         notchPresentationState.setListeningActivity(.inactive)
                     }
                 case 4:
-                    dashboardPanel.hide()
-                case 5:
-                    dashboardPanel.show(relativeTo: statusButton)
-                case 6:
                     hudPanel.hide()
-                case 7:
+                case 5:
                     hudPanel.show()
-                case 8:
-                    dashboardPresentationState.showsDeveloperDiagnostics.toggle()
-                case 9:
+                case 6:
+                    notchPresentationState.setInteractionMode(
+                        index.isMultiple(of: 2)
+                            ? .compactInteractive
+                            : .passive
+                    )
+                case 7:
                     if let token = hudEditingSession.begin(
                         commit: { true },
                         cancel: {}
                     ) {
                         hudEditingSession.finish(token)
                     }
-                case 10:
+                case 8:
                     _ = model.slots.removeNamed("stress")
                 default:
                     _ = model.slots.removeNumbered(1)
@@ -490,7 +369,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
 
             hudEditingSession.prepareForDismissal()
-            dashboardPanel.hide()
             hudPanel.hide()
             notchPresentationState.setInteractionMode(.passive)
             notchPresentationState.setListeningActivity(.inactive)
@@ -657,18 +535,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         try? model.slots.set(permanentPayload, named: "address")
     }
 #endif
-
-    private func presentSetupIfNeeded() {
-        model.refreshPermissions()
-        guard !model.isReadyForCommands,
-              !dashboardPanel.isShown,
-              let button = statusItem?.button else {
-            return
-        }
-
-        dashboardPanel.show(relativeTo: button)
-        Telemetry.interface.info("First-run setup opened")
-    }
 
     private func flushPermanentCopiesBeforeQuit() async throws {
         try await withCheckedThrowingContinuation { continuation in

@@ -1,6 +1,6 @@
 import Foundation
 
-enum VoiceCommand: Equatable, Sendable {
+nonisolated enum VoiceCommand: Equatable, Sendable {
     case copyNumber(Int)
     case pasteNumber(Int)
     case copyNamed(String)
@@ -49,7 +49,7 @@ extension VoiceCommand {
     }
 }
 
-enum VoiceCommandParser {
+nonisolated enum VoiceCommandParser {
     static let canonicalSpokenSlotNumbers = [
         "one", "two", "three", "four", "five",
         "six", "seven", "eight", "nine", "ten",
@@ -237,7 +237,7 @@ enum VoiceCommandParser {
     }
 }
 
-enum VolatileCommandAcceptancePolicy {
+nonisolated enum VolatileCommandAcceptancePolicy {
     // Confidence remains a guard for commands without a closed-vocabulary
     // identity. Apple can omit it on volatile results, so numbered slots and
     // exact known-name pastes must not depend on it for responsiveness.

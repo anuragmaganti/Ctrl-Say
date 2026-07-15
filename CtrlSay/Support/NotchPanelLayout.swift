@@ -30,9 +30,9 @@ enum NotchPanelLayoutCalculator {
     static let attachedHorizontalCanvasOutset: CGFloat = 6
     static let attachedBottomCanvasOutset: CGFloat = 6
     static let attachedVisibleBorderOutset: CGFloat = 1
-    // NSScreen exposes the exact camera-housing rectangle, but not its corner
-    // radius. Apple's current MacBook Pro and MacBook Air bezel references use
-    // a lower-corner radius of about 32% of the housing depth, capped at 12 pt.
+    // NSScreen exposes the hardware exclusion rectangle, but no public corner-
+    // radius property. Keep the product-drawn lower corners proportional and
+    // bounded; this is visual geometry, not a claim about hidden hardware data.
     static let attachedCornerRadiusRatio: CGFloat = 0.32
     static let maximumAttachedCornerRadius: CGFloat = 12
 
@@ -257,6 +257,103 @@ enum NotchPanelLayoutCalculator {
             width: max(width, feedbackSize.width),
             height: max(height, feedbackSize.height)
         )
+    }
+}
+
+/// One geometry source for both the SwiftUI black surface and its
+/// compositor-driven Core Animation border. Keeping the shared edges here
+/// prevents the two renderers from drifting apart.
+enum AttachedNotchGeometry {
+    nonisolated static func surfacePath(
+        in rect: CGRect,
+        horizontalCanvasOutset: CGFloat,
+        surfaceHeight: CGFloat,
+        bottomCornerRadius: CGFloat
+    ) -> CGPath {
+        let surfaceRect = CGRect(
+            x: rect.minX + horizontalCanvasOutset,
+            y: rect.minY,
+            width: max(0, rect.width - horizontalCanvasOutset * 2),
+            height: min(max(0, surfaceHeight), rect.height)
+        )
+        return openTopPath(
+            left: surfaceRect.minX,
+            right: surfaceRect.maxX,
+            top: surfaceRect.minY,
+            bottom: surfaceRect.maxY,
+            bottomCornerRadius: bottomCornerRadius,
+            closesPath: true
+        )
+    }
+
+    nonisolated static func borderPath(
+        in rect: CGRect,
+        horizontalCanvasOutset: CGFloat,
+        visibleBorderOutset: CGFloat,
+        surfaceHeight: CGFloat,
+        bottomCornerRadius: CGFloat
+    ) -> CGPath {
+        let left = rect.minX + horizontalCanvasOutset - visibleBorderOutset
+        let right = rect.maxX - horizontalCanvasOutset + visibleBorderOutset
+        let bottom = min(
+            rect.maxY,
+            rect.minY + max(0, surfaceHeight) + visibleBorderOutset
+        )
+        return openTopPath(
+            left: left,
+            right: right,
+            top: rect.minY,
+            bottom: bottom,
+            bottomCornerRadius: bottomCornerRadius + visibleBorderOutset,
+            closesPath: false
+        )
+    }
+
+    nonisolated private static func openTopPath(
+        left: CGFloat,
+        right: CGFloat,
+        top: CGFloat,
+        bottom: CGFloat,
+        bottomCornerRadius: CGFloat,
+        closesPath: Bool
+    ) -> CGPath {
+        let radius = min(
+            max(0, bottomCornerRadius),
+            max(0, (right - left) / 2),
+            max(0, bottom - top)
+        )
+        let curveControl = radius * 0.552_284_75
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: left, y: top))
+        path.addLine(to: CGPoint(x: left, y: bottom - radius))
+        path.addCurve(
+            to: CGPoint(x: left + radius, y: bottom),
+            control1: CGPoint(
+                x: left,
+                y: bottom - radius + curveControl
+            ),
+            control2: CGPoint(
+                x: left + radius - curveControl,
+                y: bottom
+            )
+        )
+        path.addLine(to: CGPoint(x: right - radius, y: bottom))
+        path.addCurve(
+            to: CGPoint(x: right, y: bottom - radius),
+            control1: CGPoint(
+                x: right - radius + curveControl,
+                y: bottom
+            ),
+            control2: CGPoint(
+                x: right,
+                y: bottom - radius + curveControl
+            )
+        )
+        path.addLine(to: CGPoint(x: right, y: top))
+        if closesPath {
+            path.closeSubpath()
+        }
+        return path
     }
 }
 

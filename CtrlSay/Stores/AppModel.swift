@@ -27,11 +27,11 @@ final class AppModel {
     @ObservationIgnored private let permanentRepository: any PermanentCopyPersisting
     @ObservationIgnored private var rightOptionMonitor: RightOptionKeyMonitor?
     @ObservationIgnored private var speechCommandGate = SpeechCommandGate()
-    @ObservationIgnored private var numberedCommandScanner = StreamingNumberedCommandScanner()
+    @ObservationIgnored private var streamingCommandScanner = StreamingVoiceCommandScanner()
     @ObservationIgnored private var commandQueue = SerialCommandQueueState<QueuedCommand, SpeechCommandIdentity>()
     @ObservationIgnored private var capturedSpeechTargets: [SpeechCommandIdentity: TargetSnapshot] = [:]
     @ObservationIgnored private var activeNamedCopyCommands: [
-        StreamingNumberedCommandID: ActiveNamedCopyCommand
+        StreamingVoiceCommandID: ActiveNamedCopyCommand
     ] = [:]
     @ObservationIgnored private var desiredListening = false
     @ObservationIgnored private var listeningTransitionTask: Task<Void, Never>?
@@ -346,7 +346,7 @@ final class AppModel {
         Task {
             let granted = await speech.requestMicrophoneAccess()
             if !granted {
-                PrivacySettings.openMicrophone()
+                SystemSettingsLauncher.open()
             }
         }
     }
@@ -393,14 +393,14 @@ final class AppModel {
 
     private func received(_ result: RecognizedSpeechResult) {
         let exactCommand = VoiceCommandParser.parse(result.text)
-        let timelineTokens: [StreamingNumberedCommandToken]
+        let timelineTokens: [StreamingVoiceCommandToken]
         if case .permanentCopy = exactCommand {
             // A full phrase that parses as permanent must never lose its
             // modifier because SpeechTranscriber's attributed runs exposed a
             // different lexical partition. The scanner still owns timing and
             // deduplication; this only gives it the canonical phrase tokens.
             timelineTokens = [
-                StreamingNumberedCommandToken(
+                StreamingVoiceCommandToken(
                     result.text,
                     range: SpeechResultRange(result.range),
                     confidence: result.minimumConfidence
@@ -409,8 +409,8 @@ final class AppModel {
         } else {
             timelineTokens = result.tokens
         }
-        let numberedUpdate = numberedCommandScanner.ingest(
-            StreamingNumberedCommandSegment(
+        let streamingUpdate = streamingCommandScanner.ingest(
+            StreamingVoiceCommandSegment(
                 range: SpeechResultRange(result.range),
                 tokens: timelineTokens,
                 finalizationTime: result.finalizationTime,
@@ -420,7 +420,7 @@ final class AppModel {
             ),
             knownNamedCopies: slots.allNamedKeys
         )
-        for mutation in numberedUpdate.mutations {
+        for mutation in streamingUpdate.mutations {
             apply(mutation, from: result)
         }
 
@@ -448,8 +448,8 @@ final class AppModel {
         } ?? false
 
 #if DEBUG
-        let streamedCandidate = numberedUpdate.mutations.lazy.compactMap {
-            mutation -> StreamingNumberedCommandCandidate? in
+        let streamedCandidate = streamingUpdate.mutations.lazy.compactMap {
+            mutation -> StreamingVoiceCommandCandidate? in
             guard case .upsert(let candidate) = mutation else { return nil }
             return candidate
         }.first
@@ -492,14 +492,14 @@ final class AppModel {
             switch $0.key {
             case .gated(let utteranceID):
                 activeUtteranceIDs.contains(utteranceID)
-            case .numbered:
+            case .streaming:
                 true
             }
         }
     }
 
     private func receivedFinalizationTime(_ finalizationTime: CMTime) {
-        let update = numberedCommandScanner.advanceFinalization(
+        let update = streamingCommandScanner.advanceFinalization(
             to: finalizationTime,
             knownNamedCopies: slots.allNamedKeys
         )
@@ -517,7 +517,7 @@ final class AppModel {
     }
 
     private func apply(
-        _ mutation: StreamingNumberedCommandMutation,
+        _ mutation: StreamingVoiceCommandMutation,
         from result: RecognizedSpeechResult
     ) {
         apply(
@@ -531,7 +531,7 @@ final class AppModel {
     }
 
     private func apply(
-        _ mutation: StreamingNumberedCommandMutation,
+        _ mutation: StreamingVoiceCommandMutation,
         resultReceivedAtNanoseconds: UInt64,
         audioEndUptimeNanoseconds: ((SpeechResultRange) -> UInt64?)?,
         resultIsFinal: Bool
@@ -543,7 +543,7 @@ final class AppModel {
                 "Streaming candidate id=\(candidate.id.rawValue, privacy: .public) command=\(candidate.command.telemetryName, privacy: .public) ready=\(candidate.isReadyForDispatch, privacy: .public) stable=\(candidate.isStableForCommit, privacy: .public) start=\(candidate.range.start.seconds, privacy: .public) end=\(candidate.range.end.seconds, privacy: .public) final=\(resultIsFinal, privacy: .public)"
             )
 #endif
-            let identity = SpeechCommandIdentity.numbered(candidate.id)
+            let identity = SpeechCommandIdentity.streaming(candidate.id)
             if candidate.command.isRevisableNamedCopy {
                 if updateActiveNamedCopyCommand(
                     with: candidate,
@@ -602,7 +602,7 @@ final class AppModel {
                 "Streaming candidate revoked id=\(candidateID.rawValue, privacy: .public)"
             )
 #endif
-            let identity = SpeechCommandIdentity.numbered(candidateID)
+            let identity = SpeechCommandIdentity.streaming(candidateID)
             cancelActiveNamedCopyCommand(candidateID, removeStoredCopy: true)
             capturedSpeechTargets.removeValue(forKey: identity)
             guard commandQueue.revoke(identity: identity) else { return }
@@ -650,7 +650,7 @@ final class AppModel {
     /// native Copy action starts immediately. Later candidates only revise the
     /// label associated with that same capture.
     private func updateActiveNamedCopyCommand(
-        with candidate: StreamingNumberedCommandCandidate,
+        with candidate: StreamingVoiceCommandCandidate,
         receivedAtNanoseconds: UInt64
     ) -> Bool {
         let storage: NamedCopyStorage
@@ -777,7 +777,7 @@ final class AppModel {
                     candidate.id,
                     removeStoredCopy: true
                 )
-                numberedCommandScanner.markCommitted(candidate.id)
+                streamingCommandScanner.markCommitted(candidate.id)
                 lastError = error.localizedDescription
                 lastAction = "Command failed"
                 publishNotchFeedback(
@@ -795,15 +795,15 @@ final class AppModel {
     }
 
     private func finishActiveNamedCopyCommand(
-        _ candidateID: StreamingNumberedCommandID
+        _ candidateID: StreamingVoiceCommandID
     ) {
-        numberedCommandScanner.markCommitted(candidateID)
-        capturedSpeechTargets.removeValue(forKey: .numbered(candidateID))
+        streamingCommandScanner.markCommitted(candidateID)
+        capturedSpeechTargets.removeValue(forKey: .streaming(candidateID))
         activeNamedCopyCommands.removeValue(forKey: candidateID)
     }
 
     private func cancelActiveNamedCopyCommand(
-        _ candidateID: StreamingNumberedCommandID,
+        _ candidateID: StreamingVoiceCommandID,
         removeStoredCopy: Bool
     ) {
         guard let active = activeNamedCopyCommands.removeValue(
@@ -837,13 +837,13 @@ final class AppModel {
     private func finishActiveNamedCopyAfterFailure(
         _ identity: SpeechCommandIdentity?
     ) {
-        guard case .numbered(let candidateID) = identity,
+        guard case .streaming(let candidateID) = identity,
               activeNamedCopyCommands[candidateID] != nil else {
             return
         }
         cancelActiveNamedCopyCommand(candidateID, removeStoredCopy: true)
-        numberedCommandScanner.markCommitted(candidateID)
-        capturedSpeechTargets.removeValue(forKey: .numbered(candidateID))
+        streamingCommandScanner.markCommitted(candidateID)
+        capturedSpeechTargets.removeValue(forKey: .streaming(candidateID))
     }
 
     private func captureNamedCopy(
@@ -856,8 +856,8 @@ final class AppModel {
             try requirePermanentStorage()
         }
 
-        let candidateID: StreamingNumberedCommandID?
-        if case .numbered(let id) = identity {
+        let candidateID: StreamingVoiceCommandID?
+        if case .streaming(let id) = identity {
             guard var active = activeNamedCopyCommands[id],
                   active.storage == storage else {
                 throw CancellationError()
@@ -909,7 +909,7 @@ final class AppModel {
             active.storedName = normalizedName
             active.payloadID = capture.payload.id
             activeNamedCopyCommands[candidateID] = active
-            capturedSpeechTargets.removeValue(forKey: .numbered(candidateID))
+            capturedSpeechTargets.removeValue(forKey: .streaming(candidateID))
             if active.isStableForCommit {
                 finishActiveNamedCopyCommand(candidateID)
             }
@@ -962,15 +962,15 @@ final class AppModel {
                 switch identity {
                 case .gated(let utteranceID):
                     speechCommandGate.markCommitted(utteranceID)
-                case .numbered(let candidateID):
+                case .streaming(let candidateID):
                     // A named copy captures immediately but remains revisable
                     // until Apple closes the volatile phrase. Later text
                     // revisions rename the same stored payload.
                     if activeNamedCopyCommands[candidateID] == nil {
-                        numberedCommandScanner.markCommitted(candidateID)
+                        streamingCommandScanner.markCommitted(candidateID)
                     }
                 }
-                if case .numbered(let candidateID) = identity,
+                if case .streaming(let candidateID) = identity,
                    activeNamedCopyCommands[candidateID] != nil {
                     // Retain the original target until the one native copy
                     // capture completes.
@@ -1389,7 +1389,7 @@ final class AppModel {
 
     private func resetSpeechSessionTracking() {
         speechCommandGate.reset()
-        numberedCommandScanner.reset()
+        streamingCommandScanner.reset()
         capturedSpeechTargets.removeAll(keepingCapacity: true)
         activeNamedCopyCommands.removeAll(keepingCapacity: true)
     }
@@ -1605,7 +1605,7 @@ private struct NamedCopyCaptureResult {
 
 private enum SpeechCommandIdentity: Hashable {
     case gated(SpeechUtteranceID)
-    case numbered(StreamingNumberedCommandID)
+    case streaming(StreamingVoiceCommandID)
 }
 
 private enum TargetTelemetryStatus: String {

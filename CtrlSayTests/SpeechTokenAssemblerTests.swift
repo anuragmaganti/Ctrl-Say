@@ -58,16 +58,16 @@ final class SpeechTokenAssemblerTests: XCTestCase {
             fragment("p", 0.31, 0.36, confidence: 0.90),
             fragment("ointer", 0.36, 0.85, confidence: 0.82),
         ])
-        var scanner = StreamingNumberedCommandScanner()
+        var scanner = StreamingVoiceCommandScanner()
         let update = scanner.ingest(
-            StreamingNumberedCommandSegment(
+            StreamingVoiceCommandSegment(
                 range: speechRange(0, 1),
                 tokens: assembly.tokens
             )
         )
         let candidate = try XCTUnwrap(
             update.mutations.compactMap {
-                mutation -> StreamingNumberedCommandCandidate? in
+                mutation -> StreamingVoiceCommandCandidate? in
                 guard case .upsert(let candidate) = mutation else { return nil }
                 return candidate
             }.first

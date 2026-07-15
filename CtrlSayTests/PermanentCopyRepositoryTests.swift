@@ -174,46 +174,67 @@ final class PermanentCopyRepositoryTests: XCTestCase {
         let storeURL = directory.appending(
             path: PermanentCopyRepository.storeFileName
         )
-        do {
-            let schema = Schema(versionedSchema: PermanentCopySchemaV1.self)
-            let configuration = ModelConfiguration(
-                "PermanentCopies",
-                schema: schema,
-                url: storeURL,
-                allowsSave: true,
-                cloudKitDatabase: .none
-            )
-            let container = try ModelContainer(
-                for: schema,
-                migrationPlan: PermanentCopyMigrationPlan.self,
-                configurations: [configuration]
-            )
-            let context = ModelContext(container)
-            let data = Data("Invalid index".utf8)
-            let record = PermanentCopyRecord(
-                normalizedName: "house",
-                payloadID: UUID(),
-                kindRawValue: ClipboardContentKind.text.rawValue,
-                preview: "Invalid index",
-                byteCount: Int64(data.count),
-                capturedAt: Date(timeIntervalSince1970: 1)
-            )
-            let item = PermanentCopyItemRecord(itemIndex: 4)
-            let representation = PermanentCopyRepresentationRecord(
-                representationIndex: 0,
-                typeIdentifier: "public.utf8-plain-text",
-                data: data
-            )
-            record.items.append(item)
-            item.representations.append(representation)
-            context.insert(record)
-            try context.save()
-        }
+        let data = Data("Invalid index".utf8)
+        let record = PermanentCopyRecord(
+            normalizedName: "house",
+            payloadID: UUID(),
+            kindRawValue: ClipboardContentKind.text.rawValue,
+            preview: "Invalid index",
+            byteCount: Int64(data.count),
+            capturedAt: Date(timeIntervalSince1970: 1)
+        )
+        let item = PermanentCopyItemRecord(itemIndex: 4)
+        let representation = PermanentCopyRepresentationRecord(
+            representationIndex: 0,
+            typeIdentifier: "public.utf8-plain-text",
+            data: data
+        )
+        record.items.append(item)
+        item.representations.append(representation)
+        try persistRawRecord(record, in: directory)
 
         let repository = PermanentCopyRepository(location: .temporary(directory))
         do {
             _ = try await repository.load()
             XCTFail("Expected malformed ordering to be rejected")
+        } catch {
+            XCTAssertEqual(
+                error as? PermanentCopyRepositoryError,
+                .invalidRecord
+            )
+            XCTAssertTrue(FileManager.default.fileExists(atPath: storeURL.path))
+        }
+    }
+
+    func testOversizedDeclaredPayloadIsRejectedWithoutDeletingStore() async throws {
+        let directory = makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let storeURL = directory.appending(
+            path: PermanentCopyRepository.storeFileName
+        )
+        let data = Data("Small external blob".utf8)
+        let record = PermanentCopyRecord(
+            normalizedName: "house",
+            payloadID: UUID(),
+            kindRawValue: ClipboardContentKind.text.rawValue,
+            preview: "Small external blob",
+            byteCount: Int64(ClipboardStore.maximumPayloadBytes + 1),
+            capturedAt: Date(timeIntervalSince1970: 1)
+        )
+        let item = PermanentCopyItemRecord(itemIndex: 0)
+        let representation = PermanentCopyRepresentationRecord(
+            representationIndex: 0,
+            typeIdentifier: "public.utf8-plain-text",
+            data: data
+        )
+        record.items.append(item)
+        item.representations.append(representation)
+        try persistRawRecord(record, in: directory)
+
+        let repository = PermanentCopyRepository(location: .temporary(directory))
+        do {
+            _ = try await repository.load()
+            XCTFail("Expected oversized declared payload to be rejected")
         } catch {
             XCTAssertEqual(
                 error as? PermanentCopyRepositoryError,
@@ -307,6 +328,32 @@ final class PermanentCopyRepositoryTests: XCTestCase {
             path: "CtrlSayPermanentCopyTests-\(UUID().uuidString)",
             directoryHint: .isDirectory
         )
+    }
+
+    private func persistRawRecord(
+        _ record: PermanentCopyRecord,
+        in directory: URL
+    ) throws {
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        let schema = Schema(versionedSchema: PermanentCopySchemaV1.self)
+        let configuration = ModelConfiguration(
+            "PermanentCopies",
+            schema: schema,
+            url: directory.appending(path: PermanentCopyRepository.storeFileName),
+            allowsSave: true,
+            cloudKitDatabase: .none
+        )
+        let container = try ModelContainer(
+            for: schema,
+            migrationPlan: PermanentCopyMigrationPlan.self,
+            configurations: [configuration]
+        )
+        let context = ModelContext(container)
+        context.insert(record)
+        try context.save()
     }
 
     private func makeTextPayload(

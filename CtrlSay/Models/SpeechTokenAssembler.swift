@@ -17,7 +17,7 @@ struct SpeechAttributedTextFragment: Sendable {
 }
 
 struct SpeechTokenAssembly: Sendable {
-    let tokens: [StreamingNumberedCommandToken]
+    let tokens: [StreamingVoiceCommandToken]
     let sourceFragmentCount: Int
     let inWordBoundaryMergeCount: Int
 }
@@ -58,8 +58,8 @@ enum SpeechTokenAssembler {
             }
         }
 
-        var token: StreamingNumberedCommandToken {
-            StreamingNumberedCommandToken(
+        var token: StreamingVoiceCommandToken {
+            StreamingVoiceCommandToken(
                 text,
                 range: hasMissingRange ? nil : range,
                 confidence: hasMissingConfidence ? nil : confidence
@@ -70,7 +70,7 @@ enum SpeechTokenAssembler {
     static func assemble(
         _ fragments: [SpeechAttributedTextFragment]
     ) -> SpeechTokenAssembly {
-        var tokens: [StreamingNumberedCommandToken] = []
+        var tokens: [StreamingVoiceCommandToken] = []
         var builder: TokenBuilder?
         var inWordBoundaryMergeCount = 0
 

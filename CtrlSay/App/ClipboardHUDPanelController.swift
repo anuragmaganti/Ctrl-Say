@@ -8,7 +8,7 @@ final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
     private let panel: NonactivatingPanel
     private let model: AppModel
     private let presentationState: ClipboardHUDPresentationState
-    private let editingSession: DashboardEditingSession
+    private let editingSession: ClipboardHUDEditingSession
     private let positionStore: ClipboardHUDPositionStore
     private weak var activeScreen: NSScreen?
     private var isApplyingFrame = false
@@ -22,7 +22,7 @@ final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
     init(
         model: AppModel,
         presentationState: ClipboardHUDPresentationState,
-        editingSession: DashboardEditingSession,
+        editingSession: ClipboardHUDEditingSession,
         thumbnailProvider: ClipboardThumbnailProvider,
         positionStore: ClipboardHUDPositionStore = ClipboardHUDPositionStore()
     ) {
@@ -74,8 +74,9 @@ final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
         panel.isReleasedWhenClosed = false
         panel.level = .floating
         panel.collectionBehavior = [
-            .canJoinAllSpaces,
-            .fullScreenAuxiliary,
+            // The current Stage Manager/full-screen behavior intended for
+            // floating overlays that accompany every application.
+            .canJoinAllApplications,
             .ignoresCycle,
         ]
         panel.animationBehavior = .none
@@ -266,7 +267,7 @@ final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
     }
 
     private func scheduleOutsideInteractionDismissal(
-        for token: DashboardEditingSession.Token
+        for token: ClipboardHUDEditingSession.Token
     ) {
         Task { @MainActor [weak self] in
             // Let the destination control handle mouse-up first. Save/Cancel

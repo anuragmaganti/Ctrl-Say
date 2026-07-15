@@ -10,11 +10,10 @@
 		B10000000000000000000001 /* CtrlSay/Models/VoiceCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000005 /* CtrlSay/Models/VoiceCommand.swift */; };
 		B10000000000000000000002 /* CtrlSay/Models/SpeechCommandGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000006 /* CtrlSay/Models/SpeechCommandGate.swift */; };
 		B10000000000000000000003 /* CtrlSay/Stores/SerialCommandQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000007 /* CtrlSay/Stores/SerialCommandQueue.swift */; };
-		C10000000000000000000001 /* CtrlSay/Models/StreamingNumberedCommandScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000002 /* CtrlSay/Models/StreamingNumberedCommandScanner.swift */; };
-		D10000000000000000000001 /* CtrlSay/Support/DashboardPanelPlacement.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000002 /* CtrlSay/Support/DashboardPanelPlacement.swift */; };
+		C10000000000000000000001 /* CtrlSay/Models/StreamingVoiceCommandScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000002 /* CtrlSay/Models/StreamingVoiceCommandScanner.swift */; };
 		E10000000000000000000001 /* CtrlSay/Models/ClipboardPayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000002 /* CtrlSay/Models/ClipboardPayload.swift */; };
 		E10000000000000000000003 /* CtrlSay/Stores/ClipboardStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000004 /* CtrlSay/Stores/ClipboardStore.swift */; };
-		F10000000000000000000001 /* CtrlSay/App/DashboardEditingSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000002 /* CtrlSay/App/DashboardEditingSession.swift */; };
+		F10000000000000000000001 /* CtrlSay/App/ClipboardHUDEditingSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000002 /* CtrlSay/App/ClipboardHUDEditingSession.swift */; };
 		F20000000000000000000001 /* CtrlSay/Models/RightOptionInteraction.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000002 /* CtrlSay/Models/RightOptionInteraction.swift */; };
 		F30000000000000000000001 /* CtrlSay/Support/ClipboardHUDLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000002 /* CtrlSay/Support/ClipboardHUDLayout.swift */; };
 		F40000000000000000000001 /* CtrlSay/Services/ClipboardThumbnailProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = F40000000000000000000002 /* CtrlSay/Services/ClipboardThumbnailProvider.swift */; };
@@ -28,7 +27,7 @@
 		FC10000000000000000000001 /* CtrlSay/Models/SpeechTokenAssembler.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC10000000000000000000002 /* CtrlSay/Models/SpeechTokenAssembler.swift */; };
 		FD10000000000000000000001 /* CtrlSay/Services/LaunchAtLoginController.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD10000000000000000000002 /* CtrlSay/Services/LaunchAtLoginController.swift */; };
 		FE10000000000000000000001 /* CtrlSay/Services/ClipboardService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE10000000000000000000002 /* CtrlSay/Services/ClipboardService.swift */; };
-		FE20000000000000000000001 /* CtrlSay/Support/PrivacySettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE20000000000000000000002 /* CtrlSay/Support/PrivacySettings.swift */; };
+		FE20000000000000000000001 /* CtrlSay/Support/SystemSettingsLauncher.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE20000000000000000000002 /* CtrlSay/Support/SystemSettingsLauncher.swift */; };
 		FE30000000000000000000001 /* CtrlSay/Views/ClipboardSlotRows.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE30000000000000000000002 /* CtrlSay/Views/ClipboardSlotRows.swift */; };
 		FE40000000000000000000001 /* CtrlSay/Views/TemporarySlotSwipeAction.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE40000000000000000000002 /* CtrlSay/Views/TemporarySlotSwipeAction.swift */; };
 /* End PBXBuildFile section */
@@ -39,11 +38,10 @@
 		B10000000000000000000005 /* CtrlSay/Models/VoiceCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CtrlSay/Models/VoiceCommand.swift; sourceTree = SOURCE_ROOT; };
 		B10000000000000000000006 /* CtrlSay/Models/SpeechCommandGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CtrlSay/Models/SpeechCommandGate.swift; sourceTree = SOURCE_ROOT; };
 		B10000000000000000000007 /* CtrlSay/Stores/SerialCommandQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CtrlSay/Stores/SerialCommandQueue.swift; sourceTree = SOURCE_ROOT; };
-		C10000000000000000000002 /* CtrlSay/Models/StreamingNumberedCommandScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CtrlSay/Models/StreamingNumberedCommandScanner.swift; sourceTree = SOURCE_ROOT; };
-		D10000000000000000000002 /* CtrlSay/Support/DashboardPanelPlacement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CtrlSay/Support/DashboardPanelPlacement.swift; sourceTree = SOURCE_ROOT; };
+		C10000000000000000000002 /* CtrlSay/Models/StreamingVoiceCommandScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CtrlSay/Models/StreamingVoiceCommandScanner.swift; sourceTree = SOURCE_ROOT; };
 		E10000000000000000000002 /* CtrlSay/Models/ClipboardPayload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CtrlSay/Models/ClipboardPayload.swift; sourceTree = SOURCE_ROOT; };
 		E10000000000000000000004 /* CtrlSay/Stores/ClipboardStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CtrlSay/Stores/ClipboardStore.swift; sourceTree = SOURCE_ROOT; };
-		F10000000000000000000002 /* CtrlSay/App/DashboardEditingSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CtrlSay/App/DashboardEditingSession.swift; sourceTree = SOURCE_ROOT; };
+		F10000000000000000000002 /* CtrlSay/App/ClipboardHUDEditingSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CtrlSay/App/ClipboardHUDEditingSession.swift; sourceTree = SOURCE_ROOT; };
 		F20000000000000000000002 /* CtrlSay/Models/RightOptionInteraction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CtrlSay/Models/RightOptionInteraction.swift; sourceTree = SOURCE_ROOT; };
 		F30000000000000000000002 /* CtrlSay/Support/ClipboardHUDLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CtrlSay/Support/ClipboardHUDLayout.swift; sourceTree = SOURCE_ROOT; };
 		F40000000000000000000002 /* CtrlSay/Services/ClipboardThumbnailProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CtrlSay/Services/ClipboardThumbnailProvider.swift; sourceTree = SOURCE_ROOT; };
@@ -57,7 +55,7 @@
 		FC10000000000000000000002 /* CtrlSay/Models/SpeechTokenAssembler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CtrlSay/Models/SpeechTokenAssembler.swift; sourceTree = SOURCE_ROOT; };
 		FD10000000000000000000002 /* CtrlSay/Services/LaunchAtLoginController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CtrlSay/Services/LaunchAtLoginController.swift; sourceTree = SOURCE_ROOT; };
 		FE10000000000000000000002 /* CtrlSay/Services/ClipboardService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CtrlSay/Services/ClipboardService.swift; sourceTree = SOURCE_ROOT; };
-		FE20000000000000000000002 /* CtrlSay/Support/PrivacySettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CtrlSay/Support/PrivacySettings.swift; sourceTree = SOURCE_ROOT; };
+		FE20000000000000000000002 /* CtrlSay/Support/SystemSettingsLauncher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CtrlSay/Support/SystemSettingsLauncher.swift; sourceTree = SOURCE_ROOT; };
 		FE30000000000000000000002 /* CtrlSay/Views/ClipboardSlotRows.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CtrlSay/Views/ClipboardSlotRows.swift; sourceTree = SOURCE_ROOT; };
 		FE40000000000000000000002 /* CtrlSay/Views/TemporarySlotSwipeAction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CtrlSay/Views/TemporarySlotSwipeAction.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
@@ -118,11 +116,10 @@
 				B10000000000000000000005 /* CtrlSay/Models/VoiceCommand.swift */,
 				B10000000000000000000006 /* CtrlSay/Models/SpeechCommandGate.swift */,
 				B10000000000000000000007 /* CtrlSay/Stores/SerialCommandQueue.swift */,
-				C10000000000000000000002 /* CtrlSay/Models/StreamingNumberedCommandScanner.swift */,
-				D10000000000000000000002 /* CtrlSay/Support/DashboardPanelPlacement.swift */,
+				C10000000000000000000002 /* CtrlSay/Models/StreamingVoiceCommandScanner.swift */,
 				E10000000000000000000002 /* CtrlSay/Models/ClipboardPayload.swift */,
 				E10000000000000000000004 /* CtrlSay/Stores/ClipboardStore.swift */,
-				F10000000000000000000002 /* CtrlSay/App/DashboardEditingSession.swift */,
+				F10000000000000000000002 /* CtrlSay/App/ClipboardHUDEditingSession.swift */,
 				F20000000000000000000002 /* CtrlSay/Models/RightOptionInteraction.swift */,
 				F30000000000000000000002 /* CtrlSay/Support/ClipboardHUDLayout.swift */,
 				F40000000000000000000002 /* CtrlSay/Services/ClipboardThumbnailProvider.swift */,
@@ -136,7 +133,7 @@
 				FC10000000000000000000002 /* CtrlSay/Models/SpeechTokenAssembler.swift */,
 				FD10000000000000000000002 /* CtrlSay/Services/LaunchAtLoginController.swift */,
 				FE10000000000000000000002 /* CtrlSay/Services/ClipboardService.swift */,
-				FE20000000000000000000002 /* CtrlSay/Support/PrivacySettings.swift */,
+				FE20000000000000000000002 /* CtrlSay/Support/SystemSettingsLauncher.swift */,
 				FE30000000000000000000002 /* CtrlSay/Views/ClipboardSlotRows.swift */,
 				FE40000000000000000000002 /* CtrlSay/Views/TemporarySlotSwipeAction.swift */,
 			);
@@ -260,11 +257,10 @@
 				B10000000000000000000001 /* CtrlSay/Models/VoiceCommand.swift in Sources */,
 				B10000000000000000000002 /* CtrlSay/Models/SpeechCommandGate.swift in Sources */,
 				B10000000000000000000003 /* CtrlSay/Stores/SerialCommandQueue.swift in Sources */,
-				C10000000000000000000001 /* CtrlSay/Models/StreamingNumberedCommandScanner.swift in Sources */,
-				D10000000000000000000001 /* CtrlSay/Support/DashboardPanelPlacement.swift in Sources */,
+				C10000000000000000000001 /* CtrlSay/Models/StreamingVoiceCommandScanner.swift in Sources */,
 				E10000000000000000000001 /* CtrlSay/Models/ClipboardPayload.swift in Sources */,
 				E10000000000000000000003 /* CtrlSay/Stores/ClipboardStore.swift in Sources */,
-				F10000000000000000000001 /* CtrlSay/App/DashboardEditingSession.swift in Sources */,
+				F10000000000000000000001 /* CtrlSay/App/ClipboardHUDEditingSession.swift in Sources */,
 				F20000000000000000000001 /* CtrlSay/Models/RightOptionInteraction.swift in Sources */,
 				F30000000000000000000001 /* CtrlSay/Support/ClipboardHUDLayout.swift in Sources */,
 				F40000000000000000000001 /* CtrlSay/Services/ClipboardThumbnailProvider.swift in Sources */,
@@ -278,7 +274,7 @@
 				FC10000000000000000000001 /* CtrlSay/Models/SpeechTokenAssembler.swift in Sources */,
 				FD10000000000000000000001 /* CtrlSay/Services/LaunchAtLoginController.swift in Sources */,
 				FE10000000000000000000001 /* CtrlSay/Services/ClipboardService.swift in Sources */,
-				FE20000000000000000000001 /* CtrlSay/Support/PrivacySettings.swift in Sources */,
+				FE20000000000000000000001 /* CtrlSay/Support/SystemSettingsLauncher.swift in Sources */,
 				FE30000000000000000000001 /* CtrlSay/Views/ClipboardSlotRows.swift in Sources */,
 				FE40000000000000000000001 /* CtrlSay/Views/TemporarySlotSwipeAction.swift in Sources */,
 			);

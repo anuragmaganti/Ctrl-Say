@@ -21,7 +21,7 @@ final class RightOptionKeyMonitor {
     func requestGlobalMonitoringAccess() -> Bool {
         let granted = CGRequestListenEventAccess()
         if !granted {
-            PrivacySettings.openInputMonitoring()
+            SystemSettingsLauncher.open()
         }
         return refreshGlobalMonitoringAccess()
     }

@@ -52,7 +52,7 @@ final class ClipboardService {
     func requestEventPostingAccess() -> Bool {
         let granted = CGRequestPostEventAccess()
         if !granted {
-            PrivacySettings.openAccessibility()
+            SystemSettingsLauncher.open()
         }
         return granted
     }

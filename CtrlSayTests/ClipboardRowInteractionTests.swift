@@ -63,7 +63,7 @@ final class ClipboardRowInteractionTests: XCTestCase {
         let row = PermanentCopyRow(
             name: "address",
             payload: payload,
-            editingSession: DashboardEditingSession(),
+            editingSession: ClipboardHUDEditingSession(),
             copyToClipboard: {
                 _ = try? service.writeToSystemClipboard(payload)
             },
@@ -84,7 +84,7 @@ final class ClipboardRowInteractionTests: XCTestCase {
     @MainActor
     func testPermanentTitleDoubleClickStillBeginsRenaming() {
         let payload = textPayload("Permanent row content")
-        let editingSession = DashboardEditingSession()
+        let editingSession = ClipboardHUDEditingSession()
         var didBeginEditing = false
         editingSession.onBeginEditing = {
             didBeginEditing = true
@@ -103,6 +103,39 @@ final class ClipboardRowInteractionTests: XCTestCase {
         click(row, at: CGPoint(x: 120, y: 42), clickCount: 2)
 
         XCTAssertTrue(didBeginEditing)
+    }
+
+    @MainActor
+    func testIdlePermanentRowMatchesTemporaryRowHeight() {
+        let payload = textPayload("Two-line clipboard preview content")
+        let temporaryRow = NumberedCopyRow(
+            number: 1,
+            payload: payload,
+            copyToClipboard: {},
+            paste: {},
+            delete: {}
+        )
+        let permanentRow = PermanentCopyRow(
+            name: "address",
+            payload: payload,
+            editingSession: ClipboardHUDEditingSession(),
+            copyToClipboard: {},
+            paste: {},
+            delete: {},
+            rename: { _, requestedName in requestedName },
+            updateText: { _, _ in }
+        )
+
+        XCTAssertEqual(
+            fittingHeight(of: temporaryRow),
+            ClipboardHUDMetrics.rowHeight,
+            accuracy: 0.5
+        )
+        XCTAssertEqual(
+            fittingHeight(of: permanentRow),
+            ClipboardHUDMetrics.rowHeight,
+            accuracy: 0.5
+        )
     }
 
     @MainActor
@@ -197,6 +230,15 @@ final class ClipboardRowInteractionTests: XCTestCase {
         }
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.02))
         window.orderOut(nil)
+    }
+
+    @MainActor
+    private func fittingHeight<V: View>(of view: V) -> CGFloat {
+        let hostingView = NSHostingView(
+            rootView: view.frame(width: 344).fixedSize(horizontal: false, vertical: true)
+        )
+        hostingView.layoutSubtreeIfNeeded()
+        return hostingView.fittingSize.height
     }
 
     @MainActor

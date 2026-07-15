@@ -197,7 +197,15 @@ final class SpeechRecognitionService {
             state = .preparing
         }
 
-        guard let analyzerFormat = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber]) else {
+        let microphoneFormat = audioEngine.inputNode.outputFormat(forBus: 0)
+        let naturalFormat = microphoneFormat.channelCount > 0
+            && microphoneFormat.sampleRate > 0
+            ? microphoneFormat
+            : nil
+        guard let analyzerFormat = await SpeechAnalyzer.bestAvailableAudioFormat(
+            compatibleWith: [transcriber],
+            considering: naturalFormat
+        ) else {
             throw SpeechServiceError.noCompatibleAudioFormat
         }
         try Task.checkCancellation()
@@ -505,7 +513,7 @@ final class SpeechRecognitionService {
 
 struct RecognizedSpeechResult: Sendable {
     let text: String
-    let tokens: [StreamingNumberedCommandToken]
+    let tokens: [StreamingVoiceCommandToken]
     let range: CMTimeRange
     let finalizationTime: CMTime
     let isFinal: Bool

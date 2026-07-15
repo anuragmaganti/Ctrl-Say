@@ -236,7 +236,7 @@ final class NotchBorderHostView: NSView {
             let surfaceHeight = configuration.interactionMode == .passive
                 ? notchHeight
                 : rect.height
-            return AttachedNotchBorderGeometry.path(
+            return AttachedNotchGeometry.borderPath(
                 in: rect,
                 horizontalCanvasOutset: NotchPanelLayoutCalculator
                     .attachedHorizontalCanvasOutset,
@@ -258,56 +258,6 @@ final class NotchBorderHostView: NSView {
                 transform: nil
             )
         }
-    }
-}
-
-private enum AttachedNotchBorderGeometry {
-    static func path(
-        in rect: CGRect,
-        horizontalCanvasOutset: CGFloat,
-        visibleBorderOutset: CGFloat,
-        surfaceHeight: CGFloat,
-        bottomCornerRadius: CGFloat
-    ) -> CGPath {
-        let left = rect.minX + horizontalCanvasOutset - visibleBorderOutset
-        let right = rect.maxX - horizontalCanvasOutset + visibleBorderOutset
-        let bottom = min(
-            rect.maxY,
-            rect.minY + surfaceHeight + visibleBorderOutset
-        )
-        let radius = min(
-            bottomCornerRadius + visibleBorderOutset,
-            max(0, (right - left) / 2)
-        )
-        let curveControl = radius * 0.552_284_75
-        let path = CGMutablePath()
-        path.move(to: CGPoint(x: left, y: rect.minY))
-        path.addLine(to: CGPoint(x: left, y: bottom - radius))
-        path.addCurve(
-            to: CGPoint(x: left + radius, y: bottom),
-            control1: CGPoint(
-                x: left,
-                y: bottom - radius + curveControl
-            ),
-            control2: CGPoint(
-                x: left + radius - curveControl,
-                y: bottom
-            )
-        )
-        path.addLine(to: CGPoint(x: right - radius, y: bottom))
-        path.addCurve(
-            to: CGPoint(x: right, y: bottom - radius),
-            control1: CGPoint(
-                x: right - radius + curveControl,
-                y: bottom
-            ),
-            control2: CGPoint(
-                x: right,
-                y: bottom - radius + curveControl
-            )
-        )
-        path.addLine(to: CGPoint(x: right, y: rect.minY))
-        return path
     }
 }
 

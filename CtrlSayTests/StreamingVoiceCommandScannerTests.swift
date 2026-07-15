@@ -1,9 +1,9 @@
 import CoreMedia
 import XCTest
 
-final class StreamingNumberedCommandScannerTests: XCTestCase {
+final class StreamingVoiceCommandScannerTests: XCTestCase {
     func testFindsCopyTenAmidFiller() throws {
-        var scanner = StreamingNumberedCommandScanner()
+        var scanner = StreamingVoiceCommandScanner()
         let update = scanner.ingest(
             segment(
                 0...3,
@@ -15,7 +15,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
     }
 
     func testFindsMultipleCommandsInOneSegmentInAudioOrder() throws {
-        var scanner = StreamingNumberedCommandScanner()
+        var scanner = StreamingVoiceCommandScanner()
         let update = scanner.ingest(
             segment(
                 0...8,
@@ -33,7 +33,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
     }
 
     func testFindsTemporaryNamedCopyAndPasteAmidFiller() throws {
-        var scanner = StreamingNumberedCommandScanner()
+        var scanner = StreamingVoiceCommandScanner()
         let update = scanner.ingest(
             segment(
                 0...4,
@@ -55,7 +55,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
             ["this", "first", "paragraph"],
             ["green", "grapes", "passage"],
         ] {
-            var scanner = StreamingNumberedCommandScanner()
+            var scanner = StreamingVoiceCommandScanner()
             let update = scanner.ingest(
                 segment(0...2, words: ["copy"] + words)
             )
@@ -70,9 +70,9 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
     }
 
     func testMultiwordTemporaryCopyGrowsUnderOneIdentity() throws {
-        var scanner = StreamingNumberedCommandScanner()
+        var scanner = StreamingVoiceCommandScanner()
         let first = scanner.ingest(
-            StreamingNumberedCommandSegment(
+            StreamingVoiceCommandSegment(
                 range: timeRange(0, 2),
                 tokens: [
                     token("copy", 0.10, 0.30),
@@ -86,7 +86,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
         XCTAssertFalse(initial.isStableForCommit)
 
         let expanded = scanner.ingest(
-            StreamingNumberedCommandSegment(
+            StreamingVoiceCommandSegment(
                 range: timeRange(0, 2),
                 tokens: [
                     token("copy", 0.10, 0.30),
@@ -106,7 +106,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
     }
 
     func testKnownMultiwordPasteUsesVolatileFastPath() throws {
-        var scanner = StreamingNumberedCommandScanner()
+        var scanner = StreamingVoiceCommandScanner()
         let update = scanner.ingest(
             segment(
                 0...2,
@@ -121,7 +121,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
     }
 
     func testMultiwordCopyAndPasteRemainSeparateInContinuousSpeech() throws {
-        var scanner = StreamingNumberedCommandScanner()
+        var scanner = StreamingVoiceCommandScanner()
         let update = scanner.ingest(
             segment(
                 0...4,
@@ -142,9 +142,9 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
     }
 
     func testNamedCopyDispatchesVolatileResultAndKeepsIdentityAcrossRevisions() throws {
-        var scanner = StreamingNumberedCommandScanner()
+        var scanner = StreamingVoiceCommandScanner()
         let first = scanner.ingest(
-            StreamingNumberedCommandSegment(
+            StreamingVoiceCommandSegment(
                 range: timeRange(0, 1),
                 tokens: [
                     token("copy", 0.10, 0.30),
@@ -159,7 +159,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
         XCTAssertFalse(partial.isStableForCommit)
 
         let revision = scanner.ingest(
-            StreamingNumberedCommandSegment(
+            StreamingVoiceCommandSegment(
                 range: timeRange(0, 1),
                 tokens: [
                     token("copy", 0.10, 0.30),
@@ -186,9 +186,9 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
 
     func testExplicitVolatileBoundaryDoesNotDelayOrDuplicateNamedCopy() throws {
         for name in ["point", "pointer", "house"] {
-            var scanner = StreamingNumberedCommandScanner()
+            var scanner = StreamingVoiceCommandScanner()
             let pendingUpdate = scanner.ingest(
-                StreamingNumberedCommandSegment(
+                StreamingVoiceCommandSegment(
                     range: timeRange(0, 1),
                     tokens: [
                         token("copy", 0.10, 0.30),
@@ -202,7 +202,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
             XCTAssertFalse(immediate.isStableForCommit)
 
             let boundaryUpdate = scanner.ingest(
-                StreamingNumberedCommandSegment(
+                StreamingVoiceCommandSegment(
                     range: timeRange(0, 1),
                     tokens: [
                         token("copy", 0.10, 0.30),
@@ -220,9 +220,9 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
     }
 
     func testPointRevisesToPointerWithoutWaitingForVolatileBoundary() throws {
-        var scanner = StreamingNumberedCommandScanner()
+        var scanner = StreamingVoiceCommandScanner()
         let partialUpdate = scanner.ingest(
-            StreamingNumberedCommandSegment(
+            StreamingVoiceCommandSegment(
                 range: timeRange(0, 1),
                 tokens: [
                     token("copy", 0.10, 0.30),
@@ -236,7 +236,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
         XCTAssertFalse(partial.isStableForCommit)
 
         let completedUpdate = scanner.ingest(
-            StreamingNumberedCommandSegment(
+            StreamingVoiceCommandSegment(
                 range: timeRange(0, 1),
                 tokens: [
                     token("copy", 0.10, 0.30),
@@ -253,9 +253,9 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
     }
 
     func testNamedCopyDoesNotWaitForEnclosingResultFinalization() throws {
-        var scanner = StreamingNumberedCommandScanner()
+        var scanner = StreamingVoiceCommandScanner()
         let update = scanner.ingest(
-            StreamingNumberedCommandSegment(
+            StreamingVoiceCommandSegment(
                 range: timeRange(0, 1),
                 tokens: [
                     token("copy", 0.10, 0.30),
@@ -272,9 +272,9 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
 
     func testShortNamesDispatchWhileVolatileAndFinalizationDoesNotDuplicate() throws {
         for partialName in ["G", "GET", "Sum"] {
-            var scanner = StreamingNumberedCommandScanner()
+            var scanner = StreamingVoiceCommandScanner()
             let update = scanner.ingest(
-                StreamingNumberedCommandSegment(
+                StreamingVoiceCommandSegment(
                     range: timeRange(0, 1.20),
                     tokens: [
                         token("copy", 0.10, 0.30),
@@ -308,9 +308,9 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
         ]
 
         for revisionWords in revisions {
-            var scanner = StreamingNumberedCommandScanner()
+            var scanner = StreamingVoiceCommandScanner()
             let partialUpdate = scanner.ingest(
-                StreamingNumberedCommandSegment(
+                StreamingVoiceCommandSegment(
                     range: timeRange(0, 1.20),
                     tokens: [
                         token("copy", 0.10, 0.30),
@@ -324,7 +324,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
             XCTAssertFalse(partial.isStableForCommit)
 
             let completeUpdate = scanner.ingest(
-                StreamingNumberedCommandSegment(
+                StreamingVoiceCommandSegment(
                     range: timeRange(0, 1.20),
                     tokens: [
                         token("copy", 0.10, 0.30),
@@ -349,9 +349,9 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
     }
 
     func testSummaryRevisionDoesNotWaitForResultFinalization() throws {
-        var scanner = StreamingNumberedCommandScanner()
+        var scanner = StreamingVoiceCommandScanner()
         let partialUpdate = scanner.ingest(
-            StreamingNumberedCommandSegment(
+            StreamingVoiceCommandSegment(
                 range: timeRange(0, 1.20),
                 tokens: [
                     token("copy", 0.10, 0.30),
@@ -366,7 +366,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
         XCTAssertFalse(partial.isStableForCommit)
 
         let revisionUpdate = scanner.ingest(
-            StreamingNumberedCommandSegment(
+            StreamingVoiceCommandSegment(
                 range: timeRange(0, 1.20),
                 tokens: [
                     token("copy", 0.10, 0.30),
@@ -390,13 +390,13 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
     }
 
     func testExternalFinalizationCanArriveBeforeTheTextResult() throws {
-        var scanner = StreamingNumberedCommandScanner()
+        var scanner = StreamingVoiceCommandScanner()
         XCTAssertTrue(
             scanner.advanceFinalization(to: time(1)).mutations.isEmpty
         )
 
         let update = scanner.ingest(
-            StreamingNumberedCommandSegment(
+            StreamingVoiceCommandSegment(
                 range: timeRange(0, 1),
                 tokens: [
                     token("copy", 0.10, 0.30),
@@ -411,7 +411,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
     }
 
     func testFinalNamedResultWithoutTokenRangesIsReady() throws {
-        var scanner = StreamingNumberedCommandScanner()
+        var scanner = StreamingVoiceCommandScanner()
         let update = scanner.ingest(
             segment(0...1, words: ["copy", "summary"], isFinal: true)
         )
@@ -422,9 +422,9 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
     }
 
     func testHighConfidenceKnownNameUsesVolatilePasteFastPath() throws {
-        var scanner = StreamingNumberedCommandScanner()
+        var scanner = StreamingVoiceCommandScanner()
         let update = scanner.ingest(
-            StreamingNumberedCommandSegment(
+            StreamingVoiceCommandSegment(
                 range: timeRange(0, 1),
                 tokens: [
                     token("paste", 0.10, 0.30, confidence: 0.9),
@@ -440,9 +440,9 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
     }
 
     func testVolatileNamedPasteWaitsWhenStoredNameHasLongerPrefix() throws {
-        var scanner = StreamingNumberedCommandScanner()
+        var scanner = StreamingVoiceCommandScanner()
         let update = scanner.ingest(
-            StreamingNumberedCommandSegment(
+            StreamingVoiceCommandSegment(
                 range: timeRange(0, 1),
                 tokens: [
                     token("paste", 0.10, 0.30, confidence: 0.9),
@@ -458,9 +458,9 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
     }
 
     func testVolatilePasteQueuesBehindEarlierCopyOfPreviouslyUnknownName() throws {
-        var scanner = StreamingNumberedCommandScanner()
+        var scanner = StreamingVoiceCommandScanner()
         let update = scanner.ingest(
-            StreamingNumberedCommandSegment(
+            StreamingVoiceCommandSegment(
                 range: timeRange(0, 2),
                 tokens: [
                     token("copy", 0.10, 0.30, confidence: 0.9),
@@ -479,9 +479,9 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
     }
 
     func testKnownNamedPasteWithoutConfidenceDispatchesBeforeFinalization() throws {
-        var scanner = StreamingNumberedCommandScanner()
+        var scanner = StreamingVoiceCommandScanner()
         let immediate = scanner.ingest(
-            StreamingNumberedCommandSegment(
+            StreamingVoiceCommandSegment(
                 range: timeRange(0, 1),
                 tokens: [
                     token("paste", 0.10, 0.30),
@@ -495,7 +495,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
         scanner.markCommitted(candidate.id)
 
         let finalEcho = scanner.ingest(
-            StreamingNumberedCommandSegment(
+            StreamingVoiceCommandSegment(
                 range: timeRange(0, 1),
                 tokens: [
                     token("paste", 0.10, 0.30),
@@ -509,7 +509,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
     }
 
     func testNumberedCommandKeepsVolatileFastPath() throws {
-        var scanner = StreamingNumberedCommandScanner()
+        var scanner = StreamingVoiceCommandScanner()
         let update = scanner.ingest(segment(0...1, words: ["copy", "two"]))
 
         let candidate = try XCTUnwrap(upserts(in: update).first)
@@ -518,7 +518,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
     }
 
     func testUnknownNamedPasteIsIgnored() {
-        var scanner = StreamingNumberedCommandScanner()
+        var scanner = StreamingVoiceCommandScanner()
         let update = scanner.ingest(
             segment(0...2, words: ["please", "paste", "unknown"])
         )
@@ -535,7 +535,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
             words.append(contentsOf: ["\(alias.uppercased())...", "TWO?!", "then"])
         }
 
-        var scanner = StreamingNumberedCommandScanner()
+        var scanner = StreamingVoiceCommandScanner()
         let update = scanner.ingest(segment(0...8, words: words))
 
         XCTAssertEqual(
@@ -546,7 +546,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
 
     func testPermanentCopyNumberDoesNotFallThroughToTemporaryCopy() {
         for modifier in ["permanent", "permanently", "permanny"] {
-            var scanner = StreamingNumberedCommandScanner()
+            var scanner = StreamingVoiceCommandScanner()
             let update = scanner.ingest(
                 segment(0...2, words: [modifier, "copy", "one"])
             )
@@ -558,9 +558,9 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
     }
 
     func testPermanentNamedCopyUsesImmediateRevisableNamedPath() throws {
-        var scanner = StreamingNumberedCommandScanner()
+        var scanner = StreamingVoiceCommandScanner()
         let pending = scanner.ingest(
-            StreamingNumberedCommandSegment(
+            StreamingVoiceCommandSegment(
                 range: timeRange(0, 1.2),
                 tokens: [
                     token("permanent", 0.10, 0.35),
@@ -583,7 +583,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
     }
 
     func testPermanentFinalWordPartitionReleasesWithoutWholePhraseResult() throws {
-        var scanner = StreamingNumberedCommandScanner()
+        var scanner = StreamingVoiceCommandScanner()
         XCTAssertTrue(
             scanner.ingest(
                 segment(
@@ -621,7 +621,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
 
     func testPermanentModifierAliasesUsePermanentTokenPath() throws {
         for modifier in ["permanent", "permanently", "permanny"] {
-            var scanner = StreamingNumberedCommandScanner()
+            var scanner = StreamingVoiceCommandScanner()
             let update = scanner.ingest(
                 segment(
                     0...1.2,
@@ -636,9 +636,9 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
     }
 
     func testCanonicalPermanentPhraseCanUseOneAttributedToken() throws {
-        var scanner = StreamingNumberedCommandScanner()
+        var scanner = StreamingVoiceCommandScanner()
         let update = scanner.ingest(
-            StreamingNumberedCommandSegment(
+            StreamingVoiceCommandSegment(
                 range: timeRange(0, 1.2),
                 tokens: [
                     token("permanent copy name", 0.10, 1.05),
@@ -653,7 +653,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
     }
 
     func testNextCommandImmediatelyClosesPendingPermanentName() throws {
-        var scanner = StreamingNumberedCommandScanner()
+        var scanner = StreamingVoiceCommandScanner()
         let update = scanner.ingest(
             segment(
                 0...2.4,
@@ -673,9 +673,9 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
     }
 
     func testRepeatedCanonicalPermanentResultsCreateDistinctImmediateAttempts() throws {
-        var scanner = StreamingNumberedCommandScanner()
+        var scanner = StreamingVoiceCommandScanner()
         let first = scanner.ingest(
-            StreamingNumberedCommandSegment(
+            StreamingVoiceCommandSegment(
                 range: timeRange(0, 1.1),
                 tokens: [
                     token("permanent copy named", 0.05, 1.05),
@@ -688,7 +688,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
         XCTAssertTrue(firstCandidate.isReadyForDispatch)
 
         let retry = scanner.ingest(
-            StreamingNumberedCommandSegment(
+            StreamingVoiceCommandSegment(
                 range: timeRange(1.15, 2.25),
                 tokens: [
                     token("permanent copy name", 1.20, 2.20),
@@ -706,7 +706,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
     }
 
     func testAndThenCommandClosesPendingPermanentName() throws {
-        var scanner = StreamingNumberedCommandScanner()
+        var scanner = StreamingVoiceCommandScanner()
         let update = scanner.ingest(
             segment(
                 0...2,
@@ -726,9 +726,9 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
     }
 
     func testPermanentMultiwordNameUsesSameAccumulatorAsTemporaryName() throws {
-        var scanner = StreamingNumberedCommandScanner()
+        var scanner = StreamingVoiceCommandScanner()
         let initialUpdate = scanner.ingest(
-            StreamingNumberedCommandSegment(
+            StreamingVoiceCommandSegment(
                 range: timeRange(0, 2),
                 tokens: [
                     token("permanent", 0.10, 0.25),
@@ -743,7 +743,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
         XCTAssertFalse(initial.isStableForCommit)
 
         let expandedUpdate = scanner.ingest(
-            StreamingNumberedCommandSegment(
+            StreamingVoiceCommandSegment(
                 range: timeRange(0, 2),
                 tokens: [
                     token("permanent", 0.10, 0.25),
@@ -768,7 +768,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
     }
 
     func testMultiwordPermanentCopyAndFollowingCommandRemainSeparate() throws {
-        var scanner = StreamingNumberedCommandScanner()
+        var scanner = StreamingVoiceCommandScanner()
         let update = scanner.ingest(
             segment(
                 0...3,
@@ -797,7 +797,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
             words.append(contentsOf: ["copy", word, "then"])
         }
 
-        var scanner = StreamingNumberedCommandScanner()
+        var scanner = StreamingVoiceCommandScanner()
         let update = scanner.ingest(segment(0...10, words: words))
         XCTAssertEqual(
             try commands(in: update),
@@ -806,7 +806,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
     }
 
     func testBridgesVerbAndNumberAcrossAdjacentSegments() throws {
-        var scanner = StreamingNumberedCommandScanner(maximumCrossSegmentGap: 0.5)
+        var scanner = StreamingVoiceCommandScanner(maximumCrossSegmentGap: 0.5)
         XCTAssertTrue(
             scanner.ingest(segment(0...1, words: ["please", "copy"])).mutations.isEmpty
         )
@@ -816,7 +816,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
     }
 
     func testDoesNotBridgeAcrossAnUnboundedPause() {
-        var scanner = StreamingNumberedCommandScanner(maximumCrossSegmentGap: 0.5)
+        var scanner = StreamingVoiceCommandScanner(maximumCrossSegmentGap: 0.5)
         _ = scanner.ingest(segment(0...1, words: ["copy"]))
 
         XCTAssertTrue(
@@ -825,7 +825,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
     }
 
     func testRevisionKeepsIDAndUpdatesNumber() throws {
-        var scanner = StreamingNumberedCommandScanner()
+        var scanner = StreamingVoiceCommandScanner()
         let first = scanner.ingest(segment(0...1, words: ["paste", "two"]))
         let firstCandidate = try XCTUnwrap(upserts(in: first).first)
 
@@ -837,7 +837,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
     }
 
     func testDisappearingUncommittedCandidateIsRevoked() throws {
-        var scanner = StreamingNumberedCommandScanner()
+        var scanner = StreamingVoiceCommandScanner()
         let first = scanner.ingest(segment(0...1, words: ["paste", "two"]))
         let id = try XCTUnwrap(upserts(in: first).first?.id)
 
@@ -846,9 +846,9 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
     }
 
     func testRemovingAnEarlierCommandDoesNotChangeTheLaterCommandIdentity() throws {
-        var scanner = StreamingNumberedCommandScanner()
+        var scanner = StreamingVoiceCommandScanner()
         let first = scanner.ingest(
-            StreamingNumberedCommandSegment(
+            StreamingVoiceCommandSegment(
                 range: timeRange(0, 2),
                 tokens: [
                     token("copy", 0.1, 0.3),
@@ -862,7 +862,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
         XCTAssertEqual(original.count, 2)
 
         let revision = scanner.ingest(
-            StreamingNumberedCommandSegment(
+            StreamingVoiceCommandSegment(
                 range: timeRange(0, 2),
                 tokens: [
                     token("paste", 1.0, 1.2),
@@ -875,9 +875,9 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
     }
 
     func testRemovingAnEarlierIdenticalCommandDoesNotChangeTheLaterIdentity() throws {
-        var scanner = StreamingNumberedCommandScanner()
+        var scanner = StreamingVoiceCommandScanner()
         let first = scanner.ingest(
-            StreamingNumberedCommandSegment(
+            StreamingVoiceCommandSegment(
                 range: timeRange(0, 2),
                 tokens: [
                     token("paste", 0.1, 0.3),
@@ -891,7 +891,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
         XCTAssertEqual(original.count, 2)
 
         let revision = scanner.ingest(
-            StreamingNumberedCommandSegment(
+            StreamingVoiceCommandSegment(
                 range: timeRange(0, 2),
                 tokens: [
                     token("paste", 1.0, 1.2),
@@ -904,7 +904,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
     }
 
     func testCommittedCandidateBecomesTombstoneAcrossRevisionAndFinalEcho() throws {
-        var scanner = StreamingNumberedCommandScanner()
+        var scanner = StreamingVoiceCommandScanner()
         let first = scanner.ingest(segment(0...1, words: ["paste", "two"]))
         let id = try XCTUnwrap(upserts(in: first).first?.id)
         scanner.markCommitted(id)
@@ -935,7 +935,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
     }
 
     func testVolatileAndFinalEchoDoNotDuplicatePendingCandidate() throws {
-        var scanner = StreamingNumberedCommandScanner()
+        var scanner = StreamingVoiceCommandScanner()
         let first = scanner.ingest(segment(0...1, words: ["copy", "four"]))
         XCTAssertEqual(try commands(in: first), [.copyNumber(4)])
 
@@ -951,13 +951,13 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
     }
 
     func testZeroDurationTokenRangesStillKeepIdentityAcrossEcho() throws {
-        var scanner = StreamingNumberedCommandScanner()
+        var scanner = StreamingVoiceCommandScanner()
         let instant = timeRange(0.5, 0.5)
-        let observation = StreamingNumberedCommandSegment(
+        let observation = StreamingVoiceCommandSegment(
             range: timeRange(0, 1),
             tokens: [
-                StreamingNumberedCommandToken("paste", range: instant),
-                StreamingNumberedCommandToken("two", range: instant),
+                StreamingVoiceCommandToken("paste", range: instant),
+                StreamingVoiceCommandToken("two", range: instant),
             ]
         )
 
@@ -966,16 +966,16 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
     }
 
     func testCommittedInstantCandidateDeduplicatesExpandedFinalTokenRanges() throws {
-        var scanner = StreamingNumberedCommandScanner()
+        var scanner = StreamingVoiceCommandScanner()
         let first = scanner.ingest(
-            StreamingNumberedCommandSegment(
+            StreamingVoiceCommandSegment(
                 range: timeRange(0, 2),
                 tokens: [
-                    StreamingNumberedCommandToken(
+                    StreamingVoiceCommandToken(
                         "paste",
                         range: timeRange(1.8, 1.8)
                     ),
-                    StreamingNumberedCommandToken(
+                    StreamingVoiceCommandToken(
                         "ten",
                         range: timeRange(1.8, 1.8)
                     ),
@@ -986,14 +986,14 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
         scanner.markCommitted(id)
 
         let final = scanner.ingest(
-            StreamingNumberedCommandSegment(
+            StreamingVoiceCommandSegment(
                 range: timeRange(0, 2),
                 tokens: [
-                    StreamingNumberedCommandToken(
+                    StreamingVoiceCommandToken(
                         "paste",
                         range: timeRange(0.35, 0.6)
                     ),
-                    StreamingNumberedCommandToken(
+                    StreamingVoiceCommandToken(
                         "ten",
                         range: timeRange(0.62, 0.9)
                     ),
@@ -1007,12 +1007,12 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
     }
 
     func testOneRunToTwoRunsKeepsCommittedIdentityWhenTimingMoves() throws {
-        var scanner = StreamingNumberedCommandScanner()
+        var scanner = StreamingVoiceCommandScanner()
         let first = scanner.ingest(
-            StreamingNumberedCommandSegment(
+            StreamingVoiceCommandSegment(
                 range: timeRange(0, 2),
                 tokens: [
-                    StreamingNumberedCommandToken(
+                    StreamingVoiceCommandToken(
                         "paste ten",
                         range: timeRange(1.8, 1.8)
                     ),
@@ -1023,7 +1023,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
         scanner.markCommitted(id)
 
         let final = scanner.ingest(
-            StreamingNumberedCommandSegment(
+            StreamingVoiceCommandSegment(
                 range: timeRange(0, 2),
                 tokens: [
                     token("paste", 0.35, 0.6),
@@ -1038,12 +1038,12 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
     }
 
     func testBroadVolatileCommandDeduplicatesFinalPartition() throws {
-        var scanner = StreamingNumberedCommandScanner()
+        var scanner = StreamingVoiceCommandScanner()
         let volatile = scanner.ingest(
-            StreamingNumberedCommandSegment(
+            StreamingVoiceCommandSegment(
                 range: timeRange(0, 1.665),
                 tokens: [
-                    StreamingNumberedCommandToken(
+                    StreamingVoiceCommandToken(
                         "okay please paste ten now",
                         range: timeRange(0, 1.665)
                     ),
@@ -1055,7 +1055,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
 
         XCTAssertTrue(
             scanner.ingest(
-                StreamingNumberedCommandSegment(
+                StreamingVoiceCommandSegment(
                     range: timeRange(0, 0.660),
                     tokens: [token("okay", 0, 0.540), token("please", 0.540, 0.660)],
                     finalizationTime: time(0.660),
@@ -1065,7 +1065,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
         )
         XCTAssertTrue(
             scanner.ingest(
-                StreamingNumberedCommandSegment(
+                StreamingVoiceCommandSegment(
                     range: timeRange(0.660, 1.320),
                     tokens: [token("paste", 0.660, 1.140), token("ten", 1.140, 1.320)],
                     finalizationTime: time(1.320),
@@ -1075,7 +1075,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
         )
         XCTAssertTrue(
             scanner.ingest(
-                StreamingNumberedCommandSegment(
+                StreamingVoiceCommandSegment(
                     range: timeRange(1.320, 1.665),
                     tokens: [token("now", 1.320, 1.665)],
                     finalizationTime: time(1.665),
@@ -1086,12 +1086,12 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
     }
 
     func testFinalPartitionCanRevealARealSecondRepeatedCommand() throws {
-        var scanner = StreamingNumberedCommandScanner()
+        var scanner = StreamingVoiceCommandScanner()
         let volatile = scanner.ingest(
-            StreamingNumberedCommandSegment(
+            StreamingVoiceCommandSegment(
                 range: timeRange(0, 2),
                 tokens: [
-                    StreamingNumberedCommandToken(
+                    StreamingVoiceCommandToken(
                         "paste ten",
                         range: timeRange(0, 2)
                     ),
@@ -1103,7 +1103,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
 
         XCTAssertTrue(
             scanner.ingest(
-                StreamingNumberedCommandSegment(
+                StreamingVoiceCommandSegment(
                     range: timeRange(0, 0.8),
                     tokens: [token("paste", 0.2, 0.4), token("ten", 0.42, 0.6)],
                     finalizationTime: time(0.8),
@@ -1113,7 +1113,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
         )
 
         let second = scanner.ingest(
-            StreamingNumberedCommandSegment(
+            StreamingVoiceCommandSegment(
                 range: timeRange(1, 2),
                 tokens: [token("paste", 1.2, 1.4), token("ten", 1.42, 1.6)],
                 finalizationTime: time(2),
@@ -1126,14 +1126,14 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
     }
 
     func testAdjacentRepeatedCommandAtPriorPointRangeGetsANewIdentity() throws {
-        var scanner = StreamingNumberedCommandScanner()
+        var scanner = StreamingVoiceCommandScanner()
         let point = timeRange(1, 1)
         let first = scanner.ingest(
-            StreamingNumberedCommandSegment(
+            StreamingVoiceCommandSegment(
                 range: timeRange(0, 1),
                 tokens: [
-                    StreamingNumberedCommandToken("paste", range: point),
-                    StreamingNumberedCommandToken("two", range: point),
+                    StreamingVoiceCommandToken("paste", range: point),
+                    StreamingVoiceCommandToken("two", range: point),
                 ],
                 finalizationTime: time(1),
                 isFinal: true
@@ -1143,11 +1143,11 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
         scanner.markCommitted(firstID)
 
         let second = scanner.ingest(
-            StreamingNumberedCommandSegment(
+            StreamingVoiceCommandSegment(
                 range: timeRange(1, 2),
                 tokens: [
-                    StreamingNumberedCommandToken("paste", range: point),
-                    StreamingNumberedCommandToken("two", range: point),
+                    StreamingVoiceCommandToken("paste", range: point),
+                    StreamingVoiceCommandToken("two", range: point),
                 ]
             )
         )
@@ -1158,7 +1158,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
     }
 
     func testIdenticalRepeatedCommandsHaveDistinctIDs() throws {
-        var scanner = StreamingNumberedCommandScanner()
+        var scanner = StreamingVoiceCommandScanner()
         let update = scanner.ingest(
             segment(0...2, words: ["paste", "two", "paste", "two"])
         )
@@ -1169,17 +1169,17 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
     }
 
     func testUsesTokenRangesAndMinimumConfidence() throws {
-        var scanner = StreamingNumberedCommandScanner()
+        var scanner = StreamingVoiceCommandScanner()
         let update = scanner.ingest(
-            StreamingNumberedCommandSegment(
+            StreamingVoiceCommandSegment(
                 range: timeRange(0, 2),
                 tokens: [
-                    StreamingNumberedCommandToken(
+                    StreamingVoiceCommandToken(
                         "copy",
                         range: timeRange(0.5, 0.8),
                         confidence: 0.91
                     ),
-                    StreamingNumberedCommandToken(
+                    StreamingVoiceCommandToken(
                         "ten",
                         range: timeRange(0.82, 1.1),
                         confidence: 0.73
@@ -1198,10 +1198,10 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
         words: [String],
         finalizationTime: Double? = nil,
         isFinal: Bool = false
-    ) -> StreamingNumberedCommandSegment {
-        StreamingNumberedCommandSegment(
+    ) -> StreamingVoiceCommandSegment {
+        StreamingVoiceCommandSegment(
             range: timeRange(seconds.lowerBound, seconds.upperBound),
-            tokens: words.map { StreamingNumberedCommandToken($0) },
+            tokens: words.map { StreamingVoiceCommandToken($0) },
             finalizationTime: finalizationTime.map(time) ?? .invalid,
             isFinal: isFinal
         )
@@ -1216,8 +1216,8 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
         _ start: Double,
         _ end: Double,
         confidence: Double? = nil
-    ) -> StreamingNumberedCommandToken {
-        StreamingNumberedCommandToken(
+    ) -> StreamingVoiceCommandToken {
+        StreamingVoiceCommandToken(
             text,
             range: timeRange(start, end),
             confidence: confidence
@@ -1229,8 +1229,8 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
     }
 
     private func upserts(
-        in update: StreamingNumberedCommandScannerUpdate
-    ) -> [StreamingNumberedCommandCandidate] {
+        in update: StreamingVoiceCommandScannerUpdate
+    ) -> [StreamingVoiceCommandCandidate] {
         update.mutations.compactMap { mutation in
             guard case .upsert(let candidate) = mutation else { return nil }
             return candidate
@@ -1238,7 +1238,7 @@ final class StreamingNumberedCommandScannerTests: XCTestCase {
     }
 
     private func commands(
-        in update: StreamingNumberedCommandScannerUpdate
+        in update: StreamingVoiceCommandScannerUpdate
     ) throws -> [VoiceCommand] {
         upserts(in: update).map(\.command)
     }

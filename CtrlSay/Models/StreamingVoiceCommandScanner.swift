@@ -1,7 +1,7 @@
 import CoreMedia
 import Foundation
 
-struct StreamingNumberedCommandToken: Equatable, Sendable {
+struct StreamingVoiceCommandToken: Equatable, Sendable {
     let text: String
     let range: SpeechResultRange?
     let confidence: Double?
@@ -17,16 +17,16 @@ struct StreamingNumberedCommandToken: Equatable, Sendable {
     }
 }
 
-struct StreamingNumberedCommandSegment: Sendable {
+struct StreamingVoiceCommandSegment: Sendable {
     let range: SpeechResultRange
-    let tokens: [StreamingNumberedCommandToken]
+    let tokens: [StreamingVoiceCommandToken]
     let finalizationTime: CMTime
     let isFinal: Bool
     let hasTrailingPhraseBoundary: Bool
 
     init(
         range: SpeechResultRange,
-        tokens: [StreamingNumberedCommandToken],
+        tokens: [StreamingVoiceCommandToken],
         finalizationTime: CMTime = .invalid,
         isFinal: Bool = false,
         hasTrailingPhraseBoundary: Bool = false
@@ -39,12 +39,12 @@ struct StreamingNumberedCommandSegment: Sendable {
     }
 }
 
-struct StreamingNumberedCommandID: Hashable, Sendable {
+struct StreamingVoiceCommandID: Hashable, Sendable {
     let rawValue: UInt64
 }
 
-struct StreamingNumberedCommandCandidate: Equatable, Sendable {
-    let id: StreamingNumberedCommandID
+struct StreamingVoiceCommandCandidate: Equatable, Sendable {
+    let id: StreamingVoiceCommandID
     let command: VoiceCommand
     let range: SpeechResultRange
     let minimumConfidence: Double?
@@ -52,13 +52,13 @@ struct StreamingNumberedCommandCandidate: Equatable, Sendable {
     let isStableForCommit: Bool
 }
 
-enum StreamingNumberedCommandMutation: Equatable, Sendable {
-    case upsert(StreamingNumberedCommandCandidate)
-    case revoke(StreamingNumberedCommandID)
+enum StreamingVoiceCommandMutation: Equatable, Sendable {
+    case upsert(StreamingVoiceCommandCandidate)
+    case revoke(StreamingVoiceCommandID)
 }
 
-struct StreamingNumberedCommandScannerUpdate: Equatable, Sendable {
-    let mutations: [StreamingNumberedCommandMutation]
+struct StreamingVoiceCommandScannerUpdate: Equatable, Sendable {
+    let mutations: [StreamingVoiceCommandMutation]
 }
 
 /// Extracts numbered and named copy/paste commands from a revisable speech
@@ -68,7 +68,7 @@ struct StreamingNumberedCommandScannerUpdate: Equatable, Sendable {
 /// A candidate stays mutable until `markCommitted(_:)` is called. A committed
 /// candidate becomes a tombstone, so Apple's final-result echo or a later text
 /// revision cannot execute the same audio twice.
-struct StreamingNumberedCommandScanner {
+struct StreamingVoiceCommandScanner {
     private struct SegmentID: Hashable {
         let rawValue: UInt64
     }
@@ -76,7 +76,7 @@ struct StreamingNumberedCommandScanner {
     private struct SegmentState {
         let id: SegmentID
         var range: SpeechResultRange
-        var tokens: [StreamingNumberedCommandToken]
+        var tokens: [StreamingVoiceCommandToken]
         var isFinalized: Bool
         var hasTrailingPhraseBoundary: Bool
     }
@@ -110,7 +110,7 @@ struct StreamingNumberedCommandScanner {
     }
 
     private struct CandidateState {
-        let id: StreamingNumberedCommandID
+        let id: StreamingVoiceCommandID
         var anchors: [TokenAnchor]
         var sourceSegmentIDs: Set<SegmentID>
         var command: VoiceCommand
@@ -143,9 +143,9 @@ struct StreamingNumberedCommandScanner {
     }
 
     mutating func ingest(
-        _ segment: StreamingNumberedCommandSegment,
+        _ segment: StreamingVoiceCommandSegment,
         knownNamedCopies: Set<String> = []
-    ) -> StreamingNumberedCommandScannerUpdate {
+    ) -> StreamingVoiceCommandScannerUpdate {
         let rangeWasAlreadyFinalized = isNumeric(resultStreamFinalizedThrough)
             && CMTimeCompare(segment.range.end, resultStreamFinalizedThrough) <= 0
 
@@ -158,7 +158,7 @@ struct StreamingNumberedCommandScanner {
             advanceResultStreamFinalizationWatermark(to: segment.finalizationTime)
             advanceFinalizationWatermark(to: segment.finalizationTime)
             pruneFinishedState()
-            return StreamingNumberedCommandScannerUpdate(mutations: [])
+            return StreamingVoiceCommandScannerUpdate(mutations: [])
         }
 
         let segmentIndex = indexForRevision(of: segment.range)
@@ -176,10 +176,10 @@ struct StreamingNumberedCommandScanner {
             with: extractedCandidates(knownNamedCopies: knownNamedCopies)
         )
         pruneFinishedState()
-        return StreamingNumberedCommandScannerUpdate(mutations: mutations)
+        return StreamingVoiceCommandScannerUpdate(mutations: mutations)
     }
 
-    mutating func markCommitted(_ id: StreamingNumberedCommandID) {
+    mutating func markCommitted(_ id: StreamingVoiceCommandID) {
         guard let index = candidates.firstIndex(where: { $0.id == id }) else {
             return
         }
@@ -191,13 +191,13 @@ struct StreamingNumberedCommandScanner {
     mutating func advanceFinalization(
         to watermark: CMTime,
         knownNamedCopies: Set<String> = []
-    ) -> StreamingNumberedCommandScannerUpdate {
+    ) -> StreamingVoiceCommandScannerUpdate {
         advanceFinalizationWatermark(to: watermark)
         let mutations = reconcile(
             with: extractedCandidates(knownNamedCopies: knownNamedCopies)
         )
         pruneFinishedState()
-        return StreamingNumberedCommandScannerUpdate(mutations: mutations)
+        return StreamingVoiceCommandScannerUpdate(mutations: mutations)
     }
 
     mutating func reset() {
@@ -209,7 +209,7 @@ struct StreamingNumberedCommandScanner {
     }
 
     private mutating func appendSegment(
-        for observation: StreamingNumberedCommandSegment
+        for observation: StreamingVoiceCommandSegment
     ) -> Int {
         let id = SegmentID(rawValue: nextSegmentID)
         nextSegmentID &+= 1
@@ -635,7 +635,7 @@ struct StreamingNumberedCommandScanner {
 
     private mutating func reconcile(
         with snapshots: [CandidateSnapshot]
-    ) -> [StreamingNumberedCommandMutation] {
+    ) -> [StreamingVoiceCommandMutation] {
         var assignedStateIndices = Set<Int>()
         var assignments: [(snapshot: CandidateSnapshot, stateIndex: Int)] = []
 
@@ -653,7 +653,7 @@ struct StreamingNumberedCommandScanner {
 
         var stagedMutations: [(
             order: Int,
-            mutation: StreamingNumberedCommandMutation
+            mutation: StreamingVoiceCommandMutation
         )] = []
 
         for index in candidates.indices where !assignedStateIndices.contains(index) {
@@ -698,7 +698,7 @@ struct StreamingNumberedCommandScanner {
             }
 
             candidates[index].isQueued = true
-            let candidate = StreamingNumberedCommandCandidate(
+            let candidate = StreamingVoiceCommandCandidate(
                 id: candidates[index].id,
                 command: snapshot.command,
                 range: candidates[index].range,
@@ -771,7 +771,7 @@ struct StreamingNumberedCommandScanner {
     private mutating func appendCandidate(
         for snapshot: CandidateSnapshot
     ) -> Int {
-        let id = StreamingNumberedCommandID(rawValue: nextCandidateID)
+        let id = StreamingVoiceCommandID(rawValue: nextCandidateID)
         nextCandidateID &+= 1
         candidates.append(
             CandidateState(

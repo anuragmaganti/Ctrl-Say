@@ -57,8 +57,9 @@ final class NotchFeedbackPanelController {
         panel.isReleasedWhenClosed = false
         panel.level = .statusBar
         panel.collectionBehavior = [
-            .canJoinAllSpaces,
-            .fullScreenAuxiliary,
+            // The current Stage Manager/full-screen behavior intended for
+            // floating overlays that accompany every application.
+            .canJoinAllApplications,
             .ignoresCycle,
             .stationary,
         ]

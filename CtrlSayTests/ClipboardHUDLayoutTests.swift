@@ -48,7 +48,7 @@ final class ClipboardHUDLayoutTests: XCTestCase {
         XCTAssertEqual(eleven, 750)
     }
 
-    func testTemporaryFooterReplacesBottomListPadding() {
+    func testPopulatedCollectionsUseSameListPadding() {
         let numbered = ClipboardHUDMetrics.idealHeight(
             itemCount: 3,
             collection: .numbered
@@ -61,7 +61,6 @@ final class ClipboardHUDLayoutTests: XCTestCase {
         XCTAssertEqual(
             numbered - permanent,
             ClipboardHUDMetrics.numberedFooterHeight
-                - ClipboardHUDMetrics.listVerticalPadding / 2
         )
     }
 

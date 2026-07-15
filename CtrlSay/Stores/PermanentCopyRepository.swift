@@ -78,8 +78,22 @@ actor PermanentCopyRepository: PermanentCopyPersisting {
         var restored: [PersistedPermanentCopy] = []
         restored.reserveCapacity(records.count)
         var refreshedBookmark = false
+        var declaredTotalByteCount = 0
 
         for record in records {
+            guard record.byteCount >= 0,
+                  record.byteCount <= Int64(ClipboardStore.maximumPayloadBytes),
+                  let declaredByteCount = Int(exactly: record.byteCount) else {
+                throw PermanentCopyRepositoryError.invalidRecord
+            }
+            let (updatedTotal, overflow) = declaredTotalByteCount
+                .addingReportingOverflow(declaredByteCount)
+            guard !overflow,
+                  updatedTotal <= ClipboardStore.maximumTotalStoredBytes else {
+                throw PermanentCopyRepositoryError.invalidRecord
+            }
+            declaredTotalByteCount = updatedTotal
+
             let decoded = try decode(record, refreshedBookmark: &refreshedBookmark)
             restored.append(decoded)
         }
@@ -168,11 +182,10 @@ actor PermanentCopyRepository: PermanentCopyPersisting {
     func reset() throws {
         if let context = try? modelContext() {
             do {
-                for record in try context.fetch(
-                    FetchDescriptor<PermanentCopyRecord>()
-                ) {
-                    context.delete(record)
-                }
+                // Delete the root model in one SwiftData operation. Its
+                // cascade relationships remove item and representation rows
+                // without first materializing the entire permanent store.
+                try context.delete(model: PermanentCopyRecord.self)
                 if context.hasChanges {
                     try context.save()
                 }
@@ -345,13 +358,17 @@ actor PermanentCopyRepository: PermanentCopyPersisting {
         refreshedBookmark: inout Bool
     ) throws -> PersistedPermanentCopy {
         guard let kind = ClipboardContentKind(rawValue: record.kindRawValue),
+              VoiceCommandParser.validNormalizedPermanentName(
+                record.normalizedName
+              ) == record.normalizedName,
               record.byteCount >= 0,
-              record.byteCount <= Int64(Int.max) else {
+              record.byteCount <= Int64(ClipboardStore.maximumPayloadBytes) else {
             throw PermanentCopyRepositoryError.invalidRecord
         }
 
         let sortedItems = record.items.sorted { $0.itemIndex < $1.itemIndex }
-        guard sortedItems.map(\.itemIndex) == Array(sortedItems.indices) else {
+        guard !sortedItems.isEmpty,
+              sortedItems.map(\.itemIndex) == Array(sortedItems.indices) else {
             throw PermanentCopyRepositoryError.invalidRecord
         }
         var items: [PasteboardItemPayload] = []
@@ -363,8 +380,9 @@ actor PermanentCopyRepository: PermanentCopyPersisting {
             let sortedRepresentations = item.representations.sorted {
                 $0.representationIndex < $1.representationIndex
             }
-            guard sortedRepresentations.map(\.representationIndex)
-                == Array(sortedRepresentations.indices) else {
+            guard !sortedRepresentations.isEmpty,
+                  sortedRepresentations.map(\.representationIndex)
+                    == Array(sortedRepresentations.indices) else {
                 throw PermanentCopyRepositoryError.invalidRecord
             }
             var representations: [PasteboardRepresentation] = []
@@ -372,7 +390,17 @@ actor PermanentCopyRepository: PermanentCopyPersisting {
 
             for representation in sortedRepresentations {
                 var data = representation.data
-                storedByteCount += representation.data.count
+                guard !representation.typeIdentifier.isEmpty,
+                      data.count <= ClipboardStore.maximumRepresentationBytes else {
+                    throw PermanentCopyRepositoryError.invalidRecord
+                }
+                let (updatedStoredByteCount, storedOverflow) = storedByteCount
+                    .addingReportingOverflow(data.count)
+                guard !storedOverflow,
+                      updatedStoredByteCount <= ClipboardStore.maximumPayloadBytes else {
+                    throw PermanentCopyRepositoryError.invalidRecord
+                }
+                storedByteCount = updatedStoredByteCount
                 if representation.typeIdentifier == Self.fileURLTypeIdentifier,
                    let bookmark = representation.fileBookmarkData,
                    let resolution = resolveBookmark(bookmark) {
@@ -405,7 +433,13 @@ actor PermanentCopyRepository: PermanentCopyPersisting {
                         data: data
                     )
                 )
-                restoredByteCount += data.count
+                let (updatedRestoredByteCount, restoredOverflow) = restoredByteCount
+                    .addingReportingOverflow(data.count)
+                guard !restoredOverflow,
+                      updatedRestoredByteCount <= ClipboardStore.maximumPayloadBytes else {
+                    throw PermanentCopyRepositoryError.invalidRecord
+                }
+                restoredByteCount = updatedRestoredByteCount
             }
             items.append(PasteboardItemPayload(representations: representations))
         }

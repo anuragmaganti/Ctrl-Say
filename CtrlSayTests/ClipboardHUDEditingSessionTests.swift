@@ -1,9 +1,10 @@
 import XCTest
 
 @MainActor
-final class DashboardEditingSessionTests: XCTestCase {
+/// Regression coverage for the HUD's single active inline-editing session.
+final class ClipboardHUDEditingSessionTests: XCTestCase {
     func testDismissalCommitsValidDraftAndEndsEditing() {
-        let session = DashboardEditingSession()
+        let session = ClipboardHUDEditingSession()
         var beginCount = 0
         var endCount = 0
         var commitCount = 0
@@ -28,7 +29,7 @@ final class DashboardEditingSessionTests: XCTestCase {
     }
 
     func testDismissalCancelsInvalidDraftBeforeEndingEditing() {
-        let session = DashboardEditingSession()
+        let session = ClipboardHUDEditingSession()
         var endCount = 0
         var cancelCount = 0
         session.onEndEditing = { endCount += 1 }
@@ -45,7 +46,7 @@ final class DashboardEditingSessionTests: XCTestCase {
     }
 
     func testBeginningAnotherEditorCommitsThePreviousEditor() {
-        let session = DashboardEditingSession()
+        let session = ClipboardHUDEditingSession()
         var firstCommitCount = 0
         var firstCancelCount = 0
         var beginCount = 0
@@ -70,7 +71,7 @@ final class DashboardEditingSessionTests: XCTestCase {
     }
 
     func testFailedExistingCommitPreventsSecondEditorAndPreservesFirst() throws {
-        let session = DashboardEditingSession()
+        let session = ClipboardHUDEditingSession()
         var firstCommitCount = 0
         var firstCancelCount = 0
         var secondCommitCount = 0
@@ -112,7 +113,7 @@ final class DashboardEditingSessionTests: XCTestCase {
     }
 
     func testStaleEditorTokenCannotFinishNewEditor() throws {
-        let session = DashboardEditingSession()
+        let session = ClipboardHUDEditingSession()
         var endCount = 0
         session.onEndEditing = { endCount += 1 }
 
@@ -134,7 +135,7 @@ final class DashboardEditingSessionTests: XCTestCase {
     }
 
     func testOutsideInteractionCommitsCapturedEditor() throws {
-        let session = DashboardEditingSession()
+        let session = ClipboardHUDEditingSession()
         var commitCount = 0
         let token = try XCTUnwrap(
             session.begin(
@@ -153,7 +154,7 @@ final class DashboardEditingSessionTests: XCTestCase {
     }
 
     func testStaleOutsideInteractionDoesNotCloseReplacementEditor() throws {
-        let session = DashboardEditingSession()
+        let session = ClipboardHUDEditingSession()
         let firstToken = try XCTUnwrap(
             session.begin(commit: { true }, cancel: {})
         )

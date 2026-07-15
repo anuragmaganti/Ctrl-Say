@@ -34,7 +34,7 @@ final class NotchPanelLayoutTests: XCTestCase {
         )
     }
 
-    func testCornerRadiusMatchesOfficialMacBookBezelProportions() {
+    func testCornerRadiusIsProportionalAndCapped() {
         XCTAssertEqual(
             NotchPanelLayoutCalculator.attachedBottomCornerRadius(
                 notchHeight: 38
@@ -48,6 +48,26 @@ final class NotchPanelLayoutTests: XCTestCase {
             9.6,
             accuracy: 0.000_1
         )
+    }
+
+    func testSurfaceAndBorderShareOneAttachedGeometrySource() {
+        let rect = CGRect(x: 0, y: 0, width: 232, height: 44)
+        let surface = AttachedNotchGeometry.surfacePath(
+            in: rect,
+            horizontalCanvasOutset: 6,
+            surfaceHeight: 38,
+            bottomCornerRadius: 12
+        ).boundingBoxOfPath
+        let border = AttachedNotchGeometry.borderPath(
+            in: rect,
+            horizontalCanvasOutset: 6,
+            visibleBorderOutset: 1,
+            surfaceHeight: 38,
+            bottomCornerRadius: 12
+        ).boundingBoxOfPath
+
+        XCTAssertEqual(surface, CGRect(x: 6, y: 0, width: 220, height: 38))
+        XCTAssertEqual(border, CGRect(x: 5, y: 0, width: 222, height: 39))
     }
 
     func testAttachedListeningCanvasSurroundsSystemReportedNotch() {

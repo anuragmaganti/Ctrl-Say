@@ -1,12 +1,12 @@
 import Foundation
 
-/// Coordinates one inline dashboard editor with the nonactivating panel.
+/// Coordinates one inline editor with the nonactivating clipboard HUD.
 ///
-/// SwiftUI owns the draft and validation state. AppKit only receives lifecycle
-/// callbacks so the panel can temporarily accept keyboard focus and commit a
-/// valid draft before it is dismissed.
+/// SwiftUI owns draft and validation state. AppKit receives only lifecycle
+/// callbacks so the HUD can temporarily accept keyboard focus and commit a
+/// valid draft before dismissal.
 @MainActor
-final class DashboardEditingSession {
+final class ClipboardHUDEditingSession {
     struct Token: Equatable {
         fileprivate let id = UUID()
     }

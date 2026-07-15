@@ -46,7 +46,9 @@ enum ClipboardHUDMetrics {
         let footerHeight = collection == .numbered && itemCount > 0
             ? numberedFooterHeight
             : 0
-        let appliedListPadding = collection == .numbered && itemCount > 0
+        let showsStoredCopies = itemCount > 0
+            && permanentStatusLayout != .replacesContent
+        let appliedListPadding = showsStoredCopies
             ? listVerticalPadding / 2
             : listVerticalPadding
         return headerHeight

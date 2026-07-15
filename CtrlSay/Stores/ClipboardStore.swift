@@ -4,9 +4,9 @@ import Observation
 @MainActor
 @Observable
 final class ClipboardStore {
-    static let maximumRepresentationBytes = 64 * 1_024 * 1_024
-    static let maximumPayloadBytes = 128 * 1_024 * 1_024
-    static let maximumTotalStoredBytes = 256 * 1_024 * 1_024
+    nonisolated static let maximumRepresentationBytes = 64 * 1_024 * 1_024
+    nonisolated static let maximumPayloadBytes = 128 * 1_024 * 1_024
+    nonisolated static let maximumTotalStoredBytes = 256 * 1_024 * 1_024
 
     private(set) var numbered: [Int: ClipboardPayload] = [:]
     private(set) var temporaryNamed: [String: ClipboardPayload] = [:]

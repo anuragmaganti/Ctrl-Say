@@ -149,64 +149,13 @@ private struct AttachedNotchSurfaceShape: Shape {
     let bottomCornerRadius: CGFloat
 
     func path(in rect: CGRect) -> Path {
-        let surfaceRect = CGRect(
-            x: rect.minX + horizontalCanvasOutset,
-            y: rect.minY,
-            width: max(0, rect.width - horizontalCanvasOutset * 2),
-            height: min(surfaceHeight, rect.height)
-        )
-        let radius = min(
-            bottomCornerRadius,
-            max(0, surfaceRect.width / 2),
-            max(0, surfaceRect.height)
-        )
-        var path = Path()
-        path.move(to: CGPoint(x: surfaceRect.minX, y: surfaceRect.minY))
-        path.addLine(
-            to: CGPoint(
-                x: surfaceRect.minX,
-                y: surfaceRect.maxY - radius
+        Path(
+            AttachedNotchGeometry.surfacePath(
+                in: rect,
+                horizontalCanvasOutset: horizontalCanvasOutset,
+                surfaceHeight: surfaceHeight,
+                bottomCornerRadius: bottomCornerRadius
             )
         )
-        let curveControl = radius * 0.552_284_75
-        path.addCurve(
-            to: CGPoint(
-                x: surfaceRect.minX + radius,
-                y: surfaceRect.maxY
-            ),
-            control1: CGPoint(
-                x: surfaceRect.minX,
-                y: surfaceRect.maxY - radius + curveControl
-            ),
-            control2: CGPoint(
-                x: surfaceRect.minX + radius - curveControl,
-                y: surfaceRect.maxY
-            )
-        )
-        path.addLine(
-            to: CGPoint(
-                x: surfaceRect.maxX - radius,
-                y: surfaceRect.maxY
-            )
-        )
-        path.addCurve(
-            to: CGPoint(
-                x: surfaceRect.maxX,
-                y: surfaceRect.maxY - radius
-            ),
-            control1: CGPoint(
-                x: surfaceRect.maxX - radius + curveControl,
-                y: surfaceRect.maxY
-            ),
-            control2: CGPoint(
-                x: surfaceRect.maxX,
-                y: surfaceRect.maxY - radius + curveControl
-            )
-        )
-        path.addLine(
-            to: CGPoint(x: surfaceRect.maxX, y: surfaceRect.minY)
-        )
-        path.closeSubpath()
-        return path
     }
 }

@@ -3,7 +3,7 @@ import SwiftUI
 struct ClipboardHUDView: View {
     let model: AppModel
     let presentationState: ClipboardHUDPresentationState
-    let editingSession: DashboardEditingSession
+    let editingSession: ClipboardHUDEditingSession
     let thumbnailProvider: ClipboardThumbnailProvider
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -139,7 +139,6 @@ struct ClipboardHUDView: View {
                         delete: {
                             model.deleteNumberedCopy(slot.number)
                         },
-                        style: .hud,
                         thumbnailProvider: thumbnailProvider
                     )
                     .id(slot.payload.id)
@@ -167,7 +166,6 @@ struct ClipboardHUDView: View {
                         delete: {
                             model.deleteTemporaryNamedCopy(slot.name)
                         },
-                        style: .hud,
                         thumbnailProvider: thumbnailProvider
                     )
                     .id(slot.payload.id)
@@ -196,12 +194,15 @@ struct ClipboardHUDView: View {
             for: .scrollContent
         )
         .scrollIndicators(.automatic)
-        .scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
+        .scrollEdgeEffectStyle(.hard, for: [.top, .bottom])
     }
 
     @ViewBuilder
     private var permanentCopies: some View {
         let slots = model.slots.namedSlots
+        let showsPermanentCopies = !model.permanentStorageState.isLoading
+            && !model.permanentStorageState.isUnavailable
+            && !slots.isEmpty
         List {
             if model.permanentStorageState.userMessage != nil {
                 PermanentStorageStatusRow(
@@ -249,7 +250,6 @@ struct ClipboardHUDView: View {
                                     text: text
                                 )
                             },
-                            style: .hud,
                             thumbnailProvider: thumbnailProvider
                         )
                         .onAppear {
@@ -273,11 +273,13 @@ struct ClipboardHUDView: View {
         )
         .contentMargins(
             .bottom,
-            ClipboardHUDMetrics.listVerticalPadding / 2,
+            showsPermanentCopies
+                ? 0
+                : ClipboardHUDMetrics.listVerticalPadding / 2,
             for: .scrollContent
         )
         .scrollIndicators(.automatic)
-        .scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
+        .scrollEdgeEffectStyle(.hard, for: [.top, .bottom])
     }
 
     private func emptyState(
@@ -308,21 +310,17 @@ struct ClipboardHUDView: View {
     }
 
     private var numberedFooter: some View {
-        HStack(spacing: 0) {
-            Spacer(minLength: 0)
-
-            Button {
-                model.clearTemporaryCopies()
-            } label: {
-                Label("Clear All", systemImage: "trash")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .offset(x: -8, y: -4)
-            .accessibilityLabel("Clear all temporary copies")
+        Button {
+            model.clearTemporaryCopies()
+        } label: {
+            Label("Clear All", systemImage: "trash")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
         }
-        .padding(.trailing, 8)
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+        .padding(.trailing, 24)
+        .accessibilityLabel("Clear all temporary copies")
     }
 
     private var selectedCollectionBinding: Binding<ClipboardCollection> {
