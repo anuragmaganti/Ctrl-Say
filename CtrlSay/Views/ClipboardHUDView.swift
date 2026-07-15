@@ -273,8 +273,8 @@ struct ClipboardHUDView: View {
             .buttonStyle(.borderless)
             .controlSize(.mini)
             .accessibilityLabel("Clear all temporary copies")
-            .padding(.trailing, 4)
-            .padding(.bottom, 3)
+            .padding(.trailing, 8)
+            .padding(.bottom, 5)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

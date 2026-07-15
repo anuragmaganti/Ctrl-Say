@@ -80,7 +80,7 @@ final class ClipboardHUDLayoutTests: XCTestCase {
     func testTemporaryFooterStaysAtMiniControlHeight() {
         XCTAssertLessThanOrEqual(
             ClipboardHUDMetrics.numberedFooterHeight,
-            18
+            15
         )
     }
 
