@@ -19,6 +19,7 @@ final class DashboardEditingSession {
     private var activeToken: Token?
 
     var isEditing: Bool { commitAction != nil }
+    var activeSessionToken: Token? { activeToken }
 
     @discardableResult
     func begin(
@@ -61,5 +62,12 @@ final class DashboardEditingSession {
         if isEditing {
             finishActiveSession()
         }
+    }
+
+    /// Ends the editor that was active when an outside interaction began.
+    /// A stale interaction must not close an editor opened by that same click.
+    func prepareForOutsideInteraction(_ token: Token) {
+        guard token == activeToken else { return }
+        prepareForDismissal()
     }
 }

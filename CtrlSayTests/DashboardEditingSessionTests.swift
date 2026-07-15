@@ -132,4 +132,46 @@ final class DashboardEditingSessionTests: XCTestCase {
         XCTAssertFalse(session.isEditing)
         XCTAssertEqual(endCount, 2)
     }
+
+    func testOutsideInteractionCommitsCapturedEditor() throws {
+        let session = DashboardEditingSession()
+        var commitCount = 0
+        let token = try XCTUnwrap(
+            session.begin(
+                commit: {
+                    commitCount += 1
+                    return true
+                },
+                cancel: {}
+            )
+        )
+
+        session.prepareForOutsideInteraction(token)
+
+        XCTAssertEqual(commitCount, 1)
+        XCTAssertFalse(session.isEditing)
+    }
+
+    func testStaleOutsideInteractionDoesNotCloseReplacementEditor() throws {
+        let session = DashboardEditingSession()
+        let firstToken = try XCTUnwrap(
+            session.begin(commit: { true }, cancel: {})
+        )
+        var replacementCommitCount = 0
+        let replacementToken = try XCTUnwrap(
+            session.begin(
+                commit: {
+                    replacementCommitCount += 1
+                    return true
+                },
+                cancel: {}
+            )
+        )
+
+        session.prepareForOutsideInteraction(firstToken)
+
+        XCTAssertTrue(session.isEditing)
+        XCTAssertEqual(session.activeSessionToken, replacementToken)
+        XCTAssertEqual(replacementCommitCount, 0)
+    }
 }

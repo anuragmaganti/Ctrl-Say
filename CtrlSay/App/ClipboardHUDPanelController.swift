@@ -15,6 +15,7 @@ final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
     private var isLayoutUpdateScheduled = false
     private var wantsToBeShown = false
     private var visibilityAnimationGeneration: UInt64 = 0
+    private var editingMouseUpMonitor: Any?
 
     var isShown: Bool { wantsToBeShown }
 
@@ -91,14 +92,18 @@ final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
         super.init()
         panel.delegate = self
 
-        editingSession.onBeginEditing = { [weak panel] in
-            panel?.makeKey()
+        editingSession.onBeginEditing = { [weak self] in
+            guard let self else { return }
+            self.panel.makeKey()
+            self.installEditingMouseUpMonitor()
         }
-        editingSession.onEndEditing = { [weak panel] in
-            panel?.makeFirstResponder(nil)
-            panel?.resignKey()
-            if panel?.isVisible == true {
-                panel?.orderFrontRegardless()
+        editingSession.onEndEditing = { [weak self] in
+            guard let self else { return }
+            self.removeEditingMouseUpMonitor()
+            self.panel.makeFirstResponder(nil)
+            self.panel.resignKey()
+            if self.panel.isVisible {
+                self.panel.orderFrontRegardless()
             }
         }
 
@@ -214,6 +219,62 @@ final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
             visibleFrame: screen.visibleFrame
         )
         positionStore.save(position, for: displayIdentifier(for: screen))
+    }
+
+    func windowDidResignKey(_ notification: Notification) {
+        guard notification.object as? NSWindow === panel,
+              let token = editingSession.activeSessionToken else {
+            return
+        }
+        scheduleOutsideInteractionDismissal(for: token)
+    }
+
+    private func installEditingMouseUpMonitor() {
+        guard editingMouseUpMonitor == nil else { return }
+        editingMouseUpMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseUp, .rightMouseUp, .otherMouseUp]
+        ) { [weak self] event in
+            MainActor.assumeIsolated {
+                self?.handleEditingMouseUp(event)
+            }
+            return event
+        }
+    }
+
+    private func removeEditingMouseUpMonitor() {
+        guard let editingMouseUpMonitor else { return }
+        NSEvent.removeMonitor(editingMouseUpMonitor)
+        self.editingMouseUpMonitor = nil
+    }
+
+    private func handleEditingMouseUp(_ event: NSEvent) {
+        guard let token = editingSession.activeSessionToken,
+              !eventIsInsideActiveEditor(event) else {
+            return
+        }
+        scheduleOutsideInteractionDismissal(for: token)
+    }
+
+    private func eventIsInsideActiveEditor(_ event: NSEvent) -> Bool {
+        guard event.window === panel,
+              let editor = panel.firstResponder as? NSView,
+              editor.window === panel else {
+            return false
+        }
+        let location = editor.convert(event.locationInWindow, from: nil)
+        return editor.visibleRect.contains(location)
+    }
+
+    private func scheduleOutsideInteractionDismissal(
+        for token: DashboardEditingSession.Token
+    ) {
+        Task { @MainActor [weak self] in
+            // Let the destination control handle mouse-up first. Save/Cancel
+            // can end the session themselves, and starting another rename can
+            // replace the captured token before this runs.
+            await Task.yield()
+            self?.editingSession.prepareForOutsideInteraction(token)
+        }
     }
 
     private func observeLayoutInputs() {
