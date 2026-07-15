@@ -288,6 +288,7 @@ struct ClipboardHUDView: View {
             } label: {
                 Label("Clear All", systemImage: "trash")
                     .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
             .offset(x: -8, y: -4)

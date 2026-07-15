@@ -16,6 +16,7 @@ extension View {
                     )
             }
             .buttonStyle(.plain)
+            .tint(.red)
             .frame(
                 minWidth: 56,
                 maxWidth: .infinity,
