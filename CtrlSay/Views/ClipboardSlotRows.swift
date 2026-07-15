@@ -3,27 +3,23 @@ import SwiftUI
 
 struct ClipboardSlotRowStyle {
     let previewLineLimit: Int
-    let expandedPreviewLineLimit: Int
     let minimumHeight: CGFloat
     let showsThumbnail: Bool
 
     static let hud = ClipboardSlotRowStyle(
         previewLineLimit: 2,
-        expandedPreviewLineLimit: 8,
         minimumHeight: ClipboardHUDMetrics.rowHeight,
         showsThumbnail: true
     )
 }
 
-private struct ExpandableClipboardPreview: View {
+private struct ClipboardPreview: View {
     let payload: ClipboardPayload
     let style: ClipboardSlotRowStyle
     let doubleClickAction: (() -> Void)?
     let additionalHelp: String?
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var isExpanded = false
-    @State private var expandedText: String?
+    @State private var isPreviewTruncated = false
 
     init(
         payload: ClipboardPayload,
@@ -40,26 +36,10 @@ private struct ExpandableClipboardPreview: View {
     @ViewBuilder
     var body: some View {
         if isTextPreview, let doubleClickAction {
-            interactivePreviewLabel
-                .gesture(
-                    TapGesture(count: 2)
-                        .exclusively(before: TapGesture(count: 1))
-                        .onEnded { result in
-                            switch result {
-                            case .first:
-                                doubleClickAction()
-                            case .second:
-                                toggleExpansion()
-                            }
-                        }
-                )
-        } else if isTextPreview {
-            interactivePreviewLabel
-                .onTapGesture {
-                    toggleExpansion()
-                }
+            contextualPreviewLabel
+                .onTapGesture(count: 2, perform: doubleClickAction)
         } else {
-            previewLabel
+            contextualPreviewLabel
         }
     }
 
@@ -67,31 +47,29 @@ private struct ExpandableClipboardPreview: View {
         Text(displayedText)
             .font(.callout)
             .foregroundStyle(.secondary)
-            .lineLimit(
-                isExpanded
-                    ? style.expandedPreviewLineLimit
-                    : style.previewLineLimit
-            )
+            .lineLimit(style.previewLineLimit)
             .truncationMode(.tail)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityLabel("Contents, \(payload.preview)")
-            .onChange(of: payload) {
-                isExpanded = false
-                expandedText = nil
+            .onPreferenceChange(Text.LayoutKey.self) { layouts in
+                let isTruncated = layouts.contains {
+                    $0.layout.isTruncated
+                }
+                guard isPreviewTruncated != isTruncated else { return }
+                isPreviewTruncated = isTruncated
             }
     }
 
-    private var interactivePreviewLabel: some View {
-        previewLabel
-            .contentShape(.rect)
-            .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
-            .accessibilityHint(helpText)
-            .accessibilityAddTraits(.isButton)
-            .accessibilityAction {
-                toggleExpansion()
-            }
-            .help(helpText)
+    @ViewBuilder
+    private var contextualPreviewLabel: some View {
+        if let previewHelp {
+            previewLabel
+                .contentShape(.rect)
+                .help(Text(verbatim: previewHelp))
+        } else {
+            previewLabel
+        }
     }
 
     private var isTextPreview: Bool {
@@ -103,26 +81,17 @@ private struct ExpandableClipboardPreview: View {
             // Let SwiftUI truncate according to the actual glyph widths and
             // available row space. The short stored preview is intentionally
             // metadata-sized and can end before a visual line is full.
-            return expandedText ?? payload.expandedPreviewText
+            return payload.expandedPreviewText
         }
         return payload.preview
     }
 
-    private var helpText: String {
-        let expansionHelp = isExpanded
-            ? "Click to collapse preview"
-            : "Click to expand preview"
-        guard let additionalHelp else { return expansionHelp }
-        return "\(expansionHelp). \(additionalHelp)"
-    }
-
-    private func toggleExpansion() {
-        if !isExpanded, expandedText == nil {
-            expandedText = payload.expandedPreviewText
-        }
-        withAnimation(reduceMotion ? nil : .snappy(duration: 0.2)) {
-            isExpanded.toggle()
-        }
+    private var previewHelp: String? {
+        guard isPreviewTruncated else { return additionalHelp }
+        let preview = payload.tooltipPreviewText
+        guard !preview.isEmpty else { return additionalHelp }
+        guard let additionalHelp else { return preview }
+        return "\(preview)\n\(additionalHelp)"
     }
 }
 
@@ -180,7 +149,7 @@ struct NumberedCopyRow: View {
                     pasteButton
                 }
 
-                ExpandableClipboardPreview(
+                ClipboardPreview(
                     payload: payload,
                     style: style
                 )
@@ -188,7 +157,7 @@ struct NumberedCopyRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.leading, 8)
-        .padding(.trailing, 4)
+        .padding(.trailing, 8)
         .frame(minHeight: style.minimumHeight)
         .contentShape(.rect(cornerRadius: 11))
         .background(
@@ -286,7 +255,7 @@ struct TemporaryNamedCopyRow: View {
                     pasteButton
                 }
 
-                ExpandableClipboardPreview(
+                ClipboardPreview(
                     payload: payload,
                     style: style
                 )
@@ -294,7 +263,7 @@ struct TemporaryNamedCopyRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.leading, 8)
-        .padding(.trailing, 4)
+        .padding(.trailing, 8)
         .frame(minHeight: style.minimumHeight)
         .contentShape(.rect(cornerRadius: 11))
         .background(
@@ -571,7 +540,7 @@ struct PermanentCopyRow: View {
                     .accessibilityLabel("Permanent copy contents")
                     .accessibilityHint("Press Command-Return to save or Escape to cancel")
             } else {
-                ExpandableClipboardPreview(
+                ClipboardPreview(
                     payload: payload,
                     style: style,
                     doubleClickAction: canEditContents

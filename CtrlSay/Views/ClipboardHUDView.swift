@@ -123,7 +123,9 @@ struct ClipboardHUDView: View {
                 emptyState(
                     icon: "square.stack",
                     title: "No temporary copies",
-                    detail: "Say “copy 1,” “copy house,” or a short named phrase."
+                    detail: "Say “copy 1,” “copy house,” or a short named phrase.",
+                    leadingPadding: 8,
+                    trailingPadding: 8
                 )
                 .temporarySlotListRow(showsBottomSeparator: false)
             } else {
@@ -258,7 +260,9 @@ struct ClipboardHUDView: View {
     private func emptyState(
         icon: String,
         title: String,
-        detail: String
+        detail: String,
+        leadingPadding: CGFloat = 10,
+        trailingPadding: CGFloat = 10
     ) -> some View {
         HStack(spacing: 10) {
             Image(systemName: icon)
@@ -275,7 +279,8 @@ struct ClipboardHUDView: View {
             }
         }
         .frame(maxWidth: .infinity, minHeight: ClipboardHUDMetrics.emptyListHeight)
-        .padding(.horizontal, 10)
+        .padding(.leading, leadingPadding)
+        .padding(.trailing, trailingPadding)
         .accessibilityElement(children: .combine)
     }
 

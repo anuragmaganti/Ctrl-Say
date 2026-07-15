@@ -9,6 +9,7 @@ final class ClipboardPayloadPreviewTests: XCTestCase {
 
         XCTAssertFalse(payload.hasAdditionalPreviewText)
         XCTAssertEqual(payload.expandedPreviewText, "Short preview")
+        XCTAssertEqual(payload.tooltipPreviewText, "Short preview")
     }
 
     func testExpandedPreviewPreservesFormattingAndAppliesBound() {
@@ -38,6 +39,35 @@ final class ClipboardPayloadPreviewTests: XCTestCase {
         )
         XCTAssertFalse(payload.expandedPreviewText.contains("�"))
         XCTAssertTrue(payload.expandedPreviewText.hasSuffix("…"))
+    }
+
+    func testTooltipPreviewCollapsesWhitespaceAndStaysBounded() {
+        let phrase = "A readable copied sentence.\n\t"
+        let payload = makePayload(String(repeating: phrase, count: 100))
+
+        XCTAssertFalse(payload.tooltipPreviewText.contains("\n"))
+        XCTAssertFalse(payload.tooltipPreviewText.contains("\t"))
+        XCTAssertEqual(
+            payload.tooltipPreviewText.count,
+            ClipboardPayload.maximumTooltipPreviewCharacters
+        )
+        XCTAssertTrue(payload.tooltipPreviewText.hasSuffix("…"))
+    }
+
+    func testTooltipPreviewDoesNotSplitUnicodeCharacters() {
+        let payload = makePayload(
+            String(
+                repeating: "🫠",
+                count: ClipboardPayload.maximumTooltipPreviewCharacters + 1
+            )
+        )
+
+        XCTAssertEqual(
+            payload.tooltipPreviewText.count,
+            ClipboardPayload.maximumTooltipPreviewCharacters
+        )
+        XCTAssertFalse(payload.tooltipPreviewText.contains("�"))
+        XCTAssertTrue(payload.tooltipPreviewText.hasSuffix("…"))
     }
 
     private func makePayload(_ text: String) -> ClipboardPayload {

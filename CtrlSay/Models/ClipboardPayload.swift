@@ -31,6 +31,7 @@ struct ClipboardPayload: Identifiable, Hashable, Sendable {
     nonisolated private static let utf8PlainTextTypeIdentifier = "public.utf8-plain-text"
     nonisolated static let maximumInlineEditableTextBytes = 256 * 1_024
     nonisolated static let maximumExpandedPreviewCharacters = 2_000
+    nonisolated static let maximumTooltipPreviewCharacters = 280
 
     enum InlineTextEditability: Equatable, Sendable {
         case editable
@@ -116,6 +117,19 @@ struct ClipboardPayload: Identifiable, Hashable, Sendable {
             || decoded.count > Self.maximumExpandedPreviewCharacters
         guard isTruncated, !bounded.hasSuffix("…") else { return bounded }
         return bounded + "…"
+    }
+
+    nonisolated var tooltipPreviewText: String {
+        let normalized = expandedPreviewText
+            .split(whereSeparator: { $0.isWhitespace })
+            .joined(separator: " ")
+        guard normalized.count > Self.maximumTooltipPreviewCharacters else {
+            return normalized
+        }
+
+        return String(
+            normalized.prefix(Self.maximumTooltipPreviewCharacters - 1)
+        ) + "…"
     }
 
     func replacingEditableText(with text: String) -> ClipboardPayload? {
