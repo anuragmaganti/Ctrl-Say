@@ -27,7 +27,6 @@
 		FB10000000000000000000001 /* CtrlSay/Support/NotchPanelLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB10000000000000000000002 /* CtrlSay/Support/NotchPanelLayout.swift */; };
 		FC10000000000000000000001 /* CtrlSay/Models/SpeechTokenAssembler.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC10000000000000000000002 /* CtrlSay/Models/SpeechTokenAssembler.swift */; };
 		FD10000000000000000000001 /* CtrlSay/Services/LaunchAtLoginController.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD10000000000000000000002 /* CtrlSay/Services/LaunchAtLoginController.swift */; };
-		FE10000000000000000000001 /* CtrlSay/Views/NativeTooltipRegion.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE10000000000000000000002 /* CtrlSay/Views/NativeTooltipRegion.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -53,7 +52,6 @@
 		FB10000000000000000000002 /* CtrlSay/Support/NotchPanelLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CtrlSay/Support/NotchPanelLayout.swift; sourceTree = SOURCE_ROOT; };
 		FC10000000000000000000002 /* CtrlSay/Models/SpeechTokenAssembler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CtrlSay/Models/SpeechTokenAssembler.swift; sourceTree = SOURCE_ROOT; };
 		FD10000000000000000000002 /* CtrlSay/Services/LaunchAtLoginController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CtrlSay/Services/LaunchAtLoginController.swift; sourceTree = SOURCE_ROOT; };
-		FE10000000000000000000002 /* CtrlSay/Views/NativeTooltipRegion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CtrlSay/Views/NativeTooltipRegion.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -129,7 +127,6 @@
 				FB10000000000000000000002 /* CtrlSay/Support/NotchPanelLayout.swift */,
 				FC10000000000000000000002 /* CtrlSay/Models/SpeechTokenAssembler.swift */,
 				FD10000000000000000000002 /* CtrlSay/Services/LaunchAtLoginController.swift */,
-				FE10000000000000000000002 /* CtrlSay/Views/NativeTooltipRegion.swift */,
 			);
 			name = "Test Support Sources";
 			sourceTree = "<group>";
@@ -268,7 +265,6 @@
 				FB10000000000000000000001 /* CtrlSay/Support/NotchPanelLayout.swift in Sources */,
 				FC10000000000000000000001 /* CtrlSay/Models/SpeechTokenAssembler.swift in Sources */,
 				FD10000000000000000000001 /* CtrlSay/Services/LaunchAtLoginController.swift in Sources */,
-				FE10000000000000000000001 /* CtrlSay/Views/NativeTooltipRegion.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

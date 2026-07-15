@@ -66,6 +66,10 @@ final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
         panel.isFloatingPanel = true
         panel.becomesKeyOnlyIfNeeded = true
         panel.hidesOnDeactivate = false
+        // The HUD intentionally leaves the source app active. AppKit disables
+        // help tags for inactive apps by default, including tags supplied by
+        // SwiftUI's `.help`, so opt this panel in before its first display.
+        panel.allowsToolTipsWhenApplicationIsInactive = true
         panel.isReleasedWhenClosed = false
         panel.level = .floating
         panel.collectionBehavior = [
