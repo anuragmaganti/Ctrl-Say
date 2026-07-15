@@ -103,13 +103,7 @@ struct ClipboardHUDView: View {
         case .numbered:
             numberedCopies
         case .permanent:
-            ScrollView {
-                permanentCopies
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, ClipboardHUDMetrics.listVerticalPadding / 2)
-            }
-            .scrollIndicators(.automatic)
-            .scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
+            permanentCopies
         }
     }
 
@@ -127,12 +121,15 @@ struct ClipboardHUDView: View {
                     leadingPadding: 8,
                     trailingPadding: 8
                 )
-                .temporarySlotListRow(showsBottomSeparator: false)
+                .clipboardSlotListRow(showsBottomSeparator: false)
             } else {
                 ForEach(numberedSlots, id: \.number) { slot in
                     NumberedCopyRow(
                         number: slot.number,
                         payload: slot.payload,
+                        copyToClipboard: {
+                            model.copyToSystemClipboard(slot.payload)
+                        },
                         paste: {
                             model.pasteNumberedCopy(
                                 slot.payload,
@@ -149,7 +146,7 @@ struct ClipboardHUDView: View {
                     .onAppear {
                         model.recordHUDRowAppearance(for: slot.payload.id)
                     }
-                    .temporarySlotListRow(
+                    .clipboardSlotListRow(
                         showsBottomSeparator: slot.payload.id != finalPayloadID
                     )
                 }
@@ -158,6 +155,9 @@ struct ClipboardHUDView: View {
                     TemporaryNamedCopyRow(
                         name: slot.name,
                         payload: slot.payload,
+                        copyToClipboard: {
+                            model.copyToSystemClipboard(slot.payload)
+                        },
                         paste: {
                             model.pasteTemporaryNamedCopy(
                                 slot.payload,
@@ -174,7 +174,7 @@ struct ClipboardHUDView: View {
                     .onAppear {
                         model.recordHUDRowAppearance(for: slot.payload.id)
                     }
-                    .temporarySlotListRow(
+                    .clipboardSlotListRow(
                         showsBottomSeparator: slot.payload.id != finalPayloadID
                     )
                 }
@@ -202,11 +202,14 @@ struct ClipboardHUDView: View {
     @ViewBuilder
     private var permanentCopies: some View {
         let slots = model.slots.namedSlots
-        VStack(spacing: 8) {
-            PermanentStorageStatusRow(
-                state: model.permanentStorageState,
-                retry: model.retryPermanentStorage
-            )
+        List {
+            if model.permanentStorageState.userMessage != nil {
+                PermanentStorageStatusRow(
+                    state: model.permanentStorageState,
+                    retry: model.retryPermanentStorage
+                )
+                .clipboardSlotListRow()
+            }
 
             if !model.permanentStorageState.isLoading,
                !model.permanentStorageState.isUnavailable {
@@ -214,47 +217,67 @@ struct ClipboardHUDView: View {
                     emptyState(
                         icon: "pin",
                         title: "No permanent copies",
-                        detail: "Say “permanent copy house” with something selected."
+                        detail: "Say “permanent copy house” with something selected.",
+                        leadingPadding: 8,
+                        trailingPadding: 8
                     )
+                    .clipboardSlotListRow()
                 } else {
-                    LazyVStack(spacing: 0) {
-                        ForEach(slots, id: \.payload.id) { slot in
-                            PermanentCopyRow(
-                                name: slot.name,
-                                payload: slot.payload,
-                                editingSession: editingSession,
-                                paste: {
-                                    model.pastePermanentCopy(slot.payload.id)
-                                },
-                                delete: {
-                                    model.deletePermanentCopy(slot.payload.id)
-                                },
-                                rename: { payloadID, requestedName in
-                                    try model.renamePermanentCopy(
-                                        payloadID,
-                                        to: requestedName
-                                    )
-                                },
-                                updateText: { payloadID, text in
-                                    try model.updatePermanentCopyText(
-                                        payloadID,
-                                        text: text
-                                    )
-                                },
-                                style: .hud,
-                                thumbnailProvider: thumbnailProvider
-                            )
-                            .onAppear {
-                                model.recordHUDRowAppearance(for: slot.payload.id)
-                            }
-                            .clipboardRowSeparator(
-                                isVisible: slot.payload.id != slots.last?.payload.id
-                            )
+                    ForEach(slots, id: \.payload.id) { slot in
+                        PermanentCopyRow(
+                            name: slot.name,
+                            payload: slot.payload,
+                            editingSession: editingSession,
+                            copyToClipboard: {
+                                model.copyToSystemClipboard(slot.payload)
+                            },
+                            paste: {
+                                model.pastePermanentCopy(slot.payload.id)
+                            },
+                            delete: {
+                                model.deletePermanentCopy(slot.payload.id)
+                            },
+                            rename: { payloadID, requestedName in
+                                try model.renamePermanentCopy(
+                                    payloadID,
+                                    to: requestedName
+                                )
+                            },
+                            updateText: { payloadID, text in
+                                try model.updatePermanentCopyText(
+                                    payloadID,
+                                    text: text
+                                )
+                            },
+                            style: .hud,
+                            thumbnailProvider: thumbnailProvider
+                        )
+                        .onAppear {
+                            model.recordHUDRowAppearance(for: slot.payload.id)
                         }
+                        .clipboardSlotListRow(
+                            showsBottomSeparator: slot.payload.id
+                                != slots.last?.payload.id
+                        )
                     }
                 }
             }
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .contentMargins(.horizontal, 8, for: .scrollContent)
+        .contentMargins(
+            .top,
+            ClipboardHUDMetrics.listVerticalPadding / 2,
+            for: .scrollContent
+        )
+        .contentMargins(
+            .bottom,
+            ClipboardHUDMetrics.listVerticalPadding / 2,
+            for: .scrollContent
+        )
+        .scrollIndicators(.automatic)
+        .scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
     }
 
     private func emptyState(

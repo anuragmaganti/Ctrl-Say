@@ -30,7 +30,7 @@ extension View {
         }
     }
 
-    func temporarySlotListRow(
+    func clipboardSlotListRow(
         verticalInset: CGFloat = 0,
         showsBottomSeparator: Bool = false
     ) -> some View {

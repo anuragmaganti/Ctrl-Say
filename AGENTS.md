@@ -3,6 +3,7 @@
 - Target the latest stable macOS with Swift 6 and current, nondeprecated Apple-native APIs.
 - Prioritize measured latency, idle CPU, memory, and energy; avoid unnecessary dependencies and work.
 - Treat an 8 GB M1 MacBook Air and 8 GB MacBook Neo as the performance floor.
+- Before every implementation, ask whether a senior macOS engineer would use the approach. Consult the current official Apple documentation, fix the existing architecture or layout at its source, and do not stack gestures, overlays, wrappers, helpers, or compatibility layers unless a concrete platform limitation requires one.
 
 ## Product invariants
 
