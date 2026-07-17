@@ -77,10 +77,10 @@ final class ClipboardHUDLayoutTests: XCTestCase {
         XCTAssertEqual(numbered, permanent)
     }
 
-    func testTemporaryFooterStaysAtMiniControlHeight() {
+    func testTemporaryFooterProvidesBalancedControlSpacing() {
         XCTAssertEqual(
             ClipboardHUDMetrics.numberedFooterHeight,
-            15
+            24
         )
     }
 

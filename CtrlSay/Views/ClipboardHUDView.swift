@@ -316,10 +316,15 @@ struct ClipboardHUDView: View {
             Label("Clear All", systemImage: "trash")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+                .frame(
+                    maxWidth: .infinity,
+                    maxHeight: .infinity,
+                    alignment: .center
+                )
+                .offset(y: -4)
+                .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
-        .padding(.trailing, 24)
         .accessibilityLabel("Clear all temporary copies")
     }
 
