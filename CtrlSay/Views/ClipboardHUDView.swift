@@ -194,6 +194,7 @@ struct ClipboardHUDView: View {
             for: .scrollContent
         )
         .scrollIndicators(.automatic)
+        .scrollBounceBehavior(.basedOnSize, axes: .vertical)
         .scrollEdgeEffectStyle(.hard, for: [.top, .bottom])
     }
 
@@ -279,6 +280,7 @@ struct ClipboardHUDView: View {
             for: .scrollContent
         )
         .scrollIndicators(.automatic)
+        .scrollBounceBehavior(.basedOnSize, axes: .vertical)
         .scrollEdgeEffectStyle(.hard, for: [.top, .bottom])
     }
 
