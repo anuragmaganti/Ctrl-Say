@@ -5,28 +5,34 @@ struct DashboardSettingsSection: View {
     let model: AppModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 0) {
             settingsSection
+
+            Divider()
+                .padding(.vertical, 12)
+
             storageSection
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .controlSize(.small)
         .onAppear {
             model.refreshLaunchAtLogin()
         }
     }
 
     private var settingsSection: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            HStack(alignment: .center, spacing: 12) {
-                Text("Launch at Login")
-                    .font(.callout)
-
-                Spacer(minLength: 6)
-
+        VStack(alignment: .leading, spacing: 8) {
+            LabeledContent {
                 Toggle("Launch at Login", isOn: launchAtLoginBinding)
                     .labelsHidden()
                     .toggleStyle(.switch)
-                    .controlSize(.small)
                     .accessibilityLabel("Launch at Login")
+            } label: {
+                Label("Launch at Login", systemImage: "arrow.up.forward.app")
+                    .font(.body)
+                    .symbolRenderingMode(.monochrome)
+                    .foregroundStyle(.white)
+                    .accessibilityHidden(true)
             }
 
             launchAtLoginDetails
@@ -34,40 +40,44 @@ struct DashboardSettingsSection: View {
     }
 
     private var storageSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             if let storageStatusTitle {
-                HStack(alignment: .top, spacing: 9) {
+                HStack(alignment: .center, spacing: 8) {
                     storageStatusIcon
-                        .frame(width: 16, height: 18)
+                        .frame(width: 16)
 
                     Text(storageStatusTitle)
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .lineLimit(2)
+
+                    if model.permanentStorageState.hasFailure {
+                        Spacer(minLength: 6)
+
+                        Button("Retry") {
+                            model.retryPermanentStorage()
+                        }
+                        .buttonStyle(.borderless)
+                    }
                 }
                 .accessibilityElement(children: .contain)
             }
 
-            if model.permanentStorageState.hasFailure {
-                Button("Retry") {
-                    model.retryPermanentStorage()
-                }
-                .buttonStyle(.borderless)
-                .controlSize(.small)
-            }
-
-            Button(
-                "Reset Permanent Copies…",
-                systemImage: "trash",
-                role: .destructive
-            ) {
-                guard confirmsPermanentStorageReset() else { return }
+            Button(role: .destructive) {
+                guard confirmsClearingPermanentCopies() else { return }
                 Task {
                     await model.resetPermanentStorage()
                 }
+            } label: {
+                Label("Clear Permanent Copies", systemImage: "trash")
+                    .symbolRenderingMode(.monochrome)
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(.rect)
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
+            .buttonStyle(.dashboardMenuAction)
+            .controlSize(.regular)
+            .accessibilityLabel("Clear all permanent copies")
             .accessibilityHint(
                 "Opens a confirmation before deleting every permanent copy"
             )
@@ -79,17 +89,17 @@ struct DashboardSettingsSection: View {
     /// dismiss before its first click is delivered. An app-modal NSAlert owns
     /// the event loop until the user explicitly responds, which is the native
     /// AppKit path for an alert without a document window to attach to.
-    private func confirmsPermanentStorageReset() -> Bool {
+    private func confirmsClearingPermanentCopies() -> Bool {
         let alert = NSAlert()
         alert.alertStyle = .critical
-        alert.messageText = "Reset Permanent Storage?"
+        alert.messageText = "Clear All Permanent Copies?"
         alert.informativeText =
             "This permanently deletes every saved permanent copy. "
             + "Temporary copies are unaffected."
 
         alert.addButton(withTitle: "Cancel")
-        let resetButton = alert.addButton(withTitle: "Reset")
-        resetButton.hasDestructiveAction = true
+        let clearButton = alert.addButton(withTitle: "Clear")
+        clearButton.hasDestructiveAction = true
 
         return alert.runModal() == .alertSecondButtonReturn
     }
@@ -110,7 +120,6 @@ struct DashboardSettingsSection: View {
                     model.launchAtLogin.openSystemSettings()
                 }
                 .buttonStyle(.borderless)
-                .controlSize(.small)
             }
         case .unavailable:
             Label(
@@ -136,7 +145,6 @@ struct DashboardSettingsSection: View {
         switch model.permanentStorageState {
         case .loading, .saving:
             ProgressView()
-                .controlSize(.small)
         case .ready:
             EmptyView()
         case .loadFailed, .saveFailed:

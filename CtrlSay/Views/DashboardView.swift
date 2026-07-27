@@ -45,52 +45,41 @@ struct DashboardView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-                .padding(.horizontal, 16)
-                .padding(.vertical, 15)
+                .padding(.vertical, 12)
 
             if !model.isReadyForCommands {
                 Divider()
-                    .padding(.horizontal, 14)
 
                 CtrlSayPermissionSetupView(model: model)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 10)
-                    .padding(.bottom, 14)
+                    .padding(.vertical, 12)
             }
 
             Divider()
-                .padding(.horizontal, 14)
 
             DashboardSettingsSection(model: model)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 15)
+                .padding(.vertical, 12)
 
 #if DEBUG
             Divider()
-                .padding(.horizontal, 14)
 
             developerDiagnostics
-                .padding(.horizontal, 16)
-                .padding(.vertical, 14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 12)
 #endif
 
             if model.slots.hasTemporaryCopies {
                 Divider()
-                    .padding(.horizontal, 14)
 
                 clearTemporaryCopiesButton
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 11)
+                    .padding(.vertical, 10)
             }
 
             Divider()
-                .padding(.horizontal, 14)
 
             quitButton
-                .padding(.horizontal, 16)
                 .padding(.vertical, 12)
         }
-        .frame(width: 201, alignment: .top)
+        .padding(.horizontal, 12)
         .onAppear {
             model.refreshPermissions()
         }
@@ -99,7 +88,8 @@ struct DashboardView: View {
     private var header: some View {
         HStack(spacing: 8) {
             Text("Ctrl-Say")
-                .font(.headline.weight(.semibold))
+                .font(.body)
+                .foregroundStyle(.white)
                 .fixedSize(horizontal: true, vertical: false)
 
             HStack(spacing: 5) {
@@ -132,6 +122,7 @@ struct DashboardView: View {
                 .contentShape(.rect)
         }
         .buttonStyle(.borderless)
+        .frame(minHeight: 20)
     }
 
     private var quitButton: some View {
@@ -139,10 +130,12 @@ struct DashboardView: View {
             NSApplication.shared.terminate(nil)
         } label: {
             Label("Quit Ctrl-Say", systemImage: "power")
+                .symbolRenderingMode(.monochrome)
+                .foregroundStyle(.white)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(.rect)
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(.dashboardMenuAction)
         .accessibilityLabel("Quit Ctrl-Say")
     }
 
@@ -255,7 +248,7 @@ private struct CtrlSayPermissionSetupView: View {
                     .accessibilityLabel("Allow \(title)")
             }
         }
-        .frame(minHeight: 24)
+        .frame(minHeight: 28)
         .accessibilityElement(children: isGranted ? .combine : .contain)
     }
 
@@ -312,6 +305,7 @@ private extension DashboardView {
             Label("Developer diagnostics", systemImage: "wrench.and.screwdriver")
                 .font(.caption.weight(.semibold))
         }
+        .controlSize(.small)
     }
 
     private var diagnosticsExpansion: Binding<Bool> {
