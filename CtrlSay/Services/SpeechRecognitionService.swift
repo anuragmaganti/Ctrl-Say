@@ -224,7 +224,9 @@ final class SpeechRecognitionService {
         let analyzer = SpeechAnalyzer(
             inputSequence: inputSequence,
             modules: [transcriber],
-            options: .init(priority: .userInitiated, modelRetention: .whileInUse),
+            // Cache only Apple's model resources between Listening sessions;
+            // audio capture and the analyzer session still fully tear down.
+            options: .init(priority: .userInitiated, modelRetention: .processLifetime),
             analysisContext: context,
             volatileRangeChangedHandler: { [weak self] range, changedStart, _ in
                 guard changedStart else { return }
