@@ -90,34 +90,27 @@ struct DashboardView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
         }
-        .frame(width: 223, alignment: .top)
+        .frame(width: 201, alignment: .top)
         .onAppear {
             model.refreshPermissions()
         }
     }
 
     private var header: some View {
-        HStack(spacing: 11) {
-            Image(systemName: "waveform.circle.fill")
-                .font(.system(size: 26, weight: .medium))
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(statusColor)
-                .accessibilityHidden(true)
+        HStack(spacing: 8) {
+            Text("Ctrl-Say")
+                .font(.headline.weight(.semibold))
+                .fixedSize(horizontal: true, vertical: false)
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Ctrl-Say")
-                    .font(.headline.weight(.semibold))
+            HStack(spacing: 5) {
+                Circle()
+                    .fill(statusColor)
+                    .frame(width: 5, height: 5)
 
-                HStack(spacing: 5) {
-                    Circle()
-                        .fill(statusColor)
-                        .frame(width: 5, height: 5)
-
-                    Text(statusTitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
+                Text(statusTitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
 
             Spacer(minLength: 12)

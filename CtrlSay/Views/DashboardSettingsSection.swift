@@ -16,8 +16,6 @@ struct DashboardSettingsSection: View {
 
     private var settingsSection: some View {
         VStack(alignment: .leading, spacing: 9) {
-            sectionTitle("Settings")
-
             HStack(alignment: .center, spacing: 12) {
                 Text("Launch at Login")
                     .font(.callout)
@@ -68,8 +66,7 @@ struct DashboardSettingsSection: View {
                     await model.resetPermanentStorage()
                 }
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.red)
+            .buttonStyle(.bordered)
             .controlSize(.small)
             .accessibilityHint(
                 "Opens a confirmation before deleting every permanent copy"
@@ -132,13 +129,6 @@ struct DashboardSettingsSection: View {
                 .foregroundStyle(.red)
                 .fixedSize(horizontal: false, vertical: true)
         }
-    }
-
-    private func sectionTitle(_ title: LocalizedStringKey) -> some View {
-        Text(title)
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(.secondary)
-            .accessibilityAddTraits(.isHeader)
     }
 
     @ViewBuilder
