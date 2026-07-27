@@ -6,9 +6,11 @@ enum SystemSettingsLauncher {
 
     static func open() {
         let workspace = NSWorkspace.shared
-        guard let applicationURL = workspace.urlForApplication(
-            withBundleIdentifier: bundleIdentifier
-        ) else {
+        guard
+            let applicationURL = workspace.urlForApplication(
+                withBundleIdentifier: bundleIdentifier
+            )
+        else {
             Telemetry.interface.error("Could not locate System Settings")
             return
         }

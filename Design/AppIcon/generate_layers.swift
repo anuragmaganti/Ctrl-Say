@@ -1,5 +1,4 @@
 #!/usr/bin/env swift
-
 import AppKit
 import CoreImage
 import CoreText
@@ -157,41 +156,43 @@ private func voiceOutlinePath(for spec: VoiceLegendSpec) -> CGPath {
 private func textLayerSVG(spec: TextLegendSpec) -> String {
     let pathData = svgPathData(from: textOutlinePath(for: spec))
     return """
-    <?xml version="1.0" encoding="UTF-8"?>
-    <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
-      <title>Ctrl-Say backlit key legend</title>
-      <g transform="translate(0 1024) scale(1 -1)">
-        <path d="\(pathData)" fill="#FFFFFF"/>
-      </g>
-    </svg>
-    """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+          <title>Ctrl-Say backlit key legend</title>
+          <g transform="translate(0 1024) scale(1 -1)">
+            <path d="\(pathData)" fill="#FFFFFF"/>
+          </g>
+        </svg>
+        """
 }
 
 private func voiceLayerSVG(spec: VoiceLegendSpec) -> String {
     let pathData = svgPathData(from: voiceOutlinePath(for: spec))
     return """
-    <?xml version="1.0" encoding="UTF-8"?>
-    <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
-      <title>Ctrl-Say listening mark</title>
-      <g transform="translate(0 1024) scale(1 -1)">
-        <path d="\(pathData)" fill="#FFFFFF"/>
-      </g>
-    </svg>
-    """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+          <title>Ctrl-Say listening mark</title>
+          <g transform="translate(0 1024) scale(1 -1)">
+            <path d="\(pathData)" fill="#FFFFFF"/>
+          </g>
+        </svg>
+        """
 }
 
 private func glowPNGData(for path: CGPath) throws -> Data {
     let pixelSize = Int(canvasSize)
     let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
-    guard let bitmapContext = CGContext(
-        data: nil,
-        width: pixelSize,
-        height: pixelSize,
-        bitsPerComponent: 8,
-        bytesPerRow: 0,
-        space: colorSpace,
-        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-    ) else {
+    guard
+        let bitmapContext = CGContext(
+            data: nil,
+            width: pixelSize,
+            height: pixelSize,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        )
+    else {
         throw NSError(domain: "CtrlSayIcon", code: 1)
     }
 
@@ -228,12 +229,14 @@ private func glowPNGData(for path: CGPath) throws -> Data {
     }
 
     let context = CIContext(options: [.cacheIntermediates: false])
-    guard let data = context.pngRepresentation(
-        of: glow,
-        format: .RGBA8,
-        colorSpace: colorSpace,
-        options: [:]
-    ) else {
+    guard
+        let data = context.pngRepresentation(
+            of: glow,
+            format: .RGBA8,
+            colorSpace: colorSpace,
+            options: [:]
+        )
+    else {
         throw NSError(domain: "CtrlSayIcon", code: 6)
     }
 

@@ -110,9 +110,9 @@ final class PermanentMutationQueueTests: XCTestCase {
                         PasteboardRepresentation(
                             typeIdentifier: "public.utf8-plain-text",
                             data: data
-                        ),
+                        )
                     ]
-                ),
+                )
             ],
             kind: .text,
             preview: text,

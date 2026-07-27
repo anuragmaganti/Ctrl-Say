@@ -153,7 +153,8 @@ enum NotchFeedbackReducer {
 
 enum NotchFeedbackText {
     static func displayLabel(_ value: String) -> String {
-        let normalized = value
+        let normalized =
+            value
             .components(separatedBy: .whitespacesAndNewlines)
             .filter { !$0.isEmpty }
             .joined(separator: " ")
@@ -162,7 +163,8 @@ enum NotchFeedbackText {
     }
 
     static func boundedMessage(_ value: String) -> String {
-        let normalized = value
+        let normalized =
+            value
             .components(separatedBy: .whitespacesAndNewlines)
             .filter { !$0.isEmpty }
             .joined(separator: " ")

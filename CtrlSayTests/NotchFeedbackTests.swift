@@ -6,16 +6,18 @@ final class NotchFeedbackTests: XCTestCase {
         var state = NotchFeedbackReducerState()
         XCTAssertEqual(state.visualState, .hidden)
 
-        state = NotchFeedbackReducer.reduce(
-            state,
-            event: .listeningActivityChanged(.preparing)
-        ).state
+        state =
+            NotchFeedbackReducer.reduce(
+                state,
+                event: .listeningActivityChanged(.preparing)
+            ).state
         XCTAssertEqual(state.visualState, .preparing)
 
-        state = NotchFeedbackReducer.reduce(
-            state,
-            event: .listeningActivityChanged(.listening)
-        ).state
+        state =
+            NotchFeedbackReducer.reduce(
+                state,
+                event: .listeningActivityChanged(.listening)
+            ).state
         XCTAssertEqual(state.visualState, .listening)
     }
 
@@ -35,12 +37,13 @@ final class NotchFeedbackTests: XCTestCase {
         )
         XCTAssertEqual(presented.expiration?.duration, .seconds(1))
 
-        state = NotchFeedbackReducer.reduce(
-            state,
-            event: .transientExpired(
-                generation: presented.expiration!.generation
-            )
-        ).state
+        state =
+            NotchFeedbackReducer.reduce(
+                state,
+                event: .transientExpired(
+                    generation: presented.expiration!.generation
+                )
+            ).state
         XCTAssertEqual(state.visualState, .listening)
     }
 
@@ -56,12 +59,13 @@ final class NotchFeedbackTests: XCTestCase {
             first.state,
             event: .present(.success(action: .paste, label: "2"))
         )
-        state = NotchFeedbackReducer.reduce(
-            second.state,
-            event: .transientExpired(
-                generation: first.expiration!.generation
-            )
-        ).state
+        state =
+            NotchFeedbackReducer.reduce(
+                second.state,
+                event: .transientExpired(
+                    generation: first.expiration!.generation
+                )
+            ).state
 
         XCTAssertEqual(
             state.visualState,

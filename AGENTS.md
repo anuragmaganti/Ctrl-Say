@@ -5,6 +5,14 @@
 - Treat an 8 GB M1 MacBook Air and 8 GB MacBook Neo as the performance floor.
 - Before every implementation, ask whether a senior macOS engineer would use the approach. Consult the current official Apple documentation, fix the existing architecture or layout at its source, and do not stack gestures, overlays, wrappers, helpers, or compatibility layers unless a concrete platform limitation requires one.
 
+## Code organization
+
+- SwiftUI owns scenes and controls. Keep AppKit limited to explicit macOS boundaries such as nonactivating panels, global input, pasteboard/event delivery, and native alerts.
+- `AppModel` coordinates workflows, stores own in-memory state, repositories own durability, and services own platform I/O. Do not bypass those boundaries from views.
+- Keep development fixtures and diagnostics behind `#if DEBUG`, use ephemeral storage for seed/stress runs, and never let them affect Release behavior or user data.
+- Keep `CtrlSayTests` unhosted so tests cannot launch the menu-bar app, request permissions, or touch the production store. Add testable production files to the Xcode `Test Support Sources` group deliberately.
+- Run `./script/verify.sh` before handoff; it must validate without launching the app or touching the installed copy.
+
 ## Product invariants
 
 - Ctrl-Say is a voice-controlled set of numbered and named clipboard slots. Commands include `copy 1`, `paste 1`, `copy house`, `paste house`, and `permanent copy house`.

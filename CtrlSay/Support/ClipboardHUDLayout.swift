@@ -31,7 +31,8 @@ enum ClipboardHUDMetrics {
         collection: ClipboardCollection,
         permanentStatusLayout: ClipboardHUDPermanentStatusLayout = .none
     ) -> CGFloat {
-        let copyContentHeight = itemCount == 0
+        let copyContentHeight =
+            itemCount == 0
             ? emptyListHeight
             : CGFloat(itemCount) * rowHeight
         let listHeight: CGFloat
@@ -43,12 +44,15 @@ enum ClipboardHUDMetrics {
         case .precedesContent:
             listHeight = permanentStatusHeight + copyContentHeight
         }
-        let footerHeight = collection == .numbered && itemCount > 0
+        let footerHeight =
+            collection == .numbered && itemCount > 0
             ? numberedFooterHeight
             : 0
-        let showsStoredCopies = itemCount > 0
+        let showsStoredCopies =
+            itemCount > 0
             && permanentStatusLayout != .replacesContent
-        let appliedListPadding = showsStoredCopies
+        let appliedListPadding =
+            showsStoredCopies
             ? listVerticalPadding / 2
             : listVerticalPadding
         return headerHeight
@@ -124,10 +128,12 @@ enum ClipboardHUDPlacement {
         )
         let availableX = max(0, visibleFrame.width - clampedFrame.width)
         let availableY = max(0, visibleFrame.height - clampedFrame.height)
-        let horizontal = availableX == 0
+        let horizontal =
+            availableX == 0
             ? 0
             : (clampedFrame.minX - visibleFrame.minX) / availableX
-        let vertical = availableY == 0
+        let vertical =
+            availableY == 0
             ? 0
             : (visibleFrame.maxY - clampedFrame.maxY) / availableY
         return ClipboardHUDNormalizedPosition(
@@ -204,18 +210,19 @@ final class ClipboardHUDPositionStore {
 
     private func positions() -> [String: ClipboardHUDNormalizedPosition] {
         guard let data = defaults.data(forKey: key),
-              let values = try? JSONDecoder().decode(
-                  [String: ClipboardHUDNormalizedPosition].self,
-                  from: data
-              ) else {
+            let values = try? JSONDecoder().decode(
+                [String: ClipboardHUDNormalizedPosition].self,
+                from: data
+            )
+        else {
             return [:]
         }
         return values
     }
 }
 
-private extension Comparable {
-    func clamped(to range: ClosedRange<Self>) -> Self {
+extension Comparable {
+    fileprivate func clamped(to range: ClosedRange<Self>) -> Self {
         min(max(self, range.lowerBound), range.upperBound)
     }
 }

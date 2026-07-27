@@ -54,12 +54,15 @@ final class ClipboardStore {
     }
 
     func set(_ payload: ClipboardPayload, named name: String) throws {
-        guard let normalizedName = VoiceCommandParser.validNormalizedPermanentName(
-            name
-        ) else {
+        guard
+            let normalizedName = VoiceCommandParser.validNormalizedPermanentName(
+                name
+            )
+        else {
             throw ClipboardStoreError.invalidPermanentName
         }
-        let replacedBytes = (named[normalizedName]?.byteCount ?? 0)
+        let replacedBytes =
+            (named[normalizedName]?.byteCount ?? 0)
             + (temporaryNamed[normalizedName]?.byteCount ?? 0)
         try ensureCapacity(
             replacingBytes: replacedBytes,
@@ -73,9 +76,11 @@ final class ClipboardStore {
     }
 
     func validateTemporaryNameAvailable(_ name: String) throws -> String {
-        guard let normalizedName = VoiceCommandParser.validNormalizedTemporaryName(
-            name
-        ) else {
+        guard
+            let normalizedName = VoiceCommandParser.validNormalizedTemporaryName(
+                name
+            )
+        else {
             throw ClipboardStoreError.invalidTemporaryName
         }
         guard named[normalizedName] == nil else {
@@ -93,7 +98,8 @@ final class ClipboardStore {
             replacingBytes: temporaryNamed[normalizedName]?.byteCount ?? 0,
             with: payload
         )
-        totalByteCount += payload.byteCount
+        totalByteCount +=
+            payload.byteCount
             - (temporaryNamed[normalizedName]?.byteCount ?? 0)
         if temporaryNamed[normalizedName] == nil {
             temporaryNamedOrder.append(normalizedName)
@@ -113,7 +119,8 @@ final class ClipboardStore {
         let oldName = VoiceCommandParser.normalizeName(currentName)
         let newName = try validateTemporaryNameAvailable(revisedName)
         guard let payload = temporaryNamed[oldName],
-              payload.id == expectedPayloadID else {
+            payload.id == expectedPayloadID
+        else {
             return nil
         }
         guard oldName != newName else { return newName }
@@ -190,9 +197,11 @@ final class ClipboardStore {
     @discardableResult
     func removeTemporaryNamed(_ name: String) -> ClipboardPayload? {
         let normalizedName = VoiceCommandParser.normalizeName(name)
-        guard let removed = temporaryNamed.removeValue(
-            forKey: normalizedName
-        ) else {
+        guard
+            let removed = temporaryNamed.removeValue(
+                forKey: normalizedName
+            )
+        else {
             return nil
         }
         temporaryNamedOrder.removeAll { $0 == normalizedName }
@@ -231,7 +240,8 @@ final class ClipboardStore {
             to: requestedName
         )
         if let expectedPayloadID,
-           validation.payloadID != expectedPayloadID {
+            validation.payloadID != expectedPayloadID
+        {
             throw ClipboardStoreError.permanentCopyChanged
         }
 
@@ -259,7 +269,8 @@ final class ClipboardStore {
             throw ClipboardStoreError.missingPermanentCopy
         }
         if let expectedPayloadID,
-           payload.id != expectedPayloadID {
+            payload.id != expectedPayloadID
+        {
             throw ClipboardStoreError.permanentCopyChanged
         }
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -281,7 +292,8 @@ final class ClipboardStore {
     }
 
     func clearTemporary() {
-        let removedBytes = numbered.values.reduce(0) { $0 + $1.byteCount }
+        let removedBytes =
+            numbered.values.reduce(0) { $0 + $1.byteCount }
             + temporaryNamed.values.reduce(0) { $0 + $1.byteCount }
         numbered.removeAll(keepingCapacity: true)
         temporaryNamed.removeAll(keepingCapacity: true)
@@ -303,14 +315,17 @@ final class ClipboardStore {
         var restoredBytes = 0
 
         for entry in restored {
-            guard let normalizedName = VoiceCommandParser.validNormalizedPermanentName(
-                entry.name
-            ), normalizedName == entry.name else {
+            guard
+                let normalizedName = VoiceCommandParser.validNormalizedPermanentName(
+                    entry.name
+                ), normalizedName == entry.name
+            else {
                 throw ClipboardStoreError.invalidRestoredPermanentCopy
             }
             guard names.insert(normalizedName).inserted,
-                  payloadIDs.insert(entry.payload.id).inserted,
-                  !existingTemporaryIDs.contains(entry.payload.id) else {
+                payloadIDs.insert(entry.payload.id).inserted,
+                !existingTemporaryIDs.contains(entry.payload.id)
+            else {
                 throw ClipboardStoreError.duplicateRestoredPermanentCopy
             }
             try validateRestoredPayload(entry.payload)
@@ -321,7 +336,8 @@ final class ClipboardStore {
             restoredNamed[normalizedName] = entry.payload
         }
 
-        let temporaryBytes = numbered.values.reduce(0) { $0 + $1.byteCount }
+        let temporaryBytes =
+            numbered.values.reduce(0) { $0 + $1.byteCount }
             + temporaryNamed.values.reduce(0) { $0 + $1.byteCount }
         guard temporaryBytes <= Self.maximumTotalStoredBytes - restoredBytes else {
             throw ClipboardStoreError.storageLimitExceeded
@@ -342,7 +358,8 @@ final class ClipboardStore {
         with payload: ClipboardPayload
     ) throws {
         guard payload.byteCount >= 0,
-              payload.byteCount <= Self.maximumPayloadBytes else {
+            payload.byteCount <= Self.maximumPayloadBytes
+        else {
             throw ClipboardStoreError.payloadTooLarge
         }
         let projectedBytes = totalByteCount - replacingBytes + payload.byteCount
@@ -353,8 +370,9 @@ final class ClipboardStore {
 
     private func validateRestoredPayload(_ payload: ClipboardPayload) throws {
         guard !payload.items.isEmpty,
-              payload.byteCount >= 0,
-              payload.byteCount <= Self.maximumPayloadBytes else {
+            payload.byteCount >= 0,
+            payload.byteCount <= Self.maximumPayloadBytes
+        else {
             throw ClipboardStoreError.invalidRestoredPermanentCopy
         }
 
@@ -365,7 +383,8 @@ final class ClipboardStore {
             }
             for representation in item.representations {
                 guard !representation.typeIdentifier.isEmpty,
-                      representation.data.count <= Self.maximumRepresentationBytes else {
+                    representation.data.count <= Self.maximumRepresentationBytes
+                else {
                     throw ClipboardStoreError.invalidRestoredPermanentCopy
                 }
                 measuredBytes = try addingWithoutOverflow(

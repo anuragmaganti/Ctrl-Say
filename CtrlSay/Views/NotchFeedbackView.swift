@@ -105,7 +105,8 @@ struct NotchFeedbackView: View {
     private func surfaceShape(in size: CGSize) -> AnyShape {
         switch windowContext.surfaceStyle {
         case .attached(_, let notchHeight):
-            let surfaceHeight = presentationState.interactionMode == .passive
+            let surfaceHeight =
+                presentationState.interactionMode == .passive
                 ? notchHeight
                 : size.height
             return AnyShape(
@@ -113,7 +114,8 @@ struct NotchFeedbackView: View {
                     horizontalCanvasOutset: NotchPanelLayoutCalculator
                         .attachedHorizontalCanvasOutset,
                     surfaceHeight: surfaceHeight,
-                    bottomCornerRadius: NotchPanelLayoutCalculator
+                    bottomCornerRadius:
+                        NotchPanelLayoutCalculator
                         .attachedBottomCornerRadius(notchHeight: notchHeight)
                 )
             )

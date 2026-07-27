@@ -32,7 +32,7 @@ nonisolated enum VoiceCommand: Equatable, Sendable {
         case .copyNumber, .pasteNumber, .copyNamed, .permanentCopy, .pasteNamed:
             true
         case .deleteNumber, .deleteNamed, .promoteTemporaryNamed,
-             .renameTemporaryNamed, .clearTemporary:
+            .renameTemporaryNamed, .clearTemporary:
             false
         }
     }
@@ -87,7 +87,8 @@ nonisolated enum VoiceCommandParser {
 
         if tokens == ["clear", "copies"]
             || tokens == ["clear", "numbered", "copies"]
-            || tokens == ["clear", "temporary", "copies"] {
+            || tokens == ["clear", "temporary", "copies"]
+        {
             return .clearTemporary
         }
 
@@ -99,7 +100,8 @@ nonisolated enum VoiceCommandParser {
         if tokens.first == "delete", tokens.count >= 2 {
             let nameTokens = Array(tokens.dropFirst())
             if nameTokens.count == 1,
-               let number = slotNumber(nameTokens[0]) {
+                let number = slotNumber(nameTokens[0])
+            {
                 return .deleteNumber(number)
             }
             return validTemporaryNameTokens(nameTokens)
@@ -107,21 +109,23 @@ nonisolated enum VoiceCommandParser {
         }
 
         if tokens.first == "make", tokens.last == "permanent",
-           tokens.count >= 3 {
+            tokens.count >= 3
+        {
             return validPermanentNameTokens(
                 Array(tokens.dropFirst().dropLast())
             ).map(VoiceCommand.promoteTemporaryNamed)
         }
 
         if tokens.first == "rename", tokens.count >= 4,
-           let separator = tokens.lastIndex(of: "to"), separator > 1,
-           separator < tokens.index(before: tokens.endIndex),
-           let source = validTemporaryNameTokens(
-               Array(tokens[1..<separator])
-           ),
-           let destination = validTemporaryNameTokens(
-               Array(tokens[tokens.index(after: separator)...])
-           ) {
+            let separator = tokens.lastIndex(of: "to"), separator > 1,
+            separator < tokens.index(before: tokens.endIndex),
+            let source = validTemporaryNameTokens(
+                Array(tokens[1..<separator])
+            ),
+            let destination = validTemporaryNameTokens(
+                Array(tokens[tokens.index(after: separator)...])
+            )
+        {
             return .renameTemporaryNamed(from: source, to: destination)
         }
 
@@ -136,7 +140,8 @@ nonisolated enum VoiceCommandParser {
         if tokens.count >= 2, isPasteVerb(tokens[0]) {
             let nameTokens = Array(tokens.dropFirst())
             if nameTokens.count == 1,
-               let number = slotNumber(nameTokens[0]) {
+                let number = slotNumber(nameTokens[0])
+            {
                 return .pasteNumber(number)
             }
             return validTemporaryNameTokens(nameTokens)
@@ -177,9 +182,10 @@ nonisolated enum VoiceCommandParser {
         // Volatile recognition can publish "cop…" or "copy" before the
         // numbered argument arrives. Keep that range as an ordering barrier
         // without retaining the transcript itself.
-        let commandBeginnings = [
-            "copy", "paste", "permanent", "delete", "clear", "make", "rename",
-        ]
+        let commandBeginnings =
+            [
+                "copy", "paste", "permanent", "delete", "clear", "make", "rename",
+            ]
             + pasteVerbAliases
         return commandBeginnings.contains {
             $0.hasPrefix(first) || first.hasPrefix($0)
@@ -221,8 +227,9 @@ nonisolated enum VoiceCommandParser {
         wordRange: ClosedRange<Int>
     ) -> String? {
         guard wordRange.contains(tokens.count),
-              Int(tokens[0]) == nil,
-              slotNumber(tokens[0]) == nil else {
+            Int(tokens[0]) == nil,
+            slotNumber(tokens[0]) == nil
+        else {
             return nil
         }
         return tokens.joined(separator: " ")
@@ -264,7 +271,7 @@ nonisolated enum VolatileCommandAcceptancePolicy {
             return false
 
         case .pasteNamed(let name), .deleteNamed(let name),
-             .promoteTemporaryNamed(let name):
+            .promoteTemporaryNamed(let name):
             // Existing names form a closed vocabulary just like numbered
             // slots. Apple can omit confidence from otherwise complete
             // volatile results, so requiring it here forces a known paste to
@@ -275,7 +282,8 @@ nonisolated enum VolatileCommandAcceptancePolicy {
             var hasLongerPrefixMatch = false
             for knownName in knownNamedCopies {
                 nameExists = nameExists || knownName == normalizedName
-                hasLongerPrefixMatch = hasLongerPrefixMatch
+                hasLongerPrefixMatch =
+                    hasLongerPrefixMatch
                     || (knownName != normalizedName
                         && knownName.hasPrefix(normalizedName))
             }

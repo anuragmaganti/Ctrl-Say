@@ -19,7 +19,8 @@ struct SerialCommandQueueState<Element, Identity: Hashable> {
         enqueuedAtNanoseconds: UInt64
     ) -> Bool {
         if let identity,
-           let index = entries.firstIndex(where: { $0.identity == identity }) {
+            let index = entries.firstIndex(where: { $0.identity == identity })
+        {
             entries[index].element = element
             return true
         }
@@ -48,7 +49,4 @@ struct SerialCommandQueueState<Element, Identity: Hashable> {
         return entries.removeFirst()
     }
 
-    mutating func removeAll(keepingCapacity: Bool = true) {
-        entries.removeAll(keepingCapacity: keepingCapacity)
-    }
 }

@@ -31,9 +31,13 @@ final class ClipboardThumbnailProvider {
         let cost: Int
 
         if let representation = imageRepresentation(in: payload),
-           let cgImage = await Task.detached(priority: .utility, operation: {
-               Self.makeImageThumbnail(from: representation.data)
-           }).value {
+            let cgImage = await Task.detached(
+                priority: .utility,
+                operation: {
+                    Self.makeImageThumbnail(from: representation.data)
+                }
+            ).value
+        {
             guard !Task.isCancelled else { return nil }
             image = NSImage(cgImage: cgImage, size: .zero)
             cost = cgImage.bytesPerRow * cgImage.height
@@ -69,9 +73,10 @@ final class ClipboardThumbnailProvider {
     private func firstFileURL(in payload: ClipboardPayload) -> URL? {
         for representation in payload.items.lazy.flatMap(\.representations) {
             guard representation.typeIdentifier == UTType.fileURL.identifier,
-                  let value = String(data: representation.data, encoding: .utf8),
-                  let url = URL(string: value.trimmingCharacters(in: .whitespacesAndNewlines)),
-                  url.isFileURL else {
+                let value = String(data: representation.data, encoding: .utf8),
+                let url = URL(string: value.trimmingCharacters(in: .whitespacesAndNewlines)),
+                url.isFileURL
+            else {
                 continue
             }
             return url
@@ -88,7 +93,8 @@ final class ClipboardThumbnailProvider {
             representationTypes: [.thumbnail, .icon]
         )
         if let representation = try? await QLThumbnailGenerator.shared
-            .generateBestRepresentation(for: request) {
+            .generateBestRepresentation(for: request)
+        {
             let image = representation.nsImage
             let pixelsWide = max(1, Int(image.size.width * scale))
             let pixelsHigh = max(1, Int(image.size.height * scale))
@@ -117,8 +123,8 @@ final class ClipboardThumbnailProvider {
     }
 }
 
-private extension Duration {
-    var milliseconds: Double {
+extension Duration {
+    fileprivate var milliseconds: Double {
         let components = self.components
         return Double(components.seconds) * 1_000
             + Double(components.attoseconds) / 1_000_000_000_000_000

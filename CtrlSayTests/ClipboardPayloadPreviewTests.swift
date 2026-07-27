@@ -4,10 +4,9 @@ import XCTest
 final class ClipboardPayloadPreviewTests: XCTestCase {
     private let plainTextType = "public.utf8-plain-text"
 
-    func testShortPreviewDoesNotClaimAdditionalText() {
+    func testShortPreviewRemainsUnchanged() {
         let payload = makePayload("Short preview")
 
-        XCTAssertFalse(payload.hasAdditionalPreviewText)
         XCTAssertEqual(payload.expandedPreviewText, "Short preview")
         XCTAssertEqual(payload.tooltipPreviewText, "Short preview")
     }
@@ -17,7 +16,6 @@ final class ClipboardPayloadPreviewTests: XCTestCase {
         let text = String(repeating: line, count: 100)
         let payload = makePayload(text)
 
-        XCTAssertTrue(payload.hasAdditionalPreviewText)
         XCTAssertTrue(payload.expandedPreviewText.contains("\n"))
         XCTAssertTrue(payload.expandedPreviewText.hasSuffix("…"))
         XCTAssertLessThanOrEqual(
@@ -79,9 +77,9 @@ final class ClipboardPayloadPreviewTests: XCTestCase {
                         PasteboardRepresentation(
                             typeIdentifier: plainTextType,
                             data: data
-                        ),
+                        )
                     ]
-                ),
+                )
             ],
             kind: .text,
             preview: ClipboardPayload.preview(forText: text),

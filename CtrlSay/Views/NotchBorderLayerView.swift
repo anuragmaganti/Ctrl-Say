@@ -157,7 +157,8 @@ final class NotchBorderHostView: NSView {
             endPoint = CGPoint(x: 0.5, y: 0)
 
         case .success(let action, _):
-            colors = action == .copy
+            colors =
+                action == .copy
                 ? [
                     NSColor.systemBlue.cgColor,
                     NSColor.systemCyan.cgColor,
@@ -198,7 +199,8 @@ final class NotchBorderHostView: NSView {
         }
         CATransaction.commit()
 
-        let shouldCycle = configuration.visualState.isListeningIndicator
+        let shouldCycle =
+            configuration.visualState.isListeningIndicator
             && !configuration.reduceMotion
         setColorCycleActive(shouldCycle)
     }
@@ -233,7 +235,8 @@ final class NotchBorderHostView: NSView {
     ) -> CGPath {
         switch configuration.surfaceStyle {
         case .attached(_, let notchHeight):
-            let surfaceHeight = configuration.interactionMode == .passive
+            let surfaceHeight =
+                configuration.interactionMode == .passive
                 ? notchHeight
                 : rect.height
             return AttachedNotchGeometry.borderPath(
@@ -243,7 +246,8 @@ final class NotchBorderHostView: NSView {
                 visibleBorderOutset: NotchPanelLayoutCalculator
                     .attachedVisibleBorderOutset,
                 surfaceHeight: surfaceHeight,
-                bottomCornerRadius: NotchPanelLayoutCalculator
+                bottomCornerRadius:
+                    NotchPanelLayoutCalculator
                     .attachedBottomCornerRadius(notchHeight: notchHeight)
             )
 
@@ -261,8 +265,8 @@ final class NotchBorderHostView: NSView {
     }
 }
 
-private extension NotchVisualState {
-    var isListeningIndicator: Bool {
+extension NotchVisualState {
+    fileprivate var isListeningIndicator: Bool {
         switch self {
         case .preparing, .listening:
             true
@@ -271,7 +275,7 @@ private extension NotchVisualState {
         }
     }
 
-    var glowOpacity: Double {
+    fileprivate var glowOpacity: Double {
         switch self {
         case .hidden:
             0

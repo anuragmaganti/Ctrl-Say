@@ -40,9 +40,9 @@ final class ClipboardThumbnailProviderTests: XCTestCase {
                         PasteboardRepresentation(
                             typeIdentifier: UTType.utf8PlainText.identifier,
                             data: data
-                        ),
+                        )
                     ]
-                ),
+                )
             ],
             kind: .text,
             preview: "hello",
@@ -65,9 +65,9 @@ final class ClipboardThumbnailProviderTests: XCTestCase {
                         PasteboardRepresentation(
                             typeIdentifier: UTType.fileURL.identifier,
                             data: data
-                        ),
+                        )
                     ]
-                ),
+                )
             ],
             kind: .files,
             preview: "File",
@@ -98,9 +98,9 @@ final class ClipboardThumbnailProviderTests: XCTestCase {
                         PasteboardRepresentation(
                             typeIdentifier: UTType.png.identifier,
                             data: data
-                        ),
+                        )
                     ]
-                ),
+                )
             ],
             kind: .image,
             preview: "Image",
@@ -110,7 +110,8 @@ final class ClipboardThumbnailProviderTests: XCTestCase {
 
     private var testPNGData: Data? {
         Data(
-            base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+            base64Encoded:
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
         )
     }
 }

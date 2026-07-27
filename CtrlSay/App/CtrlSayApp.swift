@@ -36,21 +36,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var notchPanel: NotchFeedbackPanelController?
     private var processedNotchFeedbackSequence: UInt64 = 0
     private var terminationTask: Task<Void, Never>?
+    #if DEBUG
+    private var debugPresentationHarness: DebugPresentationHarness?
+    #endif
+
+    // MARK: - Application Lifecycle
 
     override init() {
-#if DEBUG
-        if CommandLine.arguments.contains("-CtrlSaySeedHUDForTesting")
-            || CommandLine.arguments.contains("-CtrlSayStressHUDLayoutForTesting")
-            || CommandLine.arguments.contains("-CtrlSayStressPresentationSurfacesForTesting") {
+        #if DEBUG
+        if DebugPresentationHarness.requiresEphemeralStorage(
+            arguments: CommandLine.arguments
+        ) {
             model = AppModel(
                 permanentRepository: PermanentCopyRepository(location: .memory)
             )
         } else {
             model = AppModel()
         }
-#else
+        #else
         model = AppModel()
-#endif
+        #endif
         super.init()
     }
 
@@ -59,48 +64,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         observeHUDPresentation()
         observeNotchFeedback()
 
-#if DEBUG
-        if CommandLine.arguments.contains("-CtrlSaySeedHUDForTesting") {
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                await model.waitForPermanentStorageRestore()
-                seedHUDForTesting(
-                    singleTemporaryOnly: CommandLine.arguments.contains(
-                        "-CtrlSaySeedSingleTemporaryForTesting"
-                    )
-                )
+        #if DEBUG
+        let debugPresentationHarness = DebugPresentationHarness(
+            model: model,
+            hudEditingSession: hudEditingSession,
+            hudPresentationState: hudPresentationState,
+            notchPresentationState: notchPresentationState,
+            ensureHUDPanel: { [unowned self] in
+                hudPanel ?? makeHUDPanel()
+            },
+            ensureNotchPanel: { [unowned self] in
+                ensureNotchPanel()
             }
-        }
-        if CommandLine.arguments.contains("-CtrlSayShowHUDPermanentForTesting") {
-            hudPresentationState.selectedCollection = .permanent
-        }
-        if CommandLine.arguments.contains("-CtrlSayShowHUDForTesting")
-            || CommandLine.arguments.contains("-CtrlSayShowHUDPermanentForTesting") {
-            model.setClipboardHUDPresented(true)
-        }
-        if CommandLine.arguments.contains("-CtrlSayShowNotchListeningForTesting") {
-            _ = ensureNotchPanel()
-            notchPresentationState.setListeningActivity(.listening)
-        }
-        if CommandLine.arguments.contains("-CtrlSayShowNotchCopyForTesting") {
-            _ = ensureNotchPanel()
-            notchPresentationState.setListeningActivity(.listening)
-            notchPresentationState.presentPersistentPreview(
-                .success(action: .copy, label: "House")
-            )
-        }
-        if CommandLine.arguments.contains("-CtrlSayStressNotchForTesting") {
-            runNotchStressPreview()
-        }
-        if CommandLine.arguments.contains("-CtrlSayStressHUDLayoutForTesting") {
-            model.setClipboardHUDPresented(true)
-            runHUDLayoutStressPreview()
-        }
-        if CommandLine.arguments.contains("-CtrlSayStressPresentationSurfacesForTesting") {
-            runPresentationSurfaceStressPreview()
-        }
-#endif
-
+        )
+        self.debugPresentationHarness = debugPresentationHarness
+        debugPresentationHarness.run(arguments: CommandLine.arguments)
+        #endif
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -150,6 +129,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         notchPanel?.screenParametersDidChange()
     }
 
+    // MARK: - Model Observation
+
     private func observeListeningState() {
         withObservationTracking {
             _ = model.speech.state
@@ -176,9 +157,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         processLatestNotchFeedback()
     }
 
+    // MARK: - Notch Feedback
+
     private func processLatestNotchFeedback() {
         guard let signal = model.notchFeedbackSignal,
-              signal.sequence > processedNotchFeedbackSequence else {
+            signal.sequence > processedNotchFeedbackSequence
+        else {
             return
         }
         processedNotchFeedbackSequence = signal.sequence
@@ -251,11 +235,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return "Microphone unavailable"
         }
         if message.localizedCaseInsensitiveContains("model")
-            || message.localizedCaseInsensitiveContains("speech") {
+            || message.localizedCaseInsensitiveContains("speech")
+        {
             return "Speech recognition unavailable"
         }
         return "Listening unavailable"
     }
+
+    // MARK: - Clipboard HUD
 
     private func observeHUDPresentation() {
         withObservationTracking {
@@ -292,245 +279,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return panel
     }
 
-#if DEBUG
-    private func runPresentationSurfaceStressPreview() {
-        let notchPanel = ensureNotchPanel()
-        let hudPanel = hudPanel ?? makeHUDPanel()
-
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            await model.waitForPermanentStorageRestore()
-
-            hudPanel.show()
-            notchPresentationState.setListeningActivity(.listening)
-
-            let transitionCount = 480
-            for index in 0..<transitionCount {
-                let payload = stressPayload(index: index)
-                switch index % 10 {
-                case 0:
-                    try? model.slots.set(payload, at: 1)
-                case 1:
-                    try? model.slots.set(payload, named: "stress")
-                case 2:
-                    hudPresentationState.selectedCollection = index
-                        .isMultiple(of: 2) ? .numbered : .permanent
-                    switch (index / 12) % 3 {
-                    case 0:
-                        notchPresentationState.setInteractionMode(.passive)
-                    case 1:
-                        notchPresentationState.setInteractionMode(.compactInteractive)
-                    default:
-                        notchPresentationState.setInteractionMode(.expandedInteractive)
-                    }
-                case 3:
-                    switch (index / 12) % 4 {
-                    case 0:
-                        notchPresentationState.setListeningActivity(.preparing)
-                    case 1:
-                        notchPresentationState.present(
-                            .success(action: .copy, label: "Stress")
-                        )
-                    case 2:
-                        notchPresentationState.present(
-                            .failure(message: "Stress failure")
-                        )
-                    default:
-                        notchPresentationState.setListeningActivity(.inactive)
-                    }
-                case 4:
-                    hudPanel.hide()
-                case 5:
-                    hudPanel.show()
-                case 6:
-                    notchPresentationState.setInteractionMode(
-                        index.isMultiple(of: 2)
-                            ? .compactInteractive
-                            : .passive
-                    )
-                case 7:
-                    if let token = hudEditingSession.begin(
-                        commit: { true },
-                        cancel: {}
-                    ) {
-                        hudEditingSession.finish(token)
-                    }
-                case 8:
-                    _ = model.slots.removeNamed("stress")
-                default:
-                    _ = model.slots.removeNumbered(1)
-                    notchPresentationState.setListeningActivity(.listening)
-                }
-                try? await Task.sleep(for: .milliseconds(4))
-            }
-
-            hudEditingSession.prepareForDismissal()
-            hudPanel.hide()
-            notchPresentationState.setInteractionMode(.passive)
-            notchPresentationState.setListeningActivity(.inactive)
-            try? await Task.sleep(for: .milliseconds(350))
-            notchPanel.hideImmediately()
-            Telemetry.interface.info(
-                "Presentation surface stress complete transitions=\(transitionCount, privacy: .public)"
-            )
-        }
-    }
-
-    private func runHUDLayoutStressPreview() {
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            await model.waitForPermanentStorageRestore()
-
-            let transitionCount = 240
-            for index in 0..<transitionCount {
-                let payload = stressPayload(index: index)
-
-                switch index % 6 {
-                case 0:
-                    try? model.slots.set(payload, at: 1)
-                case 1:
-                    try? model.slots.setTemporaryNamed(payload, named: "stress")
-                case 2:
-                    _ = model.slots.removeNumbered(1)
-                case 3:
-                    try? model.slots.set(payload, named: "stress")
-                case 4:
-                    _ = model.slots.removeTemporaryNamed("stress")
-                default:
-                    _ = model.slots.removeNamed("stress")
-                }
-
-                hudPresentationState.selectedCollection = index.isMultiple(of: 2)
-                    ? .numbered
-                    : .permanent
-                try? await Task.sleep(for: .milliseconds(5))
-            }
-
-            Telemetry.interface.info(
-                "HUD layout stress complete transitions=\(transitionCount, privacy: .public)"
-            )
-        }
-    }
-
-    private func runNotchStressPreview() {
-        _ = ensureNotchPanel()
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            let transitionCount = 360
-            for index in 0..<transitionCount {
-                switch index % 8 {
-                case 0:
-                    notchPresentationState.setListeningActivity(.preparing)
-                case 1, 7:
-                    notchPresentationState.setListeningActivity(.listening)
-                case 2:
-                    notchPresentationState.present(
-                        .success(action: .copy, label: "House")
-                    )
-                case 3:
-                    notchPresentationState.setListeningActivity(.inactive)
-                case 4:
-                    notchPresentationState.setListeningActivity(.preparing)
-                case 5:
-                    notchPresentationState.present(
-                        .success(action: .paste, label: "2")
-                    )
-                default:
-                    notchPresentationState.setListeningActivity(.inactive)
-                }
-                try? await Task.sleep(for: .milliseconds(12))
-            }
-            notchPresentationState.setListeningActivity(.listening)
-            Telemetry.interface.info(
-                "Notch stress complete transitions=\(transitionCount, privacy: .public)"
-            )
-        }
-    }
-
-    private func stressPayload(index: Int) -> ClipboardPayload {
-        let text = "Presentation stress payload \(index)"
-        let data = Data(text.utf8)
-        return ClipboardPayload(
-            items: [
-                PasteboardItemPayload(
-                    representations: [
-                        PasteboardRepresentation(
-                            typeIdentifier: "public.utf8-plain-text",
-                            data: data
-                        ),
-                    ]
-                ),
-            ],
-            kind: .text,
-            preview: ClipboardPayload.preview(forText: text),
-            byteCount: data.count
-        )
-    }
-
-    private func seedHUDForTesting(singleTemporaryOnly: Bool = false) {
-        let numberedSeedCount = singleTemporaryOnly ? 1 : 10
-        for number in 1...numberedSeedCount {
-            let text = "Example clipboard content for slot \(number) with a bounded two-line preview."
-            let data = Data(text.utf8)
-            let payload = ClipboardPayload(
-                items: [
-                    PasteboardItemPayload(
-                        representations: [
-                            PasteboardRepresentation(
-                                typeIdentifier: "public.utf8-plain-text",
-                                data: data
-                            ),
-                        ]
-                    ),
-                ],
-                kind: .text,
-                preview: ClipboardPayload.preview(forText: text),
-                byteCount: data.count
-            )
-            try? model.slots.set(payload, at: number)
-        }
-
-        guard !singleTemporaryOnly else { return }
-
-        let temporaryText = "Session-only content stored under a memorable spoken name."
-        let temporaryData = Data(temporaryText.utf8)
-        let temporaryPayload = ClipboardPayload(
-            items: [
-                PasteboardItemPayload(
-                    representations: [
-                        PasteboardRepresentation(
-                            typeIdentifier: "public.utf8-plain-text",
-                            data: temporaryData
-                        ),
-                    ]
-                ),
-            ],
-            kind: .text,
-            preview: ClipboardPayload.preview(forText: temporaryText),
-            byteCount: temporaryData.count
-        )
-        try? model.slots.setTemporaryNamed(temporaryPayload, named: "house")
-
-        let permanentText = "123 Example Street, Example City"
-        let permanentData = Data(permanentText.utf8)
-        let permanentPayload = ClipboardPayload(
-            items: [
-                PasteboardItemPayload(
-                    representations: [
-                        PasteboardRepresentation(
-                            typeIdentifier: "public.utf8-plain-text",
-                            data: permanentData
-                        ),
-                    ]
-                ),
-            ],
-            kind: .text,
-            preview: ClipboardPayload.preview(forText: permanentText),
-            byteCount: permanentData.count
-        )
-        try? model.slots.set(permanentPayload, named: "address")
-    }
-#endif
+    // MARK: - Termination
 
     private func flushPermanentCopiesBeforeQuit() async throws {
         try await withCheckedThrowingContinuation { continuation in

@@ -641,7 +641,7 @@ final class StreamingVoiceCommandScannerTests: XCTestCase {
             StreamingVoiceCommandSegment(
                 range: timeRange(0, 1.2),
                 tokens: [
-                    token("permanent copy name", 0.10, 1.05),
+                    token("permanent copy name", 0.10, 1.05)
                 ],
                 isFinal: true
             )
@@ -678,7 +678,7 @@ final class StreamingVoiceCommandScannerTests: XCTestCase {
             StreamingVoiceCommandSegment(
                 range: timeRange(0, 1.1),
                 tokens: [
-                    token("permanent copy named", 0.05, 1.05),
+                    token("permanent copy named", 0.05, 1.05)
                 ],
                 isFinal: false
             )
@@ -691,7 +691,7 @@ final class StreamingVoiceCommandScannerTests: XCTestCase {
             StreamingVoiceCommandSegment(
                 range: timeRange(1.15, 2.25),
                 tokens: [
-                    token("permanent copy name", 1.20, 2.20),
+                    token("permanent copy name", 1.20, 2.20)
                 ],
                 isFinal: false
             )
@@ -1015,7 +1015,7 @@ final class StreamingVoiceCommandScannerTests: XCTestCase {
                     StreamingVoiceCommandToken(
                         "paste ten",
                         range: timeRange(1.8, 1.8)
-                    ),
+                    )
                 ]
             )
         )
@@ -1046,7 +1046,7 @@ final class StreamingVoiceCommandScannerTests: XCTestCase {
                     StreamingVoiceCommandToken(
                         "okay please paste ten now",
                         range: timeRange(0, 1.665)
-                    ),
+                    )
                 ]
             )
         )
@@ -1094,7 +1094,7 @@ final class StreamingVoiceCommandScannerTests: XCTestCase {
                     StreamingVoiceCommandToken(
                         "paste ten",
                         range: timeRange(0, 2)
-                    ),
+                    )
                 ]
             )
         )

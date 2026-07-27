@@ -45,7 +45,8 @@ struct SpeechCommandMetadata: Equatable, Sendable {
 
     var recognitionLatencyMilliseconds: Double? {
         guard let audioEndUptimeNanoseconds,
-              resultReceivedAtNanoseconds >= audioEndUptimeNanoseconds else {
+            resultReceivedAtNanoseconds >= audioEndUptimeNanoseconds
+        else {
             return nil
         }
         return Double(resultReceivedAtNanoseconds - audioEndUptimeNanoseconds) / 1_000_000
@@ -80,7 +81,8 @@ enum SpeechCommandFreshnessPolicy {
             // a phrase boundary or finalization makes the latest name safe.
             readyAtNanoseconds = metadata.resultReceivedAtNanoseconds
         default:
-            readyAtNanoseconds = metadata.audioEndUptimeNanoseconds
+            readyAtNanoseconds =
+                metadata.audioEndUptimeNanoseconds
                 ?? metadata.resultReceivedAtNanoseconds
         }
 
@@ -146,9 +148,11 @@ struct SpeechCommandGate {
         var state = states[stateIndex]
 
         state.range = state.range.union(observation.range)
-        let finalResultCoversState = observation.isFinal
+        let finalResultCoversState =
+            observation.isFinal
             && observation.range.contains(state.range)
-        state.isFinalized = state.isFinalized
+        state.isFinalized =
+            state.isFinalized
             || finalResultCoversState
             || state.range.isFinalized(through: observation.finalizationTime)
 
@@ -157,7 +161,8 @@ struct SpeechCommandGate {
                 state.command = command
                 state.commandRange = observation.range
             } else if let commandRange = state.commandRange,
-                      observation.range.contains(commandRange) {
+                observation.range.contains(commandRange)
+            {
                 // A whole-range revision invalidates the prior parse. Final
                 // word partitions only cover part of Apple's earlier volatile
                 // phrase and must not erase the complete pending command.
@@ -167,7 +172,8 @@ struct SpeechCommandGate {
             // Apple may replace any volatile text until the range finalizes.
             // Once a range has looked command-like, keep it as an audio-order
             // barrier even if an intermediate revision does not parse.
-            state.isPotentialCommand = state.isPotentialCommand
+            state.isPotentialCommand =
+                state.isPotentialCommand
                 || observation.isPotentialCommand
                 || observation.command != nil
             state.metadata = observation.metadata
@@ -232,7 +238,8 @@ struct SpeechCommandGate {
 
         for index in states.indices {
             guard !states[index].isFinalized,
-                  states[index].range.isFinalized(through: finalizationTime) else {
+                states[index].range.isFinalized(through: finalizationTime)
+            else {
                 continue
             }
             states[index].isFinalized = true
@@ -261,7 +268,8 @@ struct SpeechCommandGate {
                 continue
             }
 
-            let mayQueue = states[index].isFinalized
+            let mayQueue =
+                states[index].isFinalized
                 || states[index].acceptsVolatileResult
 
             if let queuedCommand = states[index].queuedCommand {
@@ -272,7 +280,8 @@ struct SpeechCommandGate {
                     // A revised but still parseable command remains an audio-
                     // order barrier until it becomes safe or is finalized.
                     if states[index].command != nil
-                        || (!states[index].isFinalized && states[index].isPotentialCommand) {
+                        || (!states[index].isFinalized && states[index].isPotentialCommand)
+                    {
                         isBlockedByEarlierCandidate = true
                     }
                     continue

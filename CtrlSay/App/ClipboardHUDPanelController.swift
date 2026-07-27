@@ -116,7 +116,8 @@ final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
         wantsToBeShown = true
         visibilityAnimationGeneration &+= 1
         let generation = visibilityAnimationGeneration
-        let requestedAt = model.consumeHUDPresentationRequestTimestamp()
+        let requestedAt =
+            model.consumeHUDPresentationRequestTimestamp()
             ?? DispatchTime.now().uptimeNanoseconds
         let wasVisible = panel.isVisible
 
@@ -131,10 +132,10 @@ final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
             panel.alphaValue = 0
         }
 
-#if DEBUG
+        #if DEBUG
         let frontmostProcessIdentifier = NSWorkspace.shared.frontmostApplication?
             .processIdentifier
-#endif
+        #endif
         panel.orderFrontRegardless()
         animateVisibility(
             to: 1,
@@ -142,22 +143,24 @@ final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
             timingFunction: .easeOut,
             generation: generation
         )
-        let elapsed = Double(
-            DispatchTime.now().uptimeNanoseconds - requestedAt
-        ) / 1_000_000
+        let elapsed =
+            Double(
+                DispatchTime.now().uptimeNanoseconds - requestedAt
+            ) / 1_000_000
         Telemetry.interface.info(
             "HUD presented gesture_to_presentation_ms=\(elapsed, privacy: .public)"
         )
-#if DEBUG
+        #if DEBUG
         Task { @MainActor in
             await Task.yield()
-            let focusWasPreserved = NSWorkspace.shared.frontmostApplication?
+            let focusWasPreserved =
+                NSWorkspace.shared.frontmostApplication?
                 .processIdentifier == frontmostProcessIdentifier
             Telemetry.interface.info(
                 "HUD focus_preserved=\(focusWasPreserved, privacy: .public)"
             )
         }
-#endif
+        #endif
     }
 
     func hide() {
@@ -224,7 +227,8 @@ final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
 
     func windowDidResignKey(_ notification: Notification) {
         guard notification.object as? NSWindow === panel,
-              let token = editingSession.activeSessionToken else {
+            let token = editingSession.activeSessionToken
+        else {
             return
         }
         scheduleOutsideInteractionDismissal(for: token)
@@ -250,7 +254,8 @@ final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
 
     private func handleEditingMouseUp(_ event: NSEvent) {
         guard let token = editingSession.activeSessionToken,
-              !eventIsInsideActiveEditor(event) else {
+            !eventIsInsideActiveEditor(event)
+        else {
             return
         }
         scheduleOutsideInteractionDismissal(for: token)
@@ -258,8 +263,9 @@ final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
 
     private func eventIsInsideActiveEditor(_ event: NSEvent) -> Bool {
         guard event.window === panel,
-              let editor = panel.firstResponder as? NSView,
-              editor.window === panel else {
+            let editor = panel.firstResponder as? NSView,
+            editor.window === panel
+        else {
             return false
         }
         let location = editor.convert(event.locationInWindow, from: nil)
@@ -358,10 +364,12 @@ final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
         _ frame: CGRect,
         measuresResize: Bool = false
     ) {
-        guard ClipboardHUDPlacement.requiresFrameUpdate(
-            current: panel.frame,
-            target: frame
-        ) else {
+        guard
+            ClipboardHUDPlacement.requiresFrameUpdate(
+                current: panel.frame,
+                target: frame
+            )
+        else {
             return
         }
 
@@ -376,9 +384,10 @@ final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
         // feedback loop. Visibility still fades through the compositor.
         panel.setFrame(frame, display: false)
         if measuresResize {
-            let elapsed = Double(
-                DispatchTime.now().uptimeNanoseconds - startedAt
-            ) / 1_000_000
+            let elapsed =
+                Double(
+                    DispatchTime.now().uptimeNanoseconds - startedAt
+                ) / 1_000_000
             Telemetry.interface.debug(
                 "HUD layout item_count=\(itemCount, privacy: .public) resize_ms=\(elapsed, privacy: .public)"
             )
@@ -407,7 +416,8 @@ final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
             completionHandler: { [weak self] in
                 Task { @MainActor [weak self] in
                     guard let self,
-                          self.visibilityAnimationGeneration == generation else {
+                        self.visibilityAnimationGeneration == generation
+                    else {
                         return
                     }
                     self.panel.alphaValue = alpha
@@ -415,9 +425,10 @@ final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
                         self.panel.orderOut(nil)
                     }
 
-                    let elapsed = Double(
-                        DispatchTime.now().uptimeNanoseconds - startedAt
-                    ) / 1_000_000
+                    let elapsed =
+                        Double(
+                            DispatchTime.now().uptimeNanoseconds - startedAt
+                        ) / 1_000_000
                     Telemetry.interface.debug(
                         "HUD fade target_visible=\(alpha > 0, privacy: .public) duration_ms=\(elapsed, privacy: .public)"
                     )
@@ -467,9 +478,10 @@ final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
     private func displayIdentifier(for screen: NSScreen) -> String {
         let screenNumberKey = NSDeviceDescriptionKey("NSScreenNumber")
         if let number = screen.deviceDescription[screenNumberKey] as? NSNumber,
-           let unmanagedUUID = CGDisplayCreateUUIDFromDisplayID(
-               CGDirectDisplayID(number.uint32Value)
-           ) {
+            let unmanagedUUID = CGDisplayCreateUUIDFromDisplayID(
+                CGDirectDisplayID(number.uint32Value)
+            )
+        {
             let uuid = unmanagedUUID.takeRetainedValue()
             return CFUUIDCreateString(nil, uuid) as String
         }
@@ -484,8 +496,8 @@ private enum ClipboardHUDAnimation {
     static let fadeOutDuration: TimeInterval = 0.16
 }
 
-private extension CGRect {
-    var area: CGFloat {
+extension CGRect {
+    fileprivate var area: CGFloat {
         guard !isNull else { return 0 }
         return width * height
     }

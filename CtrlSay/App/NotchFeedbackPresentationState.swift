@@ -33,7 +33,7 @@ final class NotchFeedbackPresentationState {
         reducerState = NotchFeedbackReducerState()
     }
 
-#if DEBUG
+    #if DEBUG
     func presentPersistentPreview(_ feedback: NotchTransientFeedback) {
         expirationTask?.cancel()
         expirationTask = nil
@@ -43,7 +43,7 @@ final class NotchFeedbackPresentationState {
         )
         reducerState = reduction.state
     }
-#endif
+    #endif
 
     private func apply(_ event: NotchFeedbackReductionEvent) {
         let reduction = NotchFeedbackReducer.reduce(

@@ -142,11 +142,14 @@ struct StreamingVoiceCommandScanner {
         self.maximumCrossSegmentGap = maximumCrossSegmentGap
     }
 
+    // MARK: - Timeline Updates
+
     mutating func ingest(
         _ segment: StreamingVoiceCommandSegment,
         knownNamedCopies: Set<String> = []
     ) -> StreamingVoiceCommandScannerUpdate {
-        let rangeWasAlreadyFinalized = isNumeric(resultStreamFinalizedThrough)
+        let rangeWasAlreadyFinalized =
+            isNumeric(resultStreamFinalizedThrough)
             && CMTimeCompare(segment.range.end, resultStreamFinalizedThrough) <= 0
 
         updateLatestObservedEnd(segment.range.end)
@@ -161,11 +164,13 @@ struct StreamingVoiceCommandScanner {
             return StreamingVoiceCommandScannerUpdate(mutations: [])
         }
 
-        let segmentIndex = indexForRevision(of: segment.range)
+        let segmentIndex =
+            indexForRevision(of: segment.range)
             ?? appendSegment(for: segment)
         segments[segmentIndex].range = segments[segmentIndex].range.union(segment.range)
         segments[segmentIndex].tokens = segment.tokens
-        segments[segmentIndex].isFinalized = segments[segmentIndex].isFinalized
+        segments[segmentIndex].isFinalized =
+            segments[segmentIndex].isFinalized
             || segment.isFinal
         segments[segmentIndex].hasTrailingPhraseBoundary =
             segment.hasTrailingPhraseBoundary
@@ -208,6 +213,8 @@ struct StreamingVoiceCommandScanner {
         latestObservedEnd = .invalid
     }
 
+    // MARK: - Segment State
+
     private mutating func appendSegment(
         for observation: StreamingVoiceCommandSegment
     ) -> Int {
@@ -240,11 +247,13 @@ struct StreamingVoiceCommandScanner {
     private mutating func advanceFinalizationWatermark(to watermark: CMTime) {
         guard isNumeric(watermark) else { return }
         if !isNumeric(finalizedThrough)
-            || CMTimeCompare(watermark, finalizedThrough) > 0 {
+            || CMTimeCompare(watermark, finalizedThrough) > 0
+        {
             finalizedThrough = watermark
         }
 
-        for index in segments.indices where
+        for index in segments.indices
+        where
             CMTimeCompare(segments[index].range.end, finalizedThrough) <= 0
         {
             segments[index].isFinalized = true
@@ -256,7 +265,8 @@ struct StreamingVoiceCommandScanner {
     ) {
         guard isNumeric(watermark) else { return }
         if !isNumeric(resultStreamFinalizedThrough)
-            || CMTimeCompare(watermark, resultStreamFinalizedThrough) > 0 {
+            || CMTimeCompare(watermark, resultStreamFinalizedThrough) > 0
+        {
             resultStreamFinalizedThrough = watermark
         }
     }
@@ -264,10 +274,13 @@ struct StreamingVoiceCommandScanner {
     private mutating func updateLatestObservedEnd(_ end: CMTime) {
         guard isNumeric(end) else { return }
         if !isNumeric(latestObservedEnd)
-            || CMTimeCompare(end, latestObservedEnd) > 0 {
+            || CMTimeCompare(end, latestObservedEnd) > 0
+        {
             latestObservedEnd = end
         }
     }
+
+    // MARK: - Command Extraction
 
     private func extractedCandidates(
         knownNamedCopies: Set<String>
@@ -287,9 +300,11 @@ struct StreamingVoiceCommandScanner {
                 let components = normalizedComponents(token.text)
                 for (componentIndex, component) in components.enumerated() {
                     let isLastComponent = componentIndex == components.count - 1
-                    let tokenClosesPhrase = isLastComponent
+                    let tokenClosesPhrase =
+                        isLastComponent
                         && VoiceCommandParser.hasExplicitPhraseBoundary(token.text)
-                    let segmentClosesPhrase = isLastComponent
+                    let segmentClosesPhrase =
+                        isLastComponent
                         && tokenIndex == lastSemanticTokenIndex
                         && segment.hasTrailingPhraseBoundary
                     resolvedTokens.append(
@@ -342,12 +357,14 @@ struct StreamingVoiceCommandScanner {
                     continue
                 }
             }
-            guard let candidate = temporaryCommandCandidate(
-                startingAt: index,
-                in: resolvedTokens,
-                knownNamedCopies: availableNamedCopies,
-                order: snapshots.count
-            ) else {
+            guard
+                let candidate = temporaryCommandCandidate(
+                    startingAt: index,
+                    in: resolvedTokens,
+                    knownNamedCopies: availableNamedCopies,
+                    order: snapshots.count
+                )
+            else {
                 continue
             }
             switch candidate.command {
@@ -371,9 +388,11 @@ struct StreamingVoiceCommandScanner {
     ) -> CandidateSnapshot? {
         guard index + 1 < tokens.count else { return nil }
         let verb = tokens[index]
-        guard let canonicalVerb = VoiceCommandParser.canonicalNumberedCommandVerb(
-            verb.text
-        ) else {
+        guard
+            let canonicalVerb = VoiceCommandParser.canonicalNumberedCommandVerb(
+                verb.text
+            )
+        else {
             return nil
         }
         let firstArgument = tokens[index + 1]
@@ -403,19 +422,23 @@ struct StreamingVoiceCommandScanner {
         guard let finalArgument = arguments.last else { return nil }
 
         let spokenName = arguments.map(\.text).joined(separator: " ")
-        guard let command = VoiceCommandParser.parse(
-            "\(canonicalVerb) \(spokenName)"
-        ) else {
+        guard
+            let command = VoiceCommandParser.parse(
+                "\(canonicalVerb) \(spokenName)"
+            )
+        else {
             return nil
         }
         if case .pasteNamed(let name) = command,
-           !knownNamedCopies.contains(VoiceCommandParser.normalizeName(name)) {
+            !knownNamedCopies.contains(VoiceCommandParser.normalizeName(name))
+        {
             return nil
         }
 
         let commandTokens = [verb] + arguments
         let confidences = commandTokens.map(\.confidence)
-        let minimumConfidence = confidences.allSatisfy { $0 != nil }
+        let minimumConfidence =
+            confidences.allSatisfy { $0 != nil }
             ? confidences.compactMap { $0 }.min()
             : nil
         let range = commandTokens.dropFirst().reduce(verb.range) {
@@ -522,11 +545,12 @@ struct StreamingVoiceCommandScanner {
         let firstArgument = tokens[index + 2]
 
         guard VoiceCommandParser.isPotentialPermanentModifier(modifier.text),
-              VoiceCommandParser.canonicalNumberedCommandVerb(
-                  verb.text
-              ) == "copy",
-              canBridge(modifier, to: verb),
-              canBridge(verb, to: firstArgument) else {
+            VoiceCommandParser.canonicalNumberedCommandVerb(
+                verb.text
+            ) == "copy",
+            canBridge(modifier, to: verb),
+            canBridge(verb, to: firstArgument)
+        else {
             return nil
         }
 
@@ -535,9 +559,10 @@ struct StreamingVoiceCommandScanner {
             in: tokens
         )
         guard let finalArgument = arguments.last,
-              let name = VoiceCommandParser.validNormalizedPermanentName(
-                  arguments.map(\.text).joined(separator: " ")
-              ) else { return nil }
+            let name = VoiceCommandParser.validNormalizedPermanentName(
+                arguments.map(\.text).joined(separator: " ")
+            )
+        else { return nil }
 
         let command = VoiceCommand.permanentCopy(name)
         let commandTokens = [modifier, verb] + arguments
@@ -545,7 +570,8 @@ struct StreamingVoiceCommandScanner {
             $0.union($1.range)
         }
         let confidences = commandTokens.map(\.confidence)
-        let minimumConfidence = confidences.allSatisfy { $0 != nil }
+        let minimumConfidence =
+            confidences.allSatisfy { $0 != nil }
             ? confidences.compactMap { $0 }.min()
             : nil
 
@@ -579,7 +605,8 @@ struct StreamingVoiceCommandScanner {
         minimumConfidence: Double? = nil,
         knownNamedCopies: Set<String> = []
     ) -> Bool {
-        let isFinalized = argument.isFinalized
+        let isFinalized =
+            argument.isFinalized
             || argument.segmentRange.isFinalized(through: finalizedThrough)
 
         switch command {
@@ -633,6 +660,8 @@ struct StreamingVoiceCommandScanner {
         return max(0, gap) <= maximumCrossSegmentGap
     }
 
+    // MARK: - Candidate Reconciliation
+
     private mutating func reconcile(
         with snapshots: [CandidateSnapshot]
     ) -> [StreamingVoiceCommandMutation] {
@@ -640,21 +669,23 @@ struct StreamingVoiceCommandScanner {
         var assignments: [(snapshot: CandidateSnapshot, stateIndex: Int)] = []
 
         for snapshot in snapshots {
-            let stateIndex = exactStateIndex(
-                for: snapshot,
-                excluding: assignedStateIndices
-            ) ?? fallbackStateIndex(
-                for: snapshot,
-                excluding: assignedStateIndices
-            ) ?? appendCandidate(for: snapshot)
+            let stateIndex =
+                exactStateIndex(
+                    for: snapshot,
+                    excluding: assignedStateIndices
+                ) ?? fallbackStateIndex(
+                    for: snapshot,
+                    excluding: assignedStateIndices
+                ) ?? appendCandidate(for: snapshot)
             assignedStateIndices.insert(stateIndex)
             assignments.append((snapshot, stateIndex))
         }
 
-        var stagedMutations: [(
-            order: Int,
-            mutation: StreamingVoiceCommandMutation
-        )] = []
+        var stagedMutations:
+            [(
+                order: Int,
+                mutation: StreamingVoiceCommandMutation
+            )] = []
 
         for index in candidates.indices where !assignedStateIndices.contains(index) {
             guard candidates[index].isPresent else { continue }
@@ -689,11 +720,13 @@ struct StreamingVoiceCommandScanner {
             candidates[index].isPresent = true
 
             guard !candidates[index].isCommitted else { continue }
-            guard !candidates[index].isQueued
+            guard
+                !candidates[index].isQueued
                     || !wasPresent
                     || priorCommand != snapshot.command
                     || wasReadyForDispatch != snapshot.isReadyForDispatch
-                    || wasStableForCommit != snapshot.isStableForCommit else {
+                    || wasStableForCommit != snapshot.isStableForCommit
+            else {
                 continue
             }
 
@@ -709,7 +742,8 @@ struct StreamingVoiceCommandScanner {
             stagedMutations.append((snapshot.order, .upsert(candidate)))
         }
 
-        return stagedMutations
+        return
+            stagedMutations
             .enumerated()
             .sorted { lhs, rhs in
                 if lhs.element.order != rhs.element.order {
@@ -753,19 +787,20 @@ struct StreamingVoiceCommandScanner {
                 && candidates[$0].order == snapshot.order
         } ?? eligible.first {
             rangesCorrespond(candidates[$0].range, snapshot.range)
-        } ?? candidates.indices.first {
-            // Apple can replace one broad volatile segment with several final
-            // partitions. The command partition then has a new SegmentID, but
-            // its audio is still inside the already-executed broad candidate.
-            !assignedIndices.contains($0)
-                && (candidates[$0].isCommitted || candidates[$0].isQueued)
-                && candidates[$0].command == snapshot.command
-                // Across distinct Apple result segments, require real audio
-                // overlap. Endpoint-inclusive zero-range containment is safe
-                // for revisions of one source segment, but could otherwise
-                // absorb a genuine adjacent repeat that begins at that point.
-                && strictlyOverlaps(candidates[$0].range, snapshot.range)
         }
+            ?? candidates.indices.first {
+                // Apple can replace one broad volatile segment with several final
+                // partitions. The command partition then has a new SegmentID, but
+                // its audio is still inside the already-executed broad candidate.
+                !assignedIndices.contains($0)
+                    && (candidates[$0].isCommitted || candidates[$0].isQueued)
+                    && candidates[$0].command == snapshot.command
+                    // Across distinct Apple result segments, require real audio
+                    // overlap. Endpoint-inclusive zero-range containment is safe
+                    // for revisions of one source segment, but could otherwise
+                    // absorb a genuine adjacent repeat that begins at that point.
+                    && strictlyOverlaps(candidates[$0].range, snapshot.range)
+            }
     }
 
     private mutating func appendCandidate(
@@ -803,9 +838,10 @@ struct StreamingVoiceCommandScanner {
 
         segments.removeAll { segment in
             guard segment.isFinalized,
-                  !queuedSourceIDs.contains(segment.id),
-                  latestEnd.isNumeric,
-                  segment.range.end.isNumeric else {
+                !queuedSourceIDs.contains(segment.id),
+                latestEnd.isNumeric,
+                segment.range.end.isNumeric
+            else {
                 return false
             }
             let age = CMTimeGetSeconds(
@@ -824,6 +860,8 @@ struct StreamingVoiceCommandScanner {
             return !candidate.isQueued && !candidate.isPresent && !hasRetainedSource
         }
     }
+
+    // MARK: - Range Helpers
 
     private func normalizedComponents(_ text: String) -> [String] {
         text.lowercased()

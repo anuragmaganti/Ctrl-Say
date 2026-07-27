@@ -530,30 +530,29 @@ final class SpeechCommandGateTests: XCTestCase {
     }
 }
 
-private extension Array where Element == SpeechCommandMutation {
-    var upsertID: SpeechUtteranceID? {
+extension Array where Element == SpeechCommandMutation {
+    fileprivate var upsertID: SpeechUtteranceID? {
         for mutation in self {
             if case .upsert(let id, _, _) = mutation { return id }
         }
         return nil
     }
 
-    var upsertCommand: VoiceCommand? {
+    fileprivate var upsertCommand: VoiceCommand? {
         for mutation in self {
             if case .upsert(_, let command, _) = mutation { return command }
         }
         return nil
     }
 
-
-    var upsertCommands: [VoiceCommand] {
+    fileprivate var upsertCommands: [VoiceCommand] {
         compactMap { mutation in
             if case .upsert(_, let command, _) = mutation { return command }
             return nil
         }
     }
 
-    var upsertMetadata: SpeechCommandMetadata? {
+    fileprivate var upsertMetadata: SpeechCommandMetadata? {
         for mutation in self {
             if case .upsert(_, _, let metadata) = mutation { return metadata }
         }

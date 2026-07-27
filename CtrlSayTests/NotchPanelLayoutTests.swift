@@ -85,7 +85,7 @@ final class NotchPanelLayoutTests: XCTestCase {
         XCTAssertEqual(
             layout.frame.minX
                 + NotchPanelLayoutCalculator
-                    .attachedHorizontalCanvasOutset,
+                .attachedHorizontalCanvasOutset,
             790
         )
         XCTAssertEqual(
@@ -111,7 +111,8 @@ final class NotchPanelLayoutTests: XCTestCase {
         let reportedNotchRight = notchedDisplay
             .auxiliaryTopRightArea!
             .minX
-        let reportedNotchBottom = notchedDisplay.frame.maxY
+        let reportedNotchBottom =
+            notchedDisplay.frame.maxY
             - notchedDisplay.safeAreaTop
 
         XCTAssertEqual(borderOutset, 1)

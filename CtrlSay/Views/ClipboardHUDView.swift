@@ -17,7 +17,8 @@ struct ClipboardHUDView: View {
                 .frame(maxHeight: .infinity)
 
             if presentationState.selectedCollection == .numbered,
-               model.slots.hasTemporaryCopies {
+                model.slots.hasTemporaryCopies
+            {
                 numberedFooter
                     .frame(height: ClipboardHUDMetrics.numberedFooterHeight)
             }
@@ -124,8 +125,8 @@ struct ClipboardHUDView: View {
                 .clipboardSlotListRow(showsBottomSeparator: false)
             } else {
                 ForEach(numberedSlots, id: \.number) { slot in
-                    NumberedCopyRow(
-                        number: slot.number,
+                    TemporaryCopyRow(
+                        slot: .numbered(slot.number),
                         payload: slot.payload,
                         copyToClipboard: {
                             model.copyToSystemClipboard(slot.payload)
@@ -151,8 +152,8 @@ struct ClipboardHUDView: View {
                 }
 
                 ForEach(namedSlots, id: \.name) { slot in
-                    TemporaryNamedCopyRow(
-                        name: slot.name,
+                    TemporaryCopyRow(
+                        slot: .named(slot.name),
                         payload: slot.payload,
                         copyToClipboard: {
                             model.copyToSystemClipboard(slot.payload)
@@ -201,7 +202,8 @@ struct ClipboardHUDView: View {
     @ViewBuilder
     private var permanentCopies: some View {
         let slots = model.slots.namedSlots
-        let showsPermanentCopies = !model.permanentStorageState.isLoading
+        let showsPermanentCopies =
+            !model.permanentStorageState.isLoading
             && !model.permanentStorageState.isUnavailable
             && !slots.isEmpty
         List {
@@ -214,7 +216,8 @@ struct ClipboardHUDView: View {
             }
 
             if !model.permanentStorageState.isLoading,
-               !model.permanentStorageState.isUnavailable {
+                !model.permanentStorageState.isUnavailable
+            {
                 if slots.isEmpty {
                     emptyState(
                         icon: "pin",

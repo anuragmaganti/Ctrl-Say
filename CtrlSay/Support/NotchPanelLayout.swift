@@ -99,7 +99,8 @@ enum NotchPanelLayoutCalculator {
         case (.attached(let notchWidth, _), .passive):
             // The transparent canvas starts outside the physical exclusion;
             // command feedback still grows only toward the right.
-            proposedX = display.frame.midX
+            proposedX =
+                display.frame.midX
                 - notchWidth / 2
                 - attachedHorizontalCanvasOutset
         case (.floating, .passive):
@@ -110,7 +111,8 @@ enum NotchPanelLayoutCalculator {
             proposedX = display.frame.midX - size.width / 2
         }
         let minimumX = display.frame.minX + horizontalScreenInset
-        let maximumX = display.frame.maxX
+        let maximumX =
+            display.frame.maxX
             - horizontalScreenInset
             - size.width
         let x = proposedX.clamped(to: minimumX...max(minimumX, maximumX))
@@ -127,8 +129,9 @@ enum NotchPanelLayoutCalculator {
         for display: NotchDisplayGeometry
     ) -> NotchSurfaceStyle {
         guard display.safeAreaTop > 0,
-              let left = display.auxiliaryTopLeftArea,
-              let right = display.auxiliaryTopRightArea else {
+            let left = display.auxiliaryTopLeftArea,
+            let right = display.auxiliaryTopRightArea
+        else {
             return .floating
         }
 
@@ -136,8 +139,9 @@ enum NotchPanelLayoutCalculator {
         let notchRight = min(display.frame.maxX, right.minX)
         let notchWidth = notchRight - notchLeft
         guard notchWidth > 0,
-              notchWidth < display.frame.width,
-              display.safeAreaTop < display.frame.height else {
+            notchWidth < display.frame.width,
+            display.safeAreaTop < display.frame.height
+        else {
             return .floating
         }
 
@@ -247,7 +251,8 @@ enum NotchPanelLayoutCalculator {
         let height: CGFloat
         switch surfaceStyle {
         case .attached(_, let notchHeight):
-            height = notchHeight
+            height =
+                notchHeight
                 + attachedBottomCanvasOutset
                 + contentHeight
         case .floating:
@@ -357,8 +362,8 @@ enum AttachedNotchGeometry {
     }
 }
 
-private extension Comparable {
-    func clamped(to range: ClosedRange<Self>) -> Self {
+extension Comparable {
+    fileprivate func clamped(to range: ClosedRange<Self>) -> Self {
         min(max(self, range.lowerBound), range.upperBound)
     }
 }

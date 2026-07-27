@@ -252,7 +252,7 @@ final class PermanentCopyRepositoryTests: XCTestCase {
         try store.set(temporary, at: 1)
 
         try store.restorePermanentCopies([
-            PersistedPermanentCopy(name: "house", payload: permanent),
+            PersistedPermanentCopy(name: "house", payload: permanent)
         ])
 
         XCTAssertEqual(store.payload(at: 1), temporary)
@@ -312,7 +312,7 @@ final class PermanentCopyRepositoryTests: XCTestCase {
 
         XCTAssertThrowsError(
             try store.restorePermanentCopies([
-                PersistedPermanentCopy(name: "HOUSE!", payload: payload),
+                PersistedPermanentCopy(name: "HOUSE!", payload: payload)
             ])
         ) { error in
             XCTAssertEqual(
@@ -370,9 +370,9 @@ final class PermanentCopyRepositoryTests: XCTestCase {
                         PasteboardRepresentation(
                             typeIdentifier: "public.utf8-plain-text",
                             data: data
-                        ),
+                        )
                     ]
-                ),
+                )
             ],
             kind: .text,
             preview: text,
@@ -432,9 +432,9 @@ final class PermanentCopyRepositoryTests: XCTestCase {
                         PasteboardRepresentation(
                             typeIdentifier: "public.file-url",
                             data: data
-                        ),
+                        )
                     ]
-                ),
+                )
             ],
             kind: .files,
             preview: "File",

@@ -26,9 +26,9 @@ extension View {
                 trailing: 0
             )
         )
-            .listRowSeparator(.hidden)
-            .listRowBackground(Color.clear)
-            .clipboardRowSeparator(isVisible: showsBottomSeparator)
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
+        .clipboardRowSeparator(isVisible: showsBottomSeparator)
     }
 
     func clipboardRowSeparator(isVisible: Bool) -> some View {

@@ -50,9 +50,10 @@ enum SpeechTokenAssembler {
             }
 
             if let fragmentConfidence {
-                confidence = confidence.map {
-                    min($0, fragmentConfidence)
-                } ?? fragmentConfidence
+                confidence =
+                    confidence.map {
+                        min($0, fragmentConfidence)
+                    } ?? fragmentConfidence
             } else {
                 hasMissingConfidence = true
             }
@@ -94,8 +95,9 @@ enum SpeechTokenAssembler {
             for character in fragment.text {
                 let isWordCharacter = isLexical(character)
                 if isFirstCharacter,
-                   isWordCharacter,
-                   builder != nil {
+                    isWordCharacter,
+                    builder != nil
+                {
                     inWordBoundaryMergeCount += 1
                 }
                 isFirstCharacter = false

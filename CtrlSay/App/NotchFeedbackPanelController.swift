@@ -132,7 +132,8 @@ final class NotchFeedbackPanelController {
             delayedHideTask?.cancel()
             delayedHideTask = nil
             let wasVisible = panel.isVisible
-            let screen = wasVisible
+            let screen =
+                wasVisible
                 ? (activeScreen ?? bestScreenForCurrentFrame())
                 : pointerScreen()
             activeScreen = screen
@@ -142,37 +143,40 @@ final class NotchFeedbackPanelController {
             )
 
             guard !wasVisible else { return }
-#if DEBUG
+            #if DEBUG
             let frontmostProcessIdentifier = NSWorkspace.shared
                 .frontmostApplication?
                 .processIdentifier
-#endif
+            #endif
             let startedAt = DispatchTime.now().uptimeNanoseconds
             panel.orderFrontRegardless()
-            let milliseconds = Double(
-                DispatchTime.now().uptimeNanoseconds - startedAt
-            ) / 1_000_000
+            let milliseconds =
+                Double(
+                    DispatchTime.now().uptimeNanoseconds - startedAt
+                ) / 1_000_000
             Telemetry.interface.debug(
                 "Notch presented duration_ms=\(milliseconds, privacy: .public)"
             )
-#if DEBUG
+            #if DEBUG
             Task { @MainActor in
                 await Task.yield()
-                let focusWasPreserved = NSWorkspace.shared
+                let focusWasPreserved =
+                    NSWorkspace.shared
                     .frontmostApplication?
                     .processIdentifier == frontmostProcessIdentifier
                 Telemetry.interface.info(
                     "Notch focus_preserved=\(focusWasPreserved, privacy: .public)"
                 )
             }
-#endif
+            #endif
             return
         }
 
         guard panel.isVisible else { return }
         let screen = activeScreen ?? bestScreenForCurrentFrame()
         activeScreen = screen
-        let shouldAnimate = animated
+        let shouldAnimate =
+            animated
             && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         applyLayout(
             on: screen,
@@ -191,8 +195,9 @@ final class NotchFeedbackPanelController {
                 return
             }
             guard !Task.isCancelled,
-                  let self,
-                  !self.presentationState.visualState.isVisible else {
+                let self,
+                !self.presentationState.visualState.isVisible
+            else {
                 return
             }
             self.panel.orderOut(nil)
@@ -217,10 +222,12 @@ final class NotchFeedbackPanelController {
             display: display
         )
         windowContext.update(surfaceStyle: layout.surfaceStyle)
-        guard NotchPanelLayoutCalculator.requiresFrameUpdate(
-            current: panel.frame,
-            target: layout.frame
-        ) else {
+        guard
+            NotchPanelLayoutCalculator.requiresFrameUpdate(
+                current: panel.frame,
+                target: layout.frame
+            )
+        else {
             return
         }
         // SwiftUI/Core Animation own the visual transition inside the panel.
@@ -244,8 +251,8 @@ final class NotchFeedbackPanelController {
     }
 }
 
-private extension CGRect {
-    var area: CGFloat {
+extension CGRect {
+    fileprivate var area: CGFloat {
         guard !isNull, !isInfinite else { return 0 }
         return max(0, width) * max(0, height)
     }

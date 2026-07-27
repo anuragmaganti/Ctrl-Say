@@ -70,10 +70,11 @@ struct ClipboardPayload: Identifiable, Hashable, Sendable {
 
     var inlineTextEditability: InlineTextEditability {
         guard kind == .text,
-              items.count == 1,
-              items[0].representations.count == 1,
-              let representation = items[0].representations.first,
-              representation.typeIdentifier == Self.utf8PlainTextTypeIdentifier else {
+            items.count == 1,
+            items[0].representations.count == 1,
+            let representation = items[0].representations.first,
+            representation.typeIdentifier == Self.utf8PlainTextTypeIdentifier
+        else {
             return .notPlainText
         }
         guard representation.data.count <= Self.maximumInlineEditableTextBytes else {
@@ -87,15 +88,11 @@ struct ClipboardPayload: Identifiable, Hashable, Sendable {
 
     var editableText: String? {
         guard inlineTextEditability == .editable,
-              let representation = items[0].representations.first else {
+            let representation = items[0].representations.first
+        else {
             return nil
         }
         return String(data: representation.data, encoding: .utf8)
-    }
-
-    nonisolated var hasAdditionalPreviewText: Bool {
-        guard let data = firstUTF8PlainTextData else { return false }
-        return data.count > preview.utf8.count
     }
 
     nonisolated var expandedPreviewText: String {
@@ -106,21 +103,24 @@ struct ClipboardPayload: Identifiable, Hashable, Sendable {
             Self.maximumExpandedPreviewCharacters * 4
         )
         guard let decoded = Self.decodeUTF8Prefix(data, byteLimit: byteLimit),
-              !decoded.isEmpty else {
+            !decoded.isEmpty
+        else {
             return preview
         }
 
         let bounded = String(
             decoded.prefix(Self.maximumExpandedPreviewCharacters)
         )
-        let isTruncated = byteLimit < data.count
+        let isTruncated =
+            byteLimit < data.count
             || decoded.count > Self.maximumExpandedPreviewCharacters
         guard isTruncated, !bounded.hasSuffix("…") else { return bounded }
         return bounded + "…"
     }
 
     nonisolated var tooltipPreviewText: String {
-        let normalized = expandedPreviewText
+        let normalized =
+            expandedPreviewText
             .split(whereSeparator: { $0.isWhitespace })
             .joined(separator: " ")
         guard normalized.count > Self.maximumTooltipPreviewCharacters else {
@@ -144,9 +144,9 @@ struct ClipboardPayload: Identifiable, Hashable, Sendable {
                         PasteboardRepresentation(
                             typeIdentifier: Self.utf8PlainTextTypeIdentifier,
                             data: data
-                        ),
+                        )
                     ]
-                ),
+                )
             ],
             kind: .text,
             preview: Self.preview(forText: text),
@@ -208,11 +208,12 @@ struct ClipboardPayload: Identifiable, Hashable, Sendable {
         kind: ClipboardContentKind
     ) -> Bool {
         guard kind == .text,
-              items.count == 1,
-              items[0].representations.count == 1,
-              let representation = items[0].representations.first,
-              representation.typeIdentifier == utf8PlainTextTypeIdentifier,
-              representation.data.count <= maximumInlineEditableTextBytes else {
+            items.count == 1,
+            items[0].representations.count == 1,
+            let representation = items[0].representations.first,
+            representation.typeIdentifier == utf8PlainTextTypeIdentifier,
+            representation.data.count <= maximumInlineEditableTextBytes
+        else {
             return false
         }
         return String(data: representation.data, encoding: .utf8) != nil

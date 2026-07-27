@@ -10,8 +10,6 @@ final class AppModel {
     let speech = SpeechRecognitionService()
     let launchAtLogin = LaunchAtLoginController()
 
-    private(set) var lastAction = "Ready"
-    private(set) var lastError: String?
     private(set) var isProcessingCommand = false
     private(set) var hasEventPostingAccess = false
     private(set) var hasKeyboardMonitoringAccess = false
@@ -19,9 +17,9 @@ final class AppModel {
     private(set) var permanentStorageState: PermanentCopyPersistenceState = .loading
     private(set) var notchFeedbackSignal: NotchFeedbackSignal?
 
-#if DEBUG
+    #if DEBUG
     private(set) var debugDiagnostics = DebugPipelineSnapshot()
-#endif
+    #endif
 
     @ObservationIgnored private let clipboard = ClipboardService()
     @ObservationIgnored private let permanentRepository: any PermanentCopyPersisting
@@ -30,23 +28,24 @@ final class AppModel {
     @ObservationIgnored private var streamingCommandScanner = StreamingVoiceCommandScanner()
     @ObservationIgnored private var commandQueue = SerialCommandQueueState<QueuedCommand, SpeechCommandIdentity>()
     @ObservationIgnored private var capturedSpeechTargets: [SpeechCommandIdentity: TargetSnapshot] = [:]
-    @ObservationIgnored private var activeNamedCopyCommands: [
-        StreamingVoiceCommandID: ActiveNamedCopyCommand
-    ] = [:]
+    @ObservationIgnored private var activeNamedCopyCommands: [StreamingVoiceCommandID: ActiveNamedCopyCommand] = [:]
     @ObservationIgnored private var desiredListening = false
     @ObservationIgnored private var listeningTransitionTask: Task<Void, Never>?
     @ObservationIgnored private var vocabularyRefreshPending = false
     @ObservationIgnored private var vocabularyRefreshTask: Task<Void, Never>?
     @ObservationIgnored private var hudPresentationRequestedAtNanoseconds: UInt64?
-    @ObservationIgnored private var pendingHUDRowAppearance: (
-        payloadID: UUID,
-        storedAtNanoseconds: UInt64
-    )?
+    @ObservationIgnored private var pendingHUDRowAppearance:
+        (
+            payloadID: UUID,
+            storedAtNanoseconds: UInt64
+        )?
     @ObservationIgnored private var permanentRestoreTask: Task<Void, Never>?
     @ObservationIgnored private var permanentPersistenceTask: Task<Void, Never>?
     @ObservationIgnored private var permanentMutationQueue = PermanentMutationQueueState()
     @ObservationIgnored private var didRestorePermanentStorage = false
     @ObservationIgnored private var notchFeedbackSequence: UInt64 = 0
+
+    // MARK: - State
 
     var isReadyForCommands: Bool {
         speech.microphoneAuthorization == .authorized
@@ -75,6 +74,8 @@ final class AppModel {
         startPermanentStorageRestore()
     }
 
+    // MARK: - Launch at Login
+
     func setLaunchAtLoginEnabled(_ isEnabled: Bool) {
         _ = launchAtLogin.setEnabled(isEnabled)
     }
@@ -87,6 +88,8 @@ final class AppModel {
         !permanentMutationQueue.isEmpty
             || permanentMutationQueue.inFlightSequence != nil
     }
+
+    // MARK: - Listening and HUD Presentation
 
     func toggleListening() {
         _ = setListeningDesired(!currentListeningIntent)
@@ -122,15 +125,17 @@ final class AppModel {
         )
     }
 
+    // MARK: - Clipboard HUD Actions
+
     func pasteNumberedCopy(_ payload: ClipboardPayload, number: Int) {
-        enqueueDashboard(
+        enqueueInterfaceCommand(
             .pasteTemporary(payload: payload, label: String(number)),
             target: clipboard.currentCommandTarget()
         )
     }
 
     func pasteTemporaryNamedCopy(_ payload: ClipboardPayload, name: String) {
-        enqueueDashboard(
+        enqueueInterfaceCommand(
             .pasteTemporary(payload: payload, label: name),
             target: clipboard.currentCommandTarget()
         )
@@ -139,35 +144,25 @@ final class AppModel {
     func copyToSystemClipboard(_ payload: ClipboardPayload) {
         do {
             _ = try clipboard.writeToSystemClipboard(payload)
-            lastError = nil
-            lastAction = "Copied to clipboard"
         } catch {
-            lastError = error.localizedDescription
-            lastAction = "Clipboard copy failed"
             NSSound.beep()
             Telemetry.clipboard.error("HUD clipboard write failed")
         }
     }
 
     func deleteNumberedCopy(_ number: Int) {
-        guard slots.removeNumbered(number) != nil else { return }
-        lastError = nil
-        lastAction = "Deleted copy \(number)"
+        _ = slots.removeNumbered(number)
     }
 
     func deleteTemporaryNamedCopy(_ name: String) {
         guard slots.removeTemporaryNamed(name) != nil else { return }
         scheduleVocabularyRefresh()
-        lastError = nil
-        lastAction = "Deleted temporary copy"
     }
 
     func clearTemporaryCopies() {
         guard slots.hasTemporaryCopies else { return }
         slots.clearTemporary()
         scheduleVocabularyRefresh()
-        lastError = nil
-        lastAction = "Cleared temporary copies"
     }
 
     func consumeHUDPresentationRequestTimestamp() -> UInt64? {
@@ -177,25 +172,30 @@ final class AppModel {
 
     func recordHUDRowAppearance(for payloadID: UUID) {
         guard let pendingHUDRowAppearance,
-              pendingHUDRowAppearance.payloadID == payloadID else {
+            pendingHUDRowAppearance.payloadID == payloadID
+        else {
             return
         }
         self.pendingHUDRowAppearance = nil
-        let milliseconds = Double(
-            DispatchTime.now().uptimeNanoseconds
-                - pendingHUDRowAppearance.storedAtNanoseconds
-        ) / 1_000_000
+        let milliseconds =
+            Double(
+                DispatchTime.now().uptimeNanoseconds
+                    - pendingHUDRowAppearance.storedAtNanoseconds
+            ) / 1_000_000
         Telemetry.interface.debug(
             "HUD row appeared store_to_row_ms=\(milliseconds, privacy: .public)"
         )
     }
 
+    // MARK: - Permanent Copies
+
     func pastePermanentCopy(_ payloadID: UUID) {
         guard let name = slots.name(forPayloadID: payloadID),
-              let payload = slots.payload(named: name) else {
+            let payload = slots.payload(named: name)
+        else {
             return
         }
-        enqueueDashboard(
+        enqueueInterfaceCommand(
             .pastePermanent(payload: payload, label: name),
             target: clipboard.currentCommandTarget()
         )
@@ -207,15 +207,14 @@ final class AppModel {
             return
         }
         guard let name = slots.name(forPayloadID: payloadID),
-              let removed = slots.removeNamed(name) else {
+            let removed = slots.removeNamed(name)
+        else {
             return
         }
         enqueuePermanentMutation(
             .delete(name: name, expectedPayloadID: removed.id)
         )
         scheduleVocabularyRefresh()
-        lastError = nil
-        lastAction = "Deleted permanent copy"
     }
 
     @discardableResult
@@ -249,8 +248,6 @@ final class AppModel {
             )
         }
         scheduleVocabularyRefresh()
-        lastError = nil
-        lastAction = "Renamed permanent copy"
         return normalizedName
     }
 
@@ -268,8 +265,6 @@ final class AppModel {
             throw ClipboardStoreError.missingPermanentCopy
         }
         enqueuePermanentMutation(.upsert(name: name, payload: updatedPayload))
-        lastError = nil
-        lastAction = "Updated permanent copy"
     }
 
     func retryPermanentStorage() {
@@ -296,13 +291,10 @@ final class AppModel {
             didRestorePermanentStorage = true
             permanentStorageState = .ready
             scheduleVocabularyRefresh()
-            lastError = nil
-            lastAction = "Reset permanent storage"
             Telemetry.persistence.notice("Permanent storage reset")
         } catch {
             didRestorePermanentStorage = false
             permanentStorageState = .loadFailed
-            lastError = PermanentCopyPersistenceError.storageUnavailable.localizedDescription
             Telemetry.persistence.error("Permanent storage reset failed")
         }
     }
@@ -338,6 +330,8 @@ final class AppModel {
         }
     }
 
+    // MARK: - Permissions
+
     func requestEventPostingAccess() {
         hasEventPostingAccess = clipboard.requestEventPostingAccess()
     }
@@ -361,6 +355,8 @@ final class AppModel {
         hasKeyboardMonitoringAccess = rightOptionMonitor?.refreshGlobalMonitoringAccess() == true
     }
 
+    // MARK: - Listening Intent
+
     private var currentListeningIntent: Bool {
         if listeningTransitionTask != nil {
             return desiredListening
@@ -371,11 +367,10 @@ final class AppModel {
     @discardableResult
     private func setListeningDesired(_ shouldListen: Bool) -> Bool {
         refreshPermissions()
-        let canStopActiveTransition = speech.isActive
+        let canStopActiveTransition =
+            speech.isActive
             || listeningTransitionTask != nil
         guard !shouldListen || isReadyForCommands || canStopActiveTransition else {
-            lastError = "Complete the three setup permissions before listening."
-            lastAction = "Setup required"
             publishNotchFeedback(.commandFailed(message: "Setup required"))
             return false
         }
@@ -391,6 +386,8 @@ final class AppModel {
         return true
     }
 
+    // MARK: - Speech Results
+
     private func received(_ result: RecognizedSpeechResult) {
         let exactCommand = VoiceCommandParser.parse(result.text)
         let timelineTokens: [StreamingVoiceCommandToken]
@@ -404,7 +401,7 @@ final class AppModel {
                     result.text,
                     range: SpeechResultRange(result.range),
                     confidence: result.minimumConfidence
-                ),
+                )
             ]
         } else {
             timelineTokens = result.tokens
@@ -439,15 +436,16 @@ final class AppModel {
         default:
             gatedCommand = exactCommand
         }
-        let acceptsVolatileResult = gatedCommand.map {
-            VolatileCommandAcceptancePolicy.accepts(
-                $0,
-                confidence: result.minimumConfidence,
-                knownNamedCopies: slots.allNamedKeys
-            )
-        } ?? false
+        let acceptsVolatileResult =
+            gatedCommand.map {
+                VolatileCommandAcceptancePolicy.accepts(
+                    $0,
+                    confidence: result.minimumConfidence,
+                    knownNamedCopies: slots.allNamedKeys
+                )
+            } ?? false
 
-#if DEBUG
+        #if DEBUG
         let streamedCandidate = streamingUpdate.mutations.lazy.compactMap {
             mutation -> StreamingVoiceCommandCandidate? in
             guard case .upsert(let candidate) = mutation else { return nil }
@@ -459,7 +457,7 @@ final class AppModel {
             acceptsVolatileResult: streamedCandidate?.isReadyForDispatch == true
                 || acceptsVolatileResult
         )
-#endif
+        #endif
 
         let metadata = SpeechCommandMetadata(
             resultReceivedAtNanoseconds: result.receivedAtNanoseconds,
@@ -538,11 +536,11 @@ final class AppModel {
     ) {
         switch mutation {
         case .upsert(let candidate):
-#if DEBUG
+            #if DEBUG
             Telemetry.speech.info(
                 "Streaming candidate id=\(candidate.id.rawValue, privacy: .public) command=\(candidate.command.telemetryName, privacy: .public) ready=\(candidate.isReadyForDispatch, privacy: .public) stable=\(candidate.isStableForCommit, privacy: .public) start=\(candidate.range.start.seconds, privacy: .public) end=\(candidate.range.end.seconds, privacy: .public) final=\(resultIsFinal, privacy: .public)"
             )
-#endif
+            #endif
             let identity = SpeechCommandIdentity.streaming(candidate.id)
             if candidate.command.isRevisableNamedCopy {
                 if updateActiveNamedCopyCommand(
@@ -564,9 +562,9 @@ final class AppModel {
                 // remains revisable, but do not expose it to the side-effecting
                 // command worker yet.
                 if commandQueue.revoke(identity: identity) {
-#if DEBUG
+                    #if DEBUG
                     debugDiagnostics.revoked(depth: commandQueue.count)
-#endif
+                    #endif
                 }
                 return
             }
@@ -588,27 +586,27 @@ final class AppModel {
                 identity: identity,
                 enqueuedAtNanoseconds: DispatchTime.now().uptimeNanoseconds
             )
-#if DEBUG
+            #if DEBUG
             debugDiagnostics.queued(
                 depth: commandQueue.count,
                 replacedRevision: replacedRevision
             )
-#endif
+            #endif
             startCommandWorkerIfNeeded()
 
         case .revoke(let candidateID):
-#if DEBUG
+            #if DEBUG
             Telemetry.speech.info(
                 "Streaming candidate revoked id=\(candidateID.rawValue, privacy: .public)"
             )
-#endif
+            #endif
             let identity = SpeechCommandIdentity.streaming(candidateID)
             cancelActiveNamedCopyCommand(candidateID, removeStoredCopy: true)
             capturedSpeechTargets.removeValue(forKey: identity)
             guard commandQueue.revoke(identity: identity) else { return }
-#if DEBUG
+            #if DEBUG
             debugDiagnostics.revoked(depth: commandQueue.count)
-#endif
+            #endif
         }
     }
 
@@ -628,22 +626,24 @@ final class AppModel {
                 identity: identity,
                 enqueuedAtNanoseconds: DispatchTime.now().uptimeNanoseconds
             )
-#if DEBUG
+            #if DEBUG
             debugDiagnostics.queued(
                 depth: commandQueue.count,
                 replacedRevision: replacedRevision
             )
-#endif
+            #endif
             startCommandWorkerIfNeeded()
 
         case .revoke(let utteranceID):
             let identity = SpeechCommandIdentity.gated(utteranceID)
             guard commandQueue.revoke(identity: identity) else { return }
-#if DEBUG
+            #if DEBUG
             debugDiagnostics.revoked(depth: commandQueue.count)
-#endif
+            #endif
         }
     }
+
+    // MARK: - Revisable Named Copies
 
     /// Returns true when this is a revision of an already-started named copy.
     /// The first candidate continues into the serialized command queue so the
@@ -682,12 +682,12 @@ final class AppModel {
                 lastObservedAtNanoseconds: receivedAtNanoseconds,
                 lastCharacterCount: name.count
             )
-#if DEBUG
+            #if DEBUG
             debugDiagnostics.namedCopyCandidateStarted(
                 characterCount: name.count,
                 isStable: candidate.isStableForCommit
             )
-#endif
+            #endif
             return false
         }
         guard active.storage == storage else {
@@ -709,12 +709,13 @@ final class AppModel {
             to: receivedAtNanoseconds
         )
         active.latestName = name
-        active.isStableForCommit = active.isStableForCommit
+        active.isStableForCommit =
+            active.isStableForCommit
             || candidate.isStableForCommit
         active.lastObservedAtNanoseconds = receivedAtNanoseconds
         active.lastCharacterCount = name.count
 
-#if DEBUG
+        #if DEBUG
         Telemetry.speech.info(
             "Named copy revision id=\(candidate.id.rawValue, privacy: .public) delta_ms=\(revisionMilliseconds, privacy: .public) total_ms=\(totalMilliseconds, privacy: .public) previous_chars=\(previousCharacterCount, privacy: .public) current_chars=\(name.count, privacy: .public) stable=\(active.isStableForCommit, privacy: .public)"
         )
@@ -725,11 +726,12 @@ final class AppModel {
             totalMilliseconds: totalMilliseconds,
             isStable: active.isStableForCommit
         )
-#endif
+        #endif
 
         if let storedName = active.storedName,
-           let payloadID = active.payloadID,
-           storedName != name {
+            let payloadID = active.payloadID,
+            storedName != name
+        {
             do {
                 let revisedName: String?
                 switch active.storage {
@@ -763,10 +765,6 @@ final class AppModel {
                 if let revisedName {
                     active.storedName = revisedName
                     scheduleVocabularyRefresh()
-                    lastError = nil
-                    lastAction = active.storage == .temporary
-                        ? "Copied to \(revisedName)"
-                        : "Created permanent copy"
                     publishNotchFeedback(
                         .commandSucceeded(action: .copy, label: revisedName)
                     )
@@ -778,8 +776,6 @@ final class AppModel {
                     removeStoredCopy: true
                 )
                 streamingCommandScanner.markCommitted(candidate.id)
-                lastError = error.localizedDescription
-                lastAction = "Command failed"
                 publishNotchFeedback(
                     .commandFailed(message: notchFailureMessage(for: error))
                 )
@@ -806,14 +802,17 @@ final class AppModel {
         _ candidateID: StreamingVoiceCommandID,
         removeStoredCopy: Bool
     ) {
-        guard let active = activeNamedCopyCommands.removeValue(
-            forKey: candidateID
-        ) else {
+        guard
+            let active = activeNamedCopyCommands.removeValue(
+                forKey: candidateID
+            )
+        else {
             return
         }
         guard removeStoredCopy,
-              let storedName = active.storedName,
-              let payloadID = active.payloadID else {
+            let storedName = active.storedName,
+            let payloadID = active.payloadID
+        else {
             return
         }
         switch active.storage {
@@ -824,7 +823,8 @@ final class AppModel {
             slots.removeTemporaryNamed(storedName)
         case .permanent:
             guard slots.payload(named: storedName)?.id == payloadID,
-                  slots.removeNamed(storedName) != nil else {
+                slots.removeNamed(storedName) != nil
+            else {
                 return
             }
             enqueuePermanentMutation(
@@ -838,7 +838,8 @@ final class AppModel {
         _ identity: SpeechCommandIdentity?
     ) {
         guard case .streaming(let candidateID) = identity,
-              activeNamedCopyCommands[candidateID] != nil else {
+            activeNamedCopyCommands[candidateID] != nil
+        else {
             return
         }
         cancelActiveNamedCopyCommand(candidateID, removeStoredCopy: true)
@@ -859,7 +860,8 @@ final class AppModel {
         let candidateID: StreamingVoiceCommandID?
         if case .streaming(let id) = identity {
             guard var active = activeNamedCopyCommands[id],
-                  active.storage == storage else {
+                active.storage == storage
+            else {
                 throw CancellationError()
             }
             active.isExecuting = true
@@ -891,9 +893,11 @@ final class AppModel {
                 named: normalizedName
             )
         case .permanent:
-            guard let validName = VoiceCommandParser.validNormalizedPermanentName(
-                currentName
-            ) else {
+            guard
+                let validName = VoiceCommandParser.validNormalizedPermanentName(
+                    currentName
+                )
+            else {
                 throw ClipboardStoreError.invalidPermanentName
             }
             normalizedName = validName
@@ -904,7 +908,8 @@ final class AppModel {
         }
 
         if let candidateID,
-           var active = activeNamedCopyCommands[candidateID] {
+            var active = activeNamedCopyCommands[candidateID]
+        {
             active.isExecuting = false
             active.storedName = normalizedName
             active.payloadID = capture.payload.id
@@ -928,7 +933,9 @@ final class AppModel {
         return Double(end - start) / 1_000_000
     }
 
-    private func enqueueDashboard(
+    // MARK: - Serialized Command Execution
+
+    private func enqueueInterfaceCommand(
         _ operation: QueuedOperation,
         target: CommandTarget? = nil
     ) {
@@ -941,9 +948,9 @@ final class AppModel {
             identity: nil,
             enqueuedAtNanoseconds: DispatchTime.now().uptimeNanoseconds
         )
-#if DEBUG
+        #if DEBUG
         debugDiagnostics.queued(depth: commandQueue.count, replacedRevision: false)
-#endif
+        #endif
         startCommandWorkerIfNeeded()
     }
 
@@ -971,7 +978,8 @@ final class AppModel {
                     }
                 }
                 if case .streaming(let candidateID) = identity,
-                   activeNamedCopyCommands[candidateID] != nil {
+                    activeNamedCopyCommands[candidateID] != nil
+                {
                     // Retain the original target until the one native copy
                     // capture completes.
                 } else {
@@ -980,15 +988,16 @@ final class AppModel {
             }
 
             let dequeuedAt = DispatchTime.now().uptimeNanoseconds
-            let queueWaitMilliseconds = Double(
-                dequeuedAt - entry.enqueuedAtNanoseconds
-            ) / 1_000_000
-#if DEBUG
+            let queueWaitMilliseconds =
+                Double(
+                    dequeuedAt - entry.enqueuedAtNanoseconds
+                ) / 1_000_000
+            #if DEBUG
             debugDiagnostics.began(
                 queueWaitMilliseconds: queueWaitMilliseconds,
                 depth: commandQueue.count
             )
-#endif
+            #endif
             await execute(
                 entry.element,
                 identity: entry.identity,
@@ -1007,20 +1016,23 @@ final class AppModel {
         if let permanentRestoreTask {
             await permanentRestoreTask.value
         }
-        let restoreWaitMilliseconds = Double(
-            DispatchTime.now().uptimeNanoseconds - restoreWaitStarted
-        ) / 1_000_000
-        let effectiveQueueWaitMilliseconds = queueWaitMilliseconds
+        let restoreWaitMilliseconds =
+            Double(
+                DispatchTime.now().uptimeNanoseconds - restoreWaitStarted
+            ) / 1_000_000
+        let effectiveQueueWaitMilliseconds =
+            queueWaitMilliseconds
             + restoreWaitMilliseconds
 
         if case .voice(let command) = queued.operation,
-           command.requiresExternalTarget,
-           let metadata = queued.speechMetadata,
-           !SpeechCommandFreshnessPolicy.isFresh(
+            command.requiresExternalTarget,
+            let metadata = queued.speechMetadata,
+            !SpeechCommandFreshnessPolicy.isFresh(
                 metadata,
                 command: command,
                 at: DispatchTime.now().uptimeNanoseconds
-           ) {
+            )
+        {
             recordPipeline(
                 queued,
                 queueWaitMilliseconds: effectiveQueueWaitMilliseconds,
@@ -1037,10 +1049,10 @@ final class AppModel {
         }
 
         let started = DispatchTime.now().uptimeNanoseconds
-        lastError = nil
         var clipboardMilliseconds: Double?
         var successfulNotchFeedback: NotchFeedbackEvent?
-        var targetStatus: TargetTelemetryStatus = queued.operation.requiresExternalTarget
+        var targetStatus: TargetTelemetryStatus =
+            queued.operation.requiresExternalTarget
             ? .notChecked
             : .notRequired
 
@@ -1054,7 +1066,6 @@ final class AppModel {
                     markHUDStoreUpdate(for: capture.payload.id)
                     clipboardMilliseconds = capture.milliseconds
                     targetStatus = .verified
-                    lastAction = "Copied to \(number)"
                     successfulNotchFeedback = .commandSucceeded(
                         action: .copy,
                         label: String(number)
@@ -1067,7 +1078,6 @@ final class AppModel {
                     let metrics = try clipboard.paste(payload, target: queued.target)
                     clipboardMilliseconds = metrics.milliseconds
                     targetStatus = .verified
-                    lastAction = "Paste sent from \(number)"
                     successfulNotchFeedback = .commandSucceeded(
                         action: .paste,
                         label: String(number)
@@ -1082,7 +1092,6 @@ final class AppModel {
                     )
                     clipboardMilliseconds = result.capture.milliseconds
                     targetStatus = .verified
-                    lastAction = "Copied to \(result.normalizedName)"
                     successfulNotchFeedback = .commandSucceeded(
                         action: .copy,
                         label: result.normalizedName
@@ -1097,7 +1106,6 @@ final class AppModel {
                     )
                     clipboardMilliseconds = result.capture.milliseconds
                     targetStatus = .verified
-                    lastAction = "Created permanent copy"
                     successfulNotchFeedback = .commandSucceeded(
                         action: .copy,
                         label: result.normalizedName
@@ -1117,7 +1125,6 @@ final class AppModel {
                     let metrics = try clipboard.paste(payload, target: queued.target)
                     clipboardMilliseconds = metrics.milliseconds
                     targetStatus = .verified
-                    lastAction = "Named paste sent"
                     successfulNotchFeedback = .commandSucceeded(
                         action: .paste,
                         label: name
@@ -1127,18 +1134,15 @@ final class AppModel {
                     guard slots.removeNumbered(number) != nil else {
                         throw AppModelError.emptyNumberedSlot(number)
                     }
-                    lastAction = "Deleted copy \(number)"
 
                 case .deleteNamed(let name):
                     if slots.removeTemporaryNamed(name) != nil {
                         scheduleVocabularyRefresh()
-                        lastAction = "Deleted temporary copy"
                     } else {
                         try requirePermanentStorage()
                         guard removePermanentCopy(named: name) else {
                             throw AppModelError.missingNamedCopy
                         }
-                        lastAction = "Deleted permanent copy"
                     }
 
                 case .promoteTemporaryNamed(let name):
@@ -1154,27 +1158,23 @@ final class AppModel {
                         .upsert(name: normalizedName, payload: payload)
                     )
                     scheduleVocabularyRefresh()
-                    lastAction = "Made \(normalizedName) permanent"
 
                 case .renameTemporaryNamed(let currentName, let requestedName):
-                    let revisedName = try slots.renameTemporaryNamed(
+                    _ = try slots.renameTemporaryNamed(
                         from: currentName,
                         to: requestedName
                     )
                     scheduleVocabularyRefresh()
-                    lastAction = "Renamed to \(revisedName)"
 
                 case .clearTemporary:
                     slots.clearTemporary()
                     scheduleVocabularyRefresh()
-                    lastAction = "Cleared temporary copies"
                 }
 
             case .pasteTemporary(let payload, let label):
                 let metrics = try clipboard.paste(payload, target: queued.target)
                 clipboardMilliseconds = metrics.milliseconds
                 targetStatus = .verified
-                lastAction = "Temporary paste sent"
                 successfulNotchFeedback = .commandSucceeded(
                     action: .paste,
                     label: label
@@ -1184,7 +1184,6 @@ final class AppModel {
                 let metrics = try clipboard.paste(payload, target: queued.target)
                 clipboardMilliseconds = metrics.milliseconds
                 targetStatus = .verified
-                lastAction = "Permanent paste sent"
                 successfulNotchFeedback = .commandSucceeded(
                     action: .paste,
                     label: label
@@ -1201,16 +1200,17 @@ final class AppModel {
                 targetStatus: targetStatus,
                 succeeded: true
             )
-            Telemetry.commands.info("\(queued.operation.telemetryName, privacy: .public) completed in \(milliseconds, privacy: .public) ms")
+            Telemetry.commands.info(
+                "\(queued.operation.telemetryName, privacy: .public) completed in \(milliseconds, privacy: .public) ms")
 
-#if DEBUG
+            #if DEBUG
             if let clipboardMilliseconds {
                 debugDiagnostics.recordedClipboardPath(
                     milliseconds: clipboardMilliseconds,
                     targetWasFrontmost: targetStatus == .verified
                 )
             }
-#endif
+            #endif
             if let successfulNotchFeedback {
                 publishNotchFeedback(successfulNotchFeedback)
             }
@@ -1223,8 +1223,6 @@ final class AppModel {
             if queued.operation.requiresExternalTarget {
                 targetStatus = targetFailureStatus(error) ?? targetStatus
             }
-            lastError = error.localizedDescription
-            lastAction = "Command failed"
             NSSound.beep()
             let milliseconds = Double(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000
             recordPipeline(
@@ -1235,17 +1233,21 @@ final class AppModel {
                 targetStatus: targetStatus,
                 succeeded: false
             )
-            Telemetry.commands.error("\(queued.operation.telemetryName, privacy: .public) failed: \(error.localizedDescription, privacy: .private)")
+            Telemetry.commands.error(
+                "\(queued.operation.telemetryName, privacy: .public) failed: \(error.localizedDescription, privacy: .private)"
+            )
             publishNotchFeedback(
                 .commandFailed(message: notchFailureMessage(for: error))
             )
-#if DEBUG
+            #if DEBUG
             if queued.operation.requiresExternalTarget {
                 debugDiagnostics.targetStatus(targetStatus.debugLabel)
             }
-#endif
+            #endif
         }
     }
+
+    // MARK: - Telemetry and Feedback
 
     private func recordPipeline(
         _ queued: QueuedCommand,
@@ -1275,7 +1277,7 @@ final class AppModel {
         case .accessibilityPermissionRequired:
             return .notChecked
         case .clipboardIsEmpty, .copyTimedOut, .unsupportedOrOversizedContent,
-             .couldNotWriteClipboard, .couldNotCreateKeyboardEvent:
+            .couldNotWriteClipboard, .couldNotCreateKeyboardEvent:
             return .verified
         }
     }
@@ -1340,7 +1342,7 @@ final class AppModel {
             case .storageLimitExceeded:
                 return "Clipboard storage is full"
             case .invalidRestoredPermanentCopy,
-                 .duplicateRestoredPermanentCopy:
+                .duplicateRestoredPermanentCopy:
                 return "Permanent storage unavailable"
             }
         }
@@ -1350,6 +1352,8 @@ final class AppModel {
         }
         return "Command failed"
     }
+
+    // MARK: - Speech Session Lifecycle
 
     private func startListeningTransitionIfNeeded() {
         guard listeningTransitionTask == nil else { return }
@@ -1394,6 +1398,8 @@ final class AppModel {
         activeNamedCopyCommands.removeAll(keepingCapacity: true)
     }
 
+    // MARK: - HUD Timing
+
     private func markHUDStoreUpdate(for payloadID: UUID) {
         guard isClipboardHUDPresented else { return }
         pendingHUDRowAppearance = (
@@ -1401,6 +1407,8 @@ final class AppModel {
             DispatchTime.now().uptimeNanoseconds
         )
     }
+
+    // MARK: - Permanent Storage
 
     @discardableResult
     private func removePermanentCopy(named name: String) -> Bool {
@@ -1420,8 +1428,6 @@ final class AppModel {
     }
 
     private func reportPermanentStorageUnavailable() {
-        lastError = PermanentCopyPersistenceError.storageUnavailable.localizedDescription
-        lastAction = "Permanent storage unavailable"
         NSSound.beep()
     }
 
@@ -1437,19 +1443,18 @@ final class AppModel {
                 try slots.restorePermanentCopies(restored)
                 didRestorePermanentStorage = true
                 permanentStorageState = .ready
-                lastError = nil
                 scheduleVocabularyRefresh()
                 let byteCount = restored.reduce(0) { $0 + $1.payload.byteCount }
-                let milliseconds = Double(
-                    DispatchTime.now().uptimeNanoseconds - startedAt
-                ) / 1_000_000
+                let milliseconds =
+                    Double(
+                        DispatchTime.now().uptimeNanoseconds - startedAt
+                    ) / 1_000_000
                 Telemetry.persistence.info(
                     "Permanent load completed count=\(restored.count, privacy: .public) bytes=\(byteCount, privacy: .public) duration_ms=\(milliseconds, privacy: .public)"
                 )
             } catch {
                 didRestorePermanentStorage = false
                 permanentStorageState = .loadFailed
-                lastError = PermanentCopyPersistenceError.storageUnavailable.localizedDescription
                 Telemetry.persistence.error("Permanent load failed")
             }
             permanentRestoreTask = nil
@@ -1463,8 +1468,9 @@ final class AppModel {
 
     private func startPermanentPersistenceDrainIfNeeded() {
         guard permanentPersistenceTask == nil,
-              !permanentMutationQueue.isEmpty,
-              didRestorePermanentStorage else {
+            !permanentMutationQueue.isEmpty,
+            didRestorePermanentStorage
+        else {
             return
         }
         permanentStorageState = .saving(
@@ -1487,9 +1493,10 @@ final class AppModel {
                     assertionFailure("Permanent-copy mutation order changed while saving")
                     break
                 }
-                let milliseconds = Double(
-                    DispatchTime.now().uptimeNanoseconds - startedAt
-                ) / 1_000_000
+                let milliseconds =
+                    Double(
+                        DispatchTime.now().uptimeNanoseconds - startedAt
+                    ) / 1_000_000
                 Telemetry.persistence.info(
                     "Permanent mutation saved sequence=\(pending.sequence, privacy: .public) bytes=\(pending.mutation.byteCount, privacy: .public) duration_ms=\(milliseconds, privacy: .public) remaining=\(self.permanentMutationQueue.count, privacy: .public)"
                 )
@@ -1498,7 +1505,6 @@ final class AppModel {
                 permanentStorageState = .saveFailed(
                     pendingCount: permanentMutationQueue.count
                 )
-                lastError = PermanentCopyPersistenceError.unsavedChanges.localizedDescription
                 Telemetry.persistence.error(
                     "Permanent mutation save failed sequence=\(pending.sequence, privacy: .public) pending=\(self.permanentMutationQueue.count, privacy: .public)"
                 )
@@ -1510,13 +1516,12 @@ final class AppModel {
         permanentPersistenceTask = nil
         if permanentMutationQueue.isEmpty {
             permanentStorageState = .ready
-            if lastError == PermanentCopyPersistenceError.unsavedChanges.localizedDescription {
-                lastError = nil
-            }
         } else if !Task.isCancelled {
             startPermanentPersistenceDrainIfNeeded()
         }
     }
+
+    // MARK: - Speech Vocabulary
 
     private func scheduleVocabularyRefresh() {
         vocabularyRefreshPending = true
@@ -1564,8 +1569,8 @@ private enum QueuedOperation {
     var telemetryName: String {
         switch self {
         case .voice(let command): command.telemetryName
-        case .pasteTemporary: "dashboard-paste-temporary"
-        case .pastePermanent: "dashboard-paste-named"
+        case .pasteTemporary: "interface-paste-temporary"
+        case .pastePermanent: "interface-paste-permanent"
         }
     }
 

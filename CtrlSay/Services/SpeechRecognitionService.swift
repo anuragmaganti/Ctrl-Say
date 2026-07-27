@@ -38,7 +38,7 @@ final class SpeechRecognitionService {
     var isActive: Bool {
         switch state {
         case .requestingMicrophone, .preparing, .downloadingModel, .listening,
-             .stopping:
+            .stopping:
             true
         case .stopped, .failed:
             false
@@ -60,6 +60,8 @@ final class SpeechRecognitionService {
     @ObservationIgnored private var isInputTapInstalled = false
     @ObservationIgnored private var analysisStartedAtNanoseconds: UInt64?
     @ObservationIgnored private var teardownTask: Task<Void, Never>?
+
+    // MARK: - Session Control
 
     func start(vocabulary: [String]) async {
         guard state == .stopped || isFailure else { return }
@@ -110,6 +112,8 @@ final class SpeechRecognitionService {
         Telemetry.speech.info("Listening stopped")
     }
 
+    // MARK: - Live Vocabulary
+
     @discardableResult
     func updateVocabulary(_ vocabulary: [String]) async -> Bool {
         guard state == .listening, let analyzer else { return false }
@@ -119,10 +123,13 @@ final class SpeechRecognitionService {
             try await analyzer.setContext(context)
             return true
         } catch {
-            Telemetry.speech.error("Could not update command vocabulary: \(error.localizedDescription, privacy: .private)")
+            Telemetry.speech.error(
+                "Could not update command vocabulary: \(error.localizedDescription, privacy: .private)")
             return false
         }
     }
+
+    // MARK: - Permissions and Timing
 
     @discardableResult
     func requestMicrophoneAccess() async -> Bool {
@@ -158,15 +165,19 @@ final class SpeechRecognitionService {
         return false
     }
 
+    // MARK: - Analyzer Configuration
+
     private func configure(vocabulary: [String]) async throws {
         guard SpeechTranscriber.isAvailable else {
             throw SpeechServiceError.transcriberUnavailable
         }
         // Ctrl-Say's v1 command grammar is English. Using the Mac's current
         // locale would make identical commands fail on non-English systems.
-        guard let locale = await SpeechTranscriber.supportedLocale(
-            equivalentTo: Self.commandLocale
-        ) else {
+        guard
+            let locale = await SpeechTranscriber.supportedLocale(
+                equivalentTo: Self.commandLocale
+            )
+        else {
             throw SpeechServiceError.localeUnsupported
         }
         try Task.checkCancellation()
@@ -175,11 +186,11 @@ final class SpeechRecognitionService {
             .volatileResults,
             .fastResults,
         ]
-#if DEBUG
+        #if DEBUG
         // Alternatives and raw text are used only by the in-memory developer
         // panel. Release recognition keeps the lower-overhead production path.
         reportingOptions.insert(.alternativeTranscriptions)
-#endif
+        #endif
 
         let transcriber = SpeechTranscriber(
             locale: locale,
@@ -198,14 +209,17 @@ final class SpeechRecognitionService {
         }
 
         let microphoneFormat = audioEngine.inputNode.outputFormat(forBus: 0)
-        let naturalFormat = microphoneFormat.channelCount > 0
-            && microphoneFormat.sampleRate > 0
+        let naturalFormat =
+            microphoneFormat.channelCount > 0
+                && microphoneFormat.sampleRate > 0
             ? microphoneFormat
             : nil
-        guard let analyzerFormat = await SpeechAnalyzer.bestAvailableAudioFormat(
-            compatibleWith: [transcriber],
-            considering: naturalFormat
-        ) else {
+        guard
+            let analyzerFormat = await SpeechAnalyzer.bestAvailableAudioFormat(
+                compatibleWith: [transcriber],
+                considering: naturalFormat
+            )
+        else {
             throw SpeechServiceError.noCompatibleAudioFormat
         }
         try Task.checkCancellation()
@@ -247,13 +261,13 @@ final class SpeechRecognitionService {
                         result,
                         analysisStartedAtNanoseconds: self.analysisStartedAtNanoseconds
                     )
-#if DEBUG
+                    #if DEBUG
                     if recognizedResult.inWordAttributeRunMergeCount > 0 {
                         Telemetry.speech.info(
                             "Reassembled speech words in same result attribute_runs=\(recognizedResult.attributeRunCount, privacy: .public) lexical_tokens=\(recognizedResult.tokens.count, privacy: .public) in_word_joins=\(recognizedResult.inWordAttributeRunMergeCount, privacy: .public)"
                         )
                     }
-#endif
+                    #endif
                     self.onResult?(recognizedResult)
                 }
             } catch is CancellationError {
@@ -264,6 +278,8 @@ final class SpeechRecognitionService {
             }
         }
     }
+
+    // MARK: - Audio Capture
 
     private func startAudioCapture() throws {
         guard let analyzerFormat else {
@@ -323,14 +339,16 @@ final class SpeechRecognitionService {
                         )
                     }
                     if !didPublishTimelineStart,
-                       let timelineStart = transfer.timelineStartUptimeNanoseconds {
+                        let timelineStart = transfer.timelineStartUptimeNanoseconds
+                    {
                         await self?.setAnalysisTimelineStartIfNeeded(timelineStart)
                         didPublishTimelineStart = true
                     }
                     if transfer.precedingDroppedBufferCount > observedMicrophoneDrops {
                         observedMicrophoneDrops = transfer.precedingDroppedBufferCount
                         if observedMicrophoneDrops == 1
-                            || observedMicrophoneDrops.isMultiple(of: 32) {
+                            || observedMicrophoneDrops.isMultiple(of: 32)
+                        {
                             Telemetry.speech.warning(
                                 "Microphone buffer drops=\(observedMicrophoneDrops, privacy: .public)"
                             )
@@ -342,7 +360,8 @@ final class SpeechRecognitionService {
                         staleCaptureDrops += 1
                         converterNeedsReset = true
                         if staleCaptureDrops == 1
-                            || staleCaptureDrops.isMultiple(of: 32) {
+                            || staleCaptureDrops.isMultiple(of: 32)
+                        {
                             Telemetry.speech.warning(
                                 "Stale capture drops=\(staleCaptureDrops, privacy: .public) age_ms=\(Double(age) / 1_000_000, privacy: .public)"
                             )
@@ -363,7 +382,8 @@ final class SpeechRecognitionService {
                         stalePostConversionDrops += 1
                         converterNeedsReset = true
                         if stalePostConversionDrops == 1
-                            || stalePostConversionDrops.isMultiple(of: 32) {
+                            || stalePostConversionDrops.isMultiple(of: 32)
+                        {
                             Telemetry.speech.warning(
                                 "Stale post-conversion drops=\(stalePostConversionDrops, privacy: .public) age_ms=\(Double(age) / 1_000_000, privacy: .public)"
                             )
@@ -375,7 +395,8 @@ final class SpeechRecognitionService {
                         if case .dropped = yieldResult {
                             droppedAnalyzerInputs += 1
                             if droppedAnalyzerInputs == 1
-                                || droppedAnalyzerInputs.isMultiple(of: 32) {
+                                || droppedAnalyzerInputs.isMultiple(of: 32)
+                            {
                                 Telemetry.speech.warning(
                                     "Analyzer input drops=\(droppedAnalyzerInputs, privacy: .public)"
                                 )
@@ -407,6 +428,8 @@ final class SpeechRecognitionService {
             analysisStartedAtNanoseconds = nanoseconds
         }
     }
+
+    // MARK: - Teardown and Failure Handling
 
     private func tearDown(finalize: Bool) async {
         if let teardownTask {
@@ -488,6 +511,8 @@ final class SpeechRecognitionService {
         handleRuntimeFailure(error, stage: "audio-stream")
     }
 
+    // MARK: - Command Vocabulary
+
     private func commandVocabulary(namedCopies: [String]) -> [String] {
         var vocabulary = VoiceCommandParser.canonicalSpokenSlotNumbers.flatMap {
             ["copy \($0)", "paste \($0)", "delete \($0)"]
@@ -497,7 +522,7 @@ final class SpeechRecognitionService {
             "clear copies",
             "clear temporary copies",
             "make permanent",
-            "rename to"
+            "rename to",
         ]
         vocabulary += namedCopies.flatMap {
             [
@@ -506,12 +531,14 @@ final class SpeechRecognitionService {
                 "permanent copy \($0)",
                 "delete \($0)",
                 "make \($0) permanent",
-                "rename \($0) to"
+                "rename \($0) to",
             ]
         }
         return vocabulary
     }
 }
+
+// MARK: - Recognized Results
 
 struct RecognizedSpeechResult: Sendable {
     let text: String
@@ -526,9 +553,9 @@ struct RecognizedSpeechResult: Sendable {
     let inWordAttributeRunMergeCount: Int
     private let analysisStartedAtNanoseconds: UInt64?
 
-#if DEBUG
+    #if DEBUG
     let alternatives: [String]
-#endif
+    #endif
 
     init(
         _ result: SpeechTranscriber.Result,
@@ -560,9 +587,9 @@ struct RecognizedSpeechResult: Sendable {
             analysisStartedAtNanoseconds: analysisStartedAtNanoseconds
         )
 
-#if DEBUG
+        #if DEBUG
         alternatives = result.alternatives.map { String($0.characters) }
-#endif
+        #endif
     }
 
     func audioEndUptimeNanoseconds(
@@ -589,6 +616,8 @@ struct RecognizedSpeechResult: Sendable {
         return analysisStartedAtNanoseconds + UInt64(offset)
     }
 }
+
+// MARK: - Errors
 
 enum SpeechServiceError: LocalizedError {
     case transcriberUnavailable

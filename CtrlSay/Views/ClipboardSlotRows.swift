@@ -71,8 +71,40 @@ private struct ClipboardPreview: View {
     }
 }
 
-struct NumberedCopyRow: View {
-    let number: Int
+struct TemporaryCopyRow: View {
+    enum Slot {
+        case numbered(Int)
+        case named(String)
+
+        var title: String {
+            switch self {
+            case .numbered(let number):
+                String(number)
+            case .named(let name):
+                name.prefix(1).uppercased() + String(name.dropFirst())
+            }
+        }
+
+        var copyAccessibilityName: String {
+            switch self {
+            case .numbered(let number):
+                "slot \(number)"
+            case .named(let name):
+                name
+            }
+        }
+
+        var actionAccessibilityName: String {
+            switch self {
+            case .numbered:
+                copyAccessibilityName
+            case .named:
+                "copy \(copyAccessibilityName)"
+            }
+        }
+    }
+
+    let slot: Slot
     let payload: ClipboardPayload
     let copyToClipboard: () -> Void
     let paste: () -> Void
@@ -82,14 +114,14 @@ struct NumberedCopyRow: View {
     @State private var isHovered = false
 
     init(
-        number: Int,
+        slot: Slot,
         payload: ClipboardPayload,
         copyToClipboard: @escaping () -> Void,
         paste: @escaping () -> Void,
         delete: @escaping @MainActor @Sendable () -> Void,
         thumbnailProvider: ClipboardThumbnailProvider? = nil
     ) {
-        self.number = number
+        self.slot = slot
         self.payload = payload
         self.copyToClipboard = copyToClipboard
         self.paste = paste
@@ -102,13 +134,13 @@ struct NumberedCopyRow: View {
             .temporarySlotSwipeToDelete(action: delete)
             .contextMenu { menuItems }
             .accessibilityElement(children: .contain)
-            .accessibilityAction(named: "Copy slot \(number) to clipboard") {
+            .accessibilityAction(named: copyAccessibilityLabel) {
                 copyToClipboard()
             }
-            .accessibilityAction(named: "Paste slot \(number)") {
+            .accessibilityAction(named: pasteAccessibilityLabel) {
                 paste()
             }
-            .accessibilityAction(named: "Delete slot \(number)") {
+            .accessibilityAction(named: deleteAccessibilityLabel) {
                 delete()
             }
     }
@@ -146,7 +178,8 @@ struct NumberedCopyRow: View {
     @ViewBuilder
     private var leadingCopyButton: some View {
         if payload.kind.benefitsFromThumbnail,
-           let thumbnailProvider {
+            let thumbnailProvider
+        {
             Button(action: copyToClipboard) {
                 ClipboardPayloadThumbnailView(
                     payload: payload,
@@ -154,20 +187,20 @@ struct NumberedCopyRow: View {
                 )
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Copy slot \(number) to clipboard")
+            .accessibilityLabel(copyAccessibilityLabel)
         }
     }
 
     private var titleCopyButton: some View {
         Button(action: copyToClipboard) {
-            Text("\(number)")
+            Text(slot.title)
                 .font(.callout.weight(.semibold))
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Copy slot \(number) to clipboard")
+        .accessibilityLabel(copyAccessibilityLabel)
     }
 
     private var previewCopyButton: some View {
@@ -178,143 +211,17 @@ struct NumberedCopyRow: View {
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Copy slot \(number) contents to clipboard")
-    }
-
-    private var pasteButton: some View {
-        Button("Paste", action: paste)
-            .controlSize(.small)
-            .buttonStyle(.borderless)
-            .accessibilityLabel("Paste slot \(number)")
-            .help("Paste slot \(number)")
-    }
-
-    @ViewBuilder
-    private var menuItems: some View {
-        Button("Paste", systemImage: "doc.on.clipboard", action: paste)
-        Divider()
-        Button("Delete Copy", systemImage: "trash", role: .destructive) {
-            delete()
-        }
-    }
-}
-
-struct TemporaryNamedCopyRow: View {
-    let name: String
-    let payload: ClipboardPayload
-    let copyToClipboard: () -> Void
-    let paste: () -> Void
-    let delete: @MainActor @Sendable () -> Void
-    let thumbnailProvider: ClipboardThumbnailProvider?
-
-    @State private var isHovered = false
-
-    init(
-        name: String,
-        payload: ClipboardPayload,
-        copyToClipboard: @escaping () -> Void,
-        paste: @escaping () -> Void,
-        delete: @escaping @MainActor @Sendable () -> Void,
-        thumbnailProvider: ClipboardThumbnailProvider? = nil
-    ) {
-        self.name = name
-        self.payload = payload
-        self.copyToClipboard = copyToClipboard
-        self.paste = paste
-        self.delete = delete
-        self.thumbnailProvider = thumbnailProvider
-    }
-
-    var body: some View {
-        row
-            .temporarySlotSwipeToDelete(action: delete)
-            .contextMenu { menuItems }
-            .accessibilityElement(children: .contain)
-            .accessibilityAction(named: "Copy \(name) to clipboard") {
-                copyToClipboard()
-            }
-            .accessibilityAction(named: "Paste copy \(name)") {
-                paste()
-            }
-            .accessibilityAction(named: "Delete copy \(name)") {
-                delete()
-            }
-    }
-
-    private var row: some View {
-        HStack(spacing: 10) {
-            leadingCopyButton
-
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    titleCopyButton
-
-                    pasteButton
-                }
-
-                previewCopyButton
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(.leading, 8)
-        .padding(.trailing, 8)
-        .frame(minHeight: ClipboardHUDMetrics.rowHeight)
-        .contentShape(.rect(cornerRadius: 11))
-        .background(
-            isHovered ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear),
-            in: .rect(cornerRadius: 11)
+        .accessibilityLabel(
+            "Copy \(slot.copyAccessibilityName) contents to clipboard"
         )
-        .onHover { hovering in
-            withAnimation(.easeOut(duration: 0.12)) {
-                isHovered = hovering
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var leadingCopyButton: some View {
-        if payload.kind.benefitsFromThumbnail,
-           let thumbnailProvider {
-            Button(action: copyToClipboard) {
-                ClipboardPayloadThumbnailView(
-                    payload: payload,
-                    provider: thumbnailProvider
-                )
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Copy \(name) to clipboard")
-        }
-    }
-
-    private var titleCopyButton: some View {
-        Button(action: copyToClipboard) {
-            Text(displayName)
-                .font(.callout.weight(.semibold))
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Copy \(name) to clipboard")
-    }
-
-    private var previewCopyButton: some View {
-        Button(action: copyToClipboard) {
-            ClipboardPreview(
-                payload: payload
-            )
-            .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Copy \(name) contents to clipboard")
     }
 
     private var pasteButton: some View {
         Button("Paste", action: paste)
             .controlSize(.small)
             .buttonStyle(.borderless)
-            .accessibilityLabel("Paste copy \(name)")
-            .help("Paste copy \(name)")
+            .accessibilityLabel(pasteAccessibilityLabel)
+            .help(pasteAccessibilityLabel)
     }
 
     @ViewBuilder
@@ -326,8 +233,16 @@ struct TemporaryNamedCopyRow: View {
         }
     }
 
-    private var displayName: String {
-        name.prefix(1).uppercased() + String(name.dropFirst())
+    private var copyAccessibilityLabel: String {
+        "Copy \(slot.copyAccessibilityName) to clipboard"
+    }
+
+    private var pasteAccessibilityLabel: String {
+        "Paste \(slot.actionAccessibilityName)"
+    }
+
+    private var deleteAccessibilityLabel: String {
+        "Delete \(slot.actionAccessibilityName)"
     }
 }
 
@@ -397,8 +312,9 @@ struct PermanentCopyRow: View {
         }
         .onChange(of: payload) { _, newPayload in
             guard editingField != nil,
-                  let editingPayloadSnapshot,
-                  newPayload != editingPayloadSnapshot else {
+                let editingPayloadSnapshot,
+                newPayload != editingPayloadSnapshot
+            else {
                 return
             }
             validationMessage = editConflictMessage
@@ -408,8 +324,9 @@ struct PermanentCopyRow: View {
         }
         .onChange(of: name) { _, newName in
             guard editingField != nil,
-                  let editingOriginalName,
-                  newName != editingOriginalName else {
+                let editingOriginalName,
+                newName != editingOriginalName
+            else {
                 return
             }
             validationMessage = editConflictMessage
@@ -480,7 +397,8 @@ struct PermanentCopyRow: View {
     @ViewBuilder
     private var leadingControl: some View {
         if payload.kind.benefitsFromThumbnail,
-           let thumbnailProvider {
+            let thumbnailProvider
+        {
             if editingField == nil {
                 Button(action: copyToClipboard) {
                     ClipboardPayloadThumbnailView(
@@ -520,16 +438,16 @@ struct PermanentCopyRow: View {
                     text: $nameDraft,
                     selection: $nameSelection
                 )
-                    .textFieldStyle(.roundedBorder)
-                    .focused($focusedField, equals: .name)
-                    .onSubmit {
-                        _ = commitCurrentEdit()
-                    }
-                    .onKeyPress(.escape) {
-                        cancelEditing()
-                        return .handled
-                    }
-                    .accessibilityLabel("Permanent copy name")
+                .textFieldStyle(.roundedBorder)
+                .focused($focusedField, equals: .name)
+                .onSubmit {
+                    _ = commitCurrentEdit()
+                }
+                .onKeyPress(.escape) {
+                    cancelEditing()
+                    return .handled
+                }
+                .accessibilityLabel("Permanent copy name")
             } else {
                 Button(action: copyToClipboard) {
                     Text(displayName)
@@ -642,7 +560,9 @@ struct PermanentCopyRow: View {
     }
 
     private var optionsMenu: some View {
-        Menu { menuItems } label: {
+        Menu {
+            menuItems
+        } label: {
             Image(systemName: "ellipsis")
                 .frame(width: 24, height: 28)
                 .contentShape(.rect)
@@ -696,10 +616,11 @@ struct PermanentCopyRow: View {
 
     private func beginNameEditing() {
         guard editingField == nil,
-              let token = editingSession.begin(
+            let token = editingSession.begin(
                 commit: { commitCurrentEdit() },
                 cancel: { cancelEditing() }
-              ) else {
+            )
+        else {
             return
         }
         nameDraft = name
@@ -715,11 +636,12 @@ struct PermanentCopyRow: View {
 
     private func beginContentEditing() {
         guard editingField == nil,
-              let text = payload.editableText,
-              let token = editingSession.begin(
+            let text = payload.editableText,
+            let token = editingSession.begin(
                 commit: { commitCurrentEdit() },
                 cancel: { cancelEditing() }
-              ) else {
+            )
+        else {
             return
         }
         contentDraft = text
@@ -755,9 +677,10 @@ struct PermanentCopyRow: View {
     private func commitCurrentEdit() -> Bool {
         guard let editingField else { return true }
         guard let editingPayloadID,
-              editingPayloadID == payload.id,
-              editingPayloadSnapshot == payload,
-              editingOriginalName == name else {
+            editingPayloadID == payload.id,
+            editingPayloadSnapshot == payload,
+            editingOriginalName == name
+        else {
             validationMessage = editConflictMessage
             focus(editingField, selectingAll: false)
             return false
@@ -834,8 +757,8 @@ struct PermanentCopyRow: View {
     }
 }
 
-private extension ClipboardContentKind {
-    var benefitsFromThumbnail: Bool {
+extension ClipboardContentKind {
+    fileprivate var benefitsFromThumbnail: Bool {
         switch self {
         case .image, .files, .mixed:
             true

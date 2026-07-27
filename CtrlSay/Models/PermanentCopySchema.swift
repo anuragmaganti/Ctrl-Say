@@ -13,7 +13,7 @@ enum PermanentCopySchemaV1: VersionedSchema {
 
 enum PermanentCopyMigrationPlan: SchemaMigrationPlan {
     static let schemas: [any VersionedSchema.Type] = [
-        PermanentCopySchemaV1.self,
+        PermanentCopySchemaV1.self
     ]
 
     static let stages: [MigrationStage] = []

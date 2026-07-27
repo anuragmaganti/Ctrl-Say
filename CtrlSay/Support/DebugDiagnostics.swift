@@ -21,7 +21,8 @@ struct DebugPipelineSnapshot {
     ) {
         transcript = result.text
         alternatives = result.alternatives
-        resultState = result.isFinal
+        resultState =
+            result.isFinal
             ? "Final"
             : (acceptsVolatileResult ? "Volatile • accepted" : "Volatile • pending")
         confidence = result.minimumConfidence.map { String(format: "%.2f", $0) } ?? "Unavailable"
@@ -33,18 +34,21 @@ struct DebugPipelineSnapshot {
             minimumConfidence: result.minimumConfidence,
             isFinal: result.isFinal
         )
-        recognitionLatency = metadata.recognitionLatencyMilliseconds
+        recognitionLatency =
+            metadata.recognitionLatencyMilliseconds
             .map { String(format: "%.1f ms", $0) }
             ?? "Unavailable"
         if result.inWordAttributeRunMergeCount > 0 {
-            tokenization = "\(result.tokens.count) words from \(result.attributeRunCount) runs • \(result.inWordAttributeRunMergeCount) in-word join(s), same result"
+            tokenization =
+                "\(result.tokens.count) words from \(result.attributeRunCount) runs • \(result.inWordAttributeRunMergeCount) in-word join(s), same result"
         } else {
             tokenization = "\(result.tokens.count) words from \(result.attributeRunCount) run(s) • no in-word joins"
         }
     }
 
     mutating func queued(depth: Int, replacedRevision: Bool) {
-        queue = replacedRevision
+        queue =
+            replacedRevision
             ? "Revision replaced • depth \(depth)"
             : "Queued • depth \(depth)"
     }

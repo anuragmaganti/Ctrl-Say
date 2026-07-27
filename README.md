@@ -188,6 +188,14 @@ SwiftUI owns the app’s scenes, controls, state-driven views, editing, and row 
 <details>
 <summary><strong>Build and test</strong></summary>
 
+Run the complete local verification pipeline. It uses isolated DerivedData,
+does not launch Ctrl-Say, and checks formatting, tests, static analysis, signed
+universal Release output, bundle architecture, dependencies, and local paths:
+
+```bash
+./script/verify.sh
+```
+
 Run the full Debug test suite:
 
 ```bash
@@ -211,6 +219,11 @@ xcodebuild build \
 ```
 
 The test suite covers command grammar, streaming-speech revisions, Right Option gestures, clipboard payload limits, permanent-storage round trips, mutation ordering, HUD layout and interactions, thumbnails, camera-housing geometry, Launch at Login, and lifecycle failures.
+
+The test bundle is intentionally unhosted: it compiles only the production
+support files listed under Xcode’s **Test Support Sources** group. Tests therefore
+cannot launch the menu-bar app, trigger permission setup, or open the user’s
+production permanent-copy store.
 
 </details>
 

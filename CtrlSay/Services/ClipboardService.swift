@@ -59,8 +59,9 @@ final class ClipboardService {
 
     func currentCommandTarget() -> CommandTarget? {
         guard let application = NSWorkspace.shared.frontmostApplication,
-              application.processIdentifier != ProcessInfo.processInfo.processIdentifier,
-              !application.isTerminated else {
+            application.processIdentifier != ProcessInfo.processInfo.processIdentifier,
+            !application.isTerminated
+        else {
             return nil
         }
         return CommandTarget(
@@ -77,7 +78,7 @@ final class ClipboardService {
         let initialChangeCount = pasteboard.changeCount
         let initialActivationGeneration = activationGeneration
         let started = DispatchTime.now().uptimeNanoseconds
-        try postCommandKey(keyCode: 8, target: target) // C
+        try postCommandKey(keyCode: 8, target: target)  // C
 
         let clock = ContinuousClock()
         let deadline = clock.now.advanced(by: .milliseconds(750))
@@ -121,7 +122,8 @@ final class ClipboardService {
         for item in pasteboardItems {
             firstTextPreview = firstTextPreview ?? item.string(forType: .string)
             if let fileURLString = item.string(forType: .fileURL),
-               let fileURL = URL(string: fileURLString) {
+                let fileURL = URL(string: fileURLString)
+            {
                 firstFilePreview = firstFilePreview ?? fileURL.lastPathComponent
             }
 
@@ -130,8 +132,9 @@ final class ClipboardService {
 
             for type in item.types {
                 guard let data = item.data(forType: type),
-                      data.count <= ClipboardStore.maximumRepresentationBytes,
-                      totalBytes + data.count <= ClipboardStore.maximumPayloadBytes else {
+                    data.count <= ClipboardStore.maximumRepresentationBytes,
+                    totalBytes + data.count <= ClipboardStore.maximumPayloadBytes
+                else {
                     continue
                 }
 
@@ -182,7 +185,7 @@ final class ClipboardService {
         // Revalidate after the pasteboard write so an intentional app switch
         // cannot send a paste to a different destination.
         _ = try requireCurrentTarget(target)
-        try postCommandKey(keyCode: 9, target: target) // V
+        try postCommandKey(keyCode: 9, target: target)  // V
         let milliseconds = Double(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000
         Telemetry.clipboard.info("Paste dispatched in \(milliseconds, privacy: .public) ms")
         return PasteDispatchMetrics(milliseconds: milliseconds)
@@ -193,9 +196,10 @@ final class ClipboardService {
     ) throws -> ClipboardWriteMetrics {
         let started = DispatchTime.now().uptimeNanoseconds
         try write(payload)
-        let milliseconds = Double(
-            DispatchTime.now().uptimeNanoseconds - started
-        ) / 1_000_000
+        let milliseconds =
+            Double(
+                DispatchTime.now().uptimeNanoseconds - started
+            ) / 1_000_000
         Telemetry.clipboard.info(
             "Clipboard written in \(milliseconds, privacy: .public) ms"
         )
@@ -225,18 +229,19 @@ final class ClipboardService {
         target: CommandTarget
     ) throws {
         guard let source = CGEventSource(stateID: .combinedSessionState),
-              let commandDown = CGEvent(
-                  keyboardEventSource: source,
-                  virtualKey: Self.commandKeyCode,
-                  keyDown: true
-              ),
-              let keyDown = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true),
-              let keyUp = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false),
-              let commandUp = CGEvent(
-                  keyboardEventSource: source,
-                  virtualKey: Self.commandKeyCode,
-                  keyDown: false
-              ) else {
+            let commandDown = CGEvent(
+                keyboardEventSource: source,
+                virtualKey: Self.commandKeyCode,
+                keyDown: true
+            ),
+            let keyDown = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true),
+            let keyUp = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false),
+            let commandUp = CGEvent(
+                keyboardEventSource: source,
+                virtualKey: Self.commandKeyCode,
+                keyDown: false
+            )
+        else {
             throw ClipboardServiceError.couldNotCreateKeyboardEvent
         }
 
@@ -256,24 +261,29 @@ final class ClipboardService {
 
     private func requireCurrentTarget(_ target: CommandTarget?) throws -> CommandTarget {
         guard let target,
-              let application = NSRunningApplication(
+            let application = NSRunningApplication(
                 processIdentifier: target.processIdentifier
-              ),
-              !application.isTerminated else {
+            ),
+            !application.isTerminated
+        else {
             throw ClipboardServiceError.commandTargetUnavailable
         }
 
         if let launchDate = target.launchDate,
-           application.launchDate != launchDate {
+            application.launchDate != launchDate
+        {
             throw ClipboardServiceError.commandTargetUnavailable
         }
         if let bundleIdentifier = target.bundleIdentifier,
-           application.bundleIdentifier != bundleIdentifier {
+            application.bundleIdentifier != bundleIdentifier
+        {
             throw ClipboardServiceError.commandTargetUnavailable
         }
 
-        guard NSWorkspace.shared.frontmostApplication?.processIdentifier
-                == target.processIdentifier else {
+        guard
+            NSWorkspace.shared.frontmostApplication?.processIdentifier
+                == target.processIdentifier
+        else {
             throw ClipboardServiceError.commandTargetChanged
         }
         return target

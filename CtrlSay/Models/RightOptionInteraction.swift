@@ -89,9 +89,10 @@ final class RightOptionPressClassifier {
         holdTask = Task { [weak self] in
             try? await Task.sleep(for: duration)
             guard !Task.isCancelled,
-                  let self,
-                  self.isDown,
-                  !self.didEmitHold else {
+                let self,
+                self.isDown,
+                !self.didEmitHold
+            else {
                 return
             }
             self.didEmitHold = true

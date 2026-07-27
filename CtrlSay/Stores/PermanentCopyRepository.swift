@@ -24,7 +24,6 @@ enum PermanentCopyMutation: Hashable, Sendable {
 protocol PermanentCopyPersisting: Sendable {
     func load() async throws -> [PersistedPermanentCopy]
     func apply(_ mutation: PermanentCopyMutation) async throws
-    func retryPendingChanges() async throws
     func flush() async throws
     func reset() async throws
 }
@@ -69,6 +68,8 @@ actor PermanentCopyRepository: PermanentCopyPersisting {
         self.location = location
     }
 
+    // MARK: - Repository Operations
+
     func load() throws -> [PersistedPermanentCopy] {
         let context = try modelContext()
         let descriptor = FetchDescriptor<PermanentCopyRecord>(
@@ -82,14 +83,17 @@ actor PermanentCopyRepository: PermanentCopyPersisting {
 
         for record in records {
             guard record.byteCount >= 0,
-                  record.byteCount <= Int64(ClipboardStore.maximumPayloadBytes),
-                  let declaredByteCount = Int(exactly: record.byteCount) else {
+                record.byteCount <= Int64(ClipboardStore.maximumPayloadBytes),
+                let declaredByteCount = Int(exactly: record.byteCount)
+            else {
                 throw PermanentCopyRepositoryError.invalidRecord
             }
-            let (updatedTotal, overflow) = declaredTotalByteCount
+            let (updatedTotal, overflow) =
+                declaredTotalByteCount
                 .addingReportingOverflow(declaredByteCount)
             guard !overflow,
-                  updatedTotal <= ClipboardStore.maximumTotalStoredBytes else {
+                updatedTotal <= ClipboardStore.maximumTotalStoredBytes
+            else {
                 throw PermanentCopyRepositoryError.invalidRecord
             }
             declaredTotalByteCount = updatedTotal
@@ -139,7 +143,8 @@ actor PermanentCopyRepository: PermanentCopyPersisting {
                     throw PermanentCopyRepositoryError.recordChanged
                 }
                 if oldName != newName,
-                   try record(named: newName, in: context) != nil {
+                    try record(named: newName, in: context) != nil
+                {
                     throw PermanentCopyRepositoryError.duplicateName
                 }
                 existing.normalizedName = newName
@@ -161,10 +166,6 @@ actor PermanentCopyRepository: PermanentCopyPersisting {
             context.rollback()
             throw error
         }
-    }
-
-    func retryPendingChanges() throws {
-        try flush()
     }
 
     func flush() throws {
@@ -202,6 +203,8 @@ actor PermanentCopyRepository: PermanentCopyPersisting {
         context = ModelContext(replacement)
         context?.autosaveEnabled = false
     }
+
+    // MARK: - Store Lifecycle
 
     private func modelContainer() throws -> ModelContainer {
         if let container { return container }
@@ -275,10 +278,12 @@ actor PermanentCopyRepository: PermanentCopyPersisting {
         }
 
         var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(
-            atPath: directory.path,
-            isDirectory: &isDirectory
-        ) else {
+        guard
+            FileManager.default.fileExists(
+                atPath: directory.path,
+                isDirectory: &isDirectory
+            )
+        else {
             return
         }
         if !isDirectory.boolValue {
@@ -301,6 +306,8 @@ actor PermanentCopyRepository: PermanentCopyPersisting {
         self.context = context
         return context
     }
+
+    // MARK: - Record Mutation
 
     private func record(
         named name: String,
@@ -353,22 +360,26 @@ actor PermanentCopyRepository: PermanentCopyPersisting {
         }
     }
 
+    // MARK: - Record Decoding
+
     private func decode(
         _ record: PermanentCopyRecord,
         refreshedBookmark: inout Bool
     ) throws -> PersistedPermanentCopy {
         guard let kind = ClipboardContentKind(rawValue: record.kindRawValue),
-              VoiceCommandParser.validNormalizedPermanentName(
+            VoiceCommandParser.validNormalizedPermanentName(
                 record.normalizedName
-              ) == record.normalizedName,
-              record.byteCount >= 0,
-              record.byteCount <= Int64(ClipboardStore.maximumPayloadBytes) else {
+            ) == record.normalizedName,
+            record.byteCount >= 0,
+            record.byteCount <= Int64(ClipboardStore.maximumPayloadBytes)
+        else {
             throw PermanentCopyRepositoryError.invalidRecord
         }
 
         let sortedItems = record.items.sorted { $0.itemIndex < $1.itemIndex }
         guard !sortedItems.isEmpty,
-              sortedItems.map(\.itemIndex) == Array(sortedItems.indices) else {
+            sortedItems.map(\.itemIndex) == Array(sortedItems.indices)
+        else {
             throw PermanentCopyRepositoryError.invalidRecord
         }
         var items: [PasteboardItemPayload] = []
@@ -381,8 +392,9 @@ actor PermanentCopyRepository: PermanentCopyPersisting {
                 $0.representationIndex < $1.representationIndex
             }
             guard !sortedRepresentations.isEmpty,
-                  sortedRepresentations.map(\.representationIndex)
-                    == Array(sortedRepresentations.indices) else {
+                sortedRepresentations.map(\.representationIndex)
+                    == Array(sortedRepresentations.indices)
+            else {
                 throw PermanentCopyRepositoryError.invalidRecord
             }
             var representations: [PasteboardRepresentation] = []
@@ -391,26 +403,31 @@ actor PermanentCopyRepository: PermanentCopyPersisting {
             for representation in sortedRepresentations {
                 var data = representation.data
                 guard !representation.typeIdentifier.isEmpty,
-                      data.count <= ClipboardStore.maximumRepresentationBytes else {
+                    data.count <= ClipboardStore.maximumRepresentationBytes
+                else {
                     throw PermanentCopyRepositoryError.invalidRecord
                 }
-                let (updatedStoredByteCount, storedOverflow) = storedByteCount
+                let (updatedStoredByteCount, storedOverflow) =
+                    storedByteCount
                     .addingReportingOverflow(data.count)
                 guard !storedOverflow,
-                      updatedStoredByteCount <= ClipboardStore.maximumPayloadBytes else {
+                    updatedStoredByteCount <= ClipboardStore.maximumPayloadBytes
+                else {
                     throw PermanentCopyRepositoryError.invalidRecord
                 }
                 storedByteCount = updatedStoredByteCount
                 if representation.typeIdentifier == Self.fileURLTypeIdentifier,
-                   let bookmark = representation.fileBookmarkData,
-                   let resolution = resolveBookmark(bookmark) {
+                    let bookmark = representation.fileBookmarkData,
+                    let resolution = resolveBookmark(bookmark)
+                {
                     let originalURL = String(
                         data: representation.data,
                         encoding: .utf8
                     ).flatMap(URL.init(string:))
-                    let originalIsAvailable = originalURL.map {
-                        FileManager.default.fileExists(atPath: $0.path)
-                    } == true
+                    let originalIsAvailable =
+                        originalURL.map {
+                            FileManager.default.fileExists(atPath: $0.path)
+                        } == true
                     let resolvedIsAvailable = FileManager.default.fileExists(
                         atPath: resolution.url.path
                     )
@@ -418,11 +435,12 @@ actor PermanentCopyRepository: PermanentCopyPersisting {
                         data = Data(resolution.url.absoluteString.utf8)
                     }
                     if resolution.isStale,
-                       let replacement = try? resolution.url.bookmarkData(
-                        options: [],
-                        includingResourceValuesForKeys: nil,
-                        relativeTo: nil
-                       ) {
+                        let replacement = try? resolution.url.bookmarkData(
+                            options: [],
+                            includingResourceValuesForKeys: nil,
+                            relativeTo: nil
+                        )
+                    {
                         representation.fileBookmarkData = replacement
                         refreshedBookmark = true
                     }
@@ -433,10 +451,12 @@ actor PermanentCopyRepository: PermanentCopyPersisting {
                         data: data
                     )
                 )
-                let (updatedRestoredByteCount, restoredOverflow) = restoredByteCount
+                let (updatedRestoredByteCount, restoredOverflow) =
+                    restoredByteCount
                     .addingReportingOverflow(data.count)
                 guard !restoredOverflow,
-                      updatedRestoredByteCount <= ClipboardStore.maximumPayloadBytes else {
+                    updatedRestoredByteCount <= ClipboardStore.maximumPayloadBytes
+                else {
                     throw PermanentCopyRepositoryError.invalidRecord
                 }
                 restoredByteCount = updatedRestoredByteCount
@@ -461,13 +481,16 @@ actor PermanentCopyRepository: PermanentCopyPersisting {
         )
     }
 
+    // MARK: - File Bookmarks
+
     private func bookmarkData(
         for representation: PasteboardRepresentation
     ) -> Data? {
         guard representation.typeIdentifier == Self.fileURLTypeIdentifier,
-              let string = String(data: representation.data, encoding: .utf8),
-              let url = URL(string: string),
-              url.isFileURL else {
+            let string = String(data: representation.data, encoding: .utf8),
+            let url = URL(string: string),
+            url.isFileURL
+        else {
             return nil
         }
         return try? url.bookmarkData(
@@ -479,12 +502,14 @@ actor PermanentCopyRepository: PermanentCopyPersisting {
 
     private func resolveBookmark(_ data: Data) -> (url: URL, isStale: Bool)? {
         var isStale = false
-        guard let url = try? URL(
-            resolvingBookmarkData: data,
-            options: [.withoutUI, .withoutMounting],
-            relativeTo: nil,
-            bookmarkDataIsStale: &isStale
-        ) else {
+        guard
+            let url = try? URL(
+                resolvingBookmarkData: data,
+                options: [.withoutUI, .withoutMounting],
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale
+            )
+        else {
             return nil
         }
         return (url, isStale)

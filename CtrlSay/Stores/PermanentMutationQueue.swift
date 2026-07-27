@@ -24,7 +24,8 @@ struct PermanentMutationQueueState: Sendable {
         )
 
         if case .upsert(let name, _) = mutation,
-           let redundantIndex = redundantPendingUpsertIndex(named: name) {
+            let redundantIndex = redundantPendingUpsertIndex(named: name)
+        {
             entries.remove(at: redundantIndex)
         }
         entries.append(sequenced)
@@ -41,7 +42,8 @@ struct PermanentMutationQueueState: Sendable {
 
     mutating func complete(_ sequence: UInt64) -> Bool {
         guard inFlightSequence == sequence,
-              entries.first?.sequence == sequence else {
+            entries.first?.sequence == sequence
+        else {
             return false
         }
         entries.removeFirst()
@@ -72,7 +74,7 @@ struct PermanentMutationQueueState: Sendable {
             case .upsert(let pendingName, _) where pendingName == name:
                 return index
             case .rename(let oldName, let newName, _)
-                where oldName == name || newName == name:
+            where oldName == name || newName == name:
                 return nil
             case .delete(let pendingName, _) where pendingName == name:
                 return nil

@@ -155,7 +155,7 @@ case "$MODE" in
     open_app
     /usr/bin/log stream --info --style compact --predicate "subsystem == \"$BUNDLE_ID\""
     ;;
-  --verify|verify)
+  --launch-check|launch-check)
     open_app
     sleep 1
     pgrep -x "$APP_NAME" >/dev/null
@@ -170,7 +170,7 @@ case "$MODE" in
     install_app
     ;;
   *)
-    echo "usage: $0 [run|--debug|--logs|--telemetry|--verify|--stress-hud|--stress-surfaces|--install]" >&2
+    echo "usage: $0 [run|--debug|--logs|--telemetry|--launch-check|--stress-hud|--stress-surfaces|--install]" >&2
     exit 2
     ;;
 esac

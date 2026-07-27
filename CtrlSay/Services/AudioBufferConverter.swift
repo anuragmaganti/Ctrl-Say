@@ -3,6 +3,8 @@ import CoreMedia
 import Foundation
 import Speech
 
+// MARK: - Cross-Actor Audio Values
+
 nonisolated struct AudioBufferTransfer: @unchecked Sendable {
     let buffer: AVAudioPCMBuffer
     let bufferStartTime: CMTime?
@@ -18,21 +20,24 @@ nonisolated struct AudioBufferTransfer: @unchecked Sendable {
 
     func ageNanoseconds(at uptimeNanoseconds: UInt64) -> UInt64? {
         guard let timelineStartUptimeNanoseconds,
-              let bufferStartTime,
-              bufferStartTime.isNumeric else {
+            let bufferStartTime,
+            bufferStartTime.isNumeric
+        else {
             return nil
         }
         let sampleRate = buffer.format.sampleRate
         guard sampleRate.isFinite, sampleRate > 0 else { return nil }
 
-        let audioEndSeconds = bufferStartTime.seconds
+        let audioEndSeconds =
+            bufferStartTime.seconds
             + Double(buffer.frameLength) / sampleRate
         guard audioEndSeconds.isFinite, audioEndSeconds >= 0 else { return nil }
         let offset = audioEndSeconds * 1_000_000_000
         guard offset <= Double(UInt64.max - timelineStartUptimeNanoseconds) else {
             return nil
         }
-        let audioEndUptimeNanoseconds = timelineStartUptimeNanoseconds
+        let audioEndUptimeNanoseconds =
+            timelineStartUptimeNanoseconds
             + UInt64(offset)
         guard uptimeNanoseconds >= audioEndUptimeNanoseconds else { return 0 }
         return uptimeNanoseconds - audioEndUptimeNanoseconds
@@ -42,6 +47,8 @@ nonisolated struct AudioBufferTransfer: @unchecked Sendable {
 nonisolated struct AudioFormatTransfer: @unchecked Sendable {
     let format: AVAudioFormat
 }
+
+// MARK: - Real-Time Audio Tap
 
 nonisolated func makeAudioTapBlock(
     continuation: AsyncStream<AudioBufferTransfer>.Continuation
@@ -72,6 +79,8 @@ nonisolated func makeAudioTapBlock(
     }
 }
 
+// MARK: - Audio Timeline
+
 nonisolated private struct AudioTapTiming {
     let bufferStartTime: CMTime?
     let timelineStartUptimeNanoseconds: UInt64?
@@ -100,7 +109,8 @@ nonisolated private final class AudioTapState: @unchecked Sendable {
         if let sampleTime = validSampleTime(from: time) {
             if sampleAnchor == nil
                 || sampleAnchor?.sampleRate != time.sampleRate
-                || sampleTime < (sampleAnchor?.sampleTime ?? sampleTime) {
+                || sampleTime < (sampleAnchor?.sampleTime ?? sampleTime)
+            {
                 startsNewSourceSegment = sampleAnchor != nil
                 sampleAnchor = SampleAnchor(
                     sampleTime: sampleTime,
@@ -110,10 +120,11 @@ nonisolated private final class AudioTapState: @unchecked Sendable {
             }
 
             if let sampleAnchor,
-               let sampleOffset = duration(
-                   frameCount: sampleTime - sampleAnchor.sampleTime,
-                   sampleRate: sampleAnchor.sampleRate
-               ) {
+                let sampleOffset = duration(
+                    frameCount: sampleTime - sampleAnchor.sampleTime,
+                    sampleRate: sampleAnchor.sampleRate
+                )
+            {
                 let proposedStart = CMTimeAdd(
                     sampleAnchor.timelineTime,
                     sampleOffset
@@ -174,10 +185,11 @@ nonisolated private final class AudioTapState: @unchecked Sendable {
 
     private func validSampleTime(from time: AVAudioTime) -> AVAudioFramePosition? {
         guard time.isSampleTimeValid,
-              time.sampleTime >= 0,
-              time.sampleRate.isFinite,
-              time.sampleRate > 0,
-              time.sampleRate <= Double(Int32.max) else {
+            time.sampleTime >= 0,
+            time.sampleRate.isFinite,
+            time.sampleRate > 0,
+            time.sampleRate <= Double(Int32.max)
+        else {
             return nil
         }
         return time.sampleTime
@@ -188,7 +200,8 @@ nonisolated private final class AudioTapState: @unchecked Sendable {
         bufferStartTime: CMTime
     ) {
         guard timelineStartUptimeNanoseconds == nil,
-              time.isHostTimeValid else {
+            time.isHostTimeValid
+        else {
             return
         }
 
@@ -197,8 +210,9 @@ nonisolated private final class AudioTapState: @unchecked Sendable {
         }
         let relativeSeconds = bufferStartTime.seconds
         guard relativeSeconds.isFinite,
-              relativeSeconds >= 0,
-              relativeSeconds <= Double(Int64.max) / 1_000_000_000 else {
+            relativeSeconds >= 0,
+            relativeSeconds <= Double(Int64.max) / 1_000_000_000
+        else {
             return
         }
         let relativeNanoseconds = UInt64(relativeSeconds * 1_000_000_000)
@@ -208,8 +222,9 @@ nonisolated private final class AudioTapState: @unchecked Sendable {
 
     private func hostRelativeTimelineTime(for time: AVAudioTime) -> CMTime? {
         guard let timelineStartUptimeNanoseconds,
-              let hostUptimeNanoseconds = hostUptimeNanoseconds(for: time),
-              hostUptimeNanoseconds >= timelineStartUptimeNanoseconds else {
+            let hostUptimeNanoseconds = hostUptimeNanoseconds(for: time),
+            hostUptimeNanoseconds >= timelineStartUptimeNanoseconds
+        else {
             return nil
         }
         let relativeNanoseconds = hostUptimeNanoseconds - timelineStartUptimeNanoseconds
@@ -224,8 +239,9 @@ nonisolated private final class AudioTapState: @unchecked Sendable {
         guard time.isHostTimeValid else { return nil }
         let hostSeconds = AVAudioTime.seconds(forHostTime: time.hostTime)
         guard hostSeconds.isFinite,
-              hostSeconds >= 0,
-              hostSeconds <= Double(Int64.max) / 1_000_000_000 else {
+            hostSeconds >= 0,
+            hostSeconds <= Double(Int64.max) / 1_000_000_000
+        else {
             return nil
         }
         return UInt64(hostSeconds * 1_000_000_000)
@@ -236,9 +252,10 @@ nonisolated private final class AudioTapState: @unchecked Sendable {
         sampleRate: Double
     ) -> CMTime? {
         guard frameCount >= 0,
-              sampleRate.isFinite,
-              sampleRate > 0,
-              sampleRate <= Double(Int32.max) else {
+            sampleRate.isFinite,
+            sampleRate > 0,
+            sampleRate <= Double(Int32.max)
+        else {
             return nil
         }
         return CMTime(
@@ -247,6 +264,8 @@ nonisolated private final class AudioTapState: @unchecked Sendable {
         )
     }
 }
+
+// MARK: - Format Conversion
 
 nonisolated private final class ConverterInputState: @unchecked Sendable {
     let buffer: AVAudioPCMBuffer
@@ -309,17 +328,20 @@ actor AudioBufferConverter {
         observedDroppedBufferCount = transfer.precedingDroppedBufferCount
 
         let ratio = outputFormat.sampleRate / input.format.sampleRate
-        let capacity = AVAudioFrameCount(
-            (Double(input.frameLength) * ratio).rounded(.up)
-        ) + 32
+        let capacity =
+            AVAudioFrameCount(
+                (Double(input.frameLength) * ratio).rounded(.up)
+            ) + 32
         let inputState = ConverterInputState(buffer: input)
         var analyzerInputs: [AnalyzerInput] = []
 
         for _ in 0..<Self.maximumConversionPasses {
-            guard let output = AVAudioPCMBuffer(
-                pcmFormat: outputFormat,
-                frameCapacity: capacity
-            ) else {
+            guard
+                let output = AVAudioPCMBuffer(
+                    pcmFormat: outputFormat,
+                    frameCapacity: capacity
+                )
+            else {
                 throw SpeechServiceError.audioConversionUnavailable
             }
             var conversionError: NSError?
@@ -376,10 +398,12 @@ actor AudioBufferConverter {
         var analyzerInputs: [AnalyzerInput] = []
 
         for _ in 0..<Self.maximumConversionPasses {
-            guard let output = AVAudioPCMBuffer(
-                pcmFormat: outputFormat,
-                frameCapacity: capacity
-            ) else {
+            guard
+                let output = AVAudioPCMBuffer(
+                    pcmFormat: outputFormat,
+                    frameCapacity: capacity
+                )
+            else {
                 throw SpeechServiceError.audioConversionUnavailable
             }
             var conversionError: NSError?
@@ -437,7 +461,8 @@ actor AudioBufferConverter {
             return true
         }
         guard let expectedInputStartTime,
-              let actualStartTime = transfer.bufferStartTime else {
+            let actualStartTime = transfer.bufferStartTime
+        else {
             return transfer.precedingDroppedBufferCount
                 != observedDroppedBufferCount
         }
@@ -458,10 +483,11 @@ actor AudioBufferConverter {
 
     private func inputEndTime(for transfer: AudioBufferTransfer) -> CMTime? {
         guard let startTime = transfer.bufferStartTime,
-              let duration = duration(
+            let duration = duration(
                 frameCount: transfer.buffer.frameLength,
                 sampleRate: transfer.buffer.format.sampleRate
-              ) else {
+            )
+        else {
             return nil
         }
         return CMTimeAdd(startTime, duration)
@@ -473,10 +499,11 @@ actor AudioBufferConverter {
     ) -> AnalyzerInput {
         let startTime = nextOutputStartTime ?? fallbackStartTime
         if let startTime,
-           let outputDuration = duration(
-               frameCount: output.frameLength,
-               sampleRate: output.format.sampleRate
-           ) {
+            let outputDuration = duration(
+                frameCount: output.frameLength,
+                sampleRate: output.format.sampleRate
+            )
+        {
             nextOutputStartTime = CMTimeAdd(startTime, outputDuration)
         }
         return AnalyzerInput(buffer: output, bufferStartTime: startTime)
@@ -487,8 +514,9 @@ actor AudioBufferConverter {
         sampleRate: Double
     ) -> CMTime? {
         guard sampleRate.isFinite,
-              sampleRate > 0,
-              sampleRate <= Double(Int32.max) else {
+            sampleRate > 0,
+            sampleRate <= Double(Int32.max)
+        else {
             return nil
         }
         return CMTime(

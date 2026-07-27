@@ -10,8 +10,8 @@ final class ClipboardRowInteractionTests: XCTestCase {
         let service = ClipboardService(pasteboard: pasteboard)
         let payload = textPayload("Temporary row content")
 
-        let row = NumberedCopyRow(
-            number: 1,
+        let row = TemporaryCopyRow(
+            slot: .numbered(1),
             payload: payload,
             copyToClipboard: {
                 _ = try? service.writeToSystemClipboard(payload)
@@ -35,8 +35,8 @@ final class ClipboardRowInteractionTests: XCTestCase {
         let service = ClipboardService(pasteboard: pasteboard)
         let payload = textPayload("Temporary named row content")
 
-        let row = TemporaryNamedCopyRow(
-            name: "house",
+        let row = TemporaryCopyRow(
+            slot: .named("house"),
             payload: payload,
             copyToClipboard: {
                 _ = try? service.writeToSystemClipboard(payload)
@@ -108,8 +108,8 @@ final class ClipboardRowInteractionTests: XCTestCase {
     @MainActor
     func testIdlePermanentRowMatchesTemporaryRowHeight() {
         let payload = textPayload("Two-line clipboard preview content")
-        let temporaryRow = NumberedCopyRow(
-            number: 1,
+        let temporaryRow = TemporaryCopyRow(
+            slot: .numbered(1),
             payload: payload,
             copyToClipboard: {},
             paste: {},
@@ -166,7 +166,7 @@ final class ClipboardRowInteractionTests: XCTestCase {
                         PasteboardRepresentation(
                             typeIdentifier: customType,
                             data: customData
-                        ),
+                        )
                     ]
                 ),
             ],
@@ -248,17 +248,19 @@ final class ClipboardRowInteractionTests: XCTestCase {
         at point: CGPoint,
         clickCount: Int
     ) {
-        guard let event = NSEvent.mouseEvent(
-            with: type,
-            location: point,
-            modifierFlags: [],
-            timestamp: ProcessInfo.processInfo.systemUptime,
-            windowNumber: window.windowNumber,
-            context: nil,
-            eventNumber: 0,
-            clickCount: clickCount,
-            pressure: type == .leftMouseDown ? 1 : 0
-        ) else {
+        guard
+            let event = NSEvent.mouseEvent(
+                with: type,
+                location: point,
+                modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber,
+                context: nil,
+                eventNumber: 0,
+                clickCount: clickCount,
+                pressure: type == .leftMouseDown ? 1 : 0
+            )
+        else {
             XCTFail("Could not create mouse event")
             return
         }
@@ -274,9 +276,9 @@ final class ClipboardRowInteractionTests: XCTestCase {
                         PasteboardRepresentation(
                             typeIdentifier: NSPasteboard.PasteboardType.string.rawValue,
                             data: data
-                        ),
+                        )
                     ]
-                ),
+                )
             ],
             kind: .text,
             preview: text,

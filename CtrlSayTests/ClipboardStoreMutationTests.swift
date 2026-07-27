@@ -507,7 +507,7 @@ final class ClipboardStoreMutationTests: XCTestCase {
                 PasteboardRepresentation(
                     typeIdentifier: plainTextType,
                     data: Data(editedText.utf8)
-                ),
+                )
             ]
         )
         XCTAssertEqual(replacement.editableText, editedText)
@@ -614,9 +614,9 @@ final class ClipboardStoreMutationTests: XCTestCase {
                             PasteboardRepresentation(
                                 typeIdentifier: "public.png",
                                 data: Data([0x00])
-                            ),
+                            )
                         ]
-                    ),
+                    )
                 ],
                 kind: .image,
                 preview: "Image",
@@ -632,7 +632,7 @@ final class ClipboardStoreMutationTests: XCTestCase {
                                 data: Data("{\\rtf1 Caption}".utf8)
                             ),
                         ]
-                    ),
+                    )
                 ],
                 kind: .text,
                 preview: "Caption",
@@ -648,7 +648,7 @@ final class ClipboardStoreMutationTests: XCTestCase {
                                 data: Data([0x00])
                             ),
                         ]
-                    ),
+                    )
                 ],
                 kind: .mixed,
                 preview: "Caption",
@@ -661,9 +661,9 @@ final class ClipboardStoreMutationTests: XCTestCase {
                             PasteboardRepresentation(
                                 typeIdentifier: plainTextType,
                                 data: Data([0xFF])
-                            ),
+                            )
                         ]
-                    ),
+                    )
                 ],
                 kind: .text,
                 preview: "Invalid text",
@@ -692,9 +692,9 @@ final class ClipboardStoreMutationTests: XCTestCase {
                         PasteboardRepresentation(
                             typeIdentifier: plainTextType,
                             data: Data([0xFF])
-                        ),
+                        )
                     ]
-                ),
+                )
             ],
             kind: .text,
             preview: "Invalid text",
@@ -886,7 +886,7 @@ final class ClipboardStoreMutationTests: XCTestCase {
             items: [
                 PasteboardItemPayload(
                     representations: [plainTextRepresentation(text)]
-                ),
+                )
             ],
             kind: .text,
             preview: String(text.prefix(80)),
