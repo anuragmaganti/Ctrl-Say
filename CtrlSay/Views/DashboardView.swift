@@ -5,22 +5,14 @@ struct MenuBarStatusLabel: View {
     let model: AppModel
 
     var body: some View {
-        Image(systemName: symbolName)
+        Image("MenuBarIcon")
+            .renderingMode(.template)
+            .resizable()
+            .scaledToFit()
+            .frame(width: 18, height: 18)
             .accessibilityLabel("Ctrl-Say")
             .accessibilityValue(statusDescription)
             .help("Ctrl-Say — \(statusDescription)")
-    }
-
-    private var symbolName: String {
-        if !model.isReadyForCommands { return "checklist" }
-        switch model.speech.state {
-        case .stopped, .requestingMicrophone, .preparing, .downloadingModel, .stopping:
-            return "waveform.circle"
-        case .listening:
-            return "waveform.circle.fill"
-        case .failed:
-            return "exclamationmark.triangle"
-        }
     }
 
     private var statusDescription: String {

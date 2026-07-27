@@ -37,18 +37,18 @@ struct DashboardSettingsSection: View {
 
     private var storageSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            sectionTitle("Permanent Copies")
+            if let storageStatusTitle {
+                HStack(alignment: .top, spacing: 9) {
+                    storageStatusIcon
+                        .frame(width: 16, height: 18)
 
-            HStack(alignment: .top, spacing: 9) {
-                storageStatusIcon
-                    .frame(width: 16, height: 18)
-
-                Text(storageStatusTitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    Text(storageStatusTitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .accessibilityElement(children: .contain)
             }
-            .accessibilityElement(children: .contain)
 
             if model.permanentStorageState.hasFailure {
                 Button("Retry") {
@@ -148,8 +148,7 @@ struct DashboardSettingsSection: View {
             ProgressView()
                 .controlSize(.small)
         case .ready:
-            Image(systemName: "internaldrive.fill")
-                .foregroundStyle(.secondary)
+            EmptyView()
         case .loadFailed, .saveFailed:
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(.orange)
@@ -163,12 +162,12 @@ struct DashboardSettingsSection: View {
         )
     }
 
-    private var storageStatusTitle: String {
+    private var storageStatusTitle: String? {
         switch model.permanentStorageState {
         case .loading:
             "Loading saved copies…"
         case .ready:
-            "Saved locally until deleted"
+            nil
         case .saving(let pendingCount):
             "Saving \(pendingCount) change\(pendingCount == 1 ? "" : "s")…"
         case .loadFailed:

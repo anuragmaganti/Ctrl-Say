@@ -1,0 +1,75 @@
+{
+  "fill-specializations" : [
+    {
+      "value" : {
+        "linear-gradient" : [
+          "display-p3:0.51765,0.51765,0.51765,1.00000",
+          "display-p3:0.61569,0.61569,0.61569,1.00000"
+        ]
+      }
+    },
+    {
+      "appearance" : "dark",
+      "value" : {
+        "linear-gradient" : [
+          "display-p3:0.17647,0.18824,0.21569,1.00000",
+          "display-p3:0.03529,0.03922,0.04706,1.00000"
+        ]
+      }
+    }
+  ],
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "glass" : false,
+          "image-name" : "02-Ctrl-Say-Legend.svg",
+          "name" : "02 Ctrl-Say Legend"
+        },
+        {
+          "glass" : false,
+          "image-name" : "01-Ctrl-Say-Glow.png",
+          "name" : "01 Ctrl-Say Backlight"
+        }
+      ],
+      "name" : "Ctrl-Say Backlight",
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.5
+      }
+    },
+    {
+      "layers" : [
+        {
+          "glass" : false,
+          "image-name" : "04-Listening-Mark.svg",
+          "name" : "04 Listening Mark"
+        },
+        {
+          "glass" : false,
+          "image-name" : "03-Listening-Glow.png",
+          "name" : "03 Listening Backlight"
+        }
+      ],
+      "name" : "Listening Backlight",
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.5
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "circles" : [
+      "watchOS"
+    ],
+    "squares" : "shared"
+  }
+}
