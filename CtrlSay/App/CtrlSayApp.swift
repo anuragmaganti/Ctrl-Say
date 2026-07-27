@@ -22,10 +22,6 @@ struct CtrlSayApp: App {
         .defaultLaunchBehavior(
             appDelegate.model.isReadyForCommands ? .suppressed : .presented
         )
-
-        Settings {
-            CtrlSaySettingsView(model: appDelegate.model)
-        }
     }
 }
 
