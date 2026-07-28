@@ -69,12 +69,7 @@ struct ClipboardPayload: Identifiable, Hashable, Sendable {
     }
 
     var inlineTextEditability: InlineTextEditability {
-        guard kind == .text,
-            items.count == 1,
-            items[0].representations.count == 1,
-            let representation = items[0].representations.first,
-            representation.typeIdentifier == Self.utf8PlainTextTypeIdentifier
-        else {
+        guard let representation = inlinePlainTextRepresentation else {
             return .notPlainText
         }
         guard representation.data.count <= Self.maximumInlineEditableTextBytes else {
@@ -88,7 +83,7 @@ struct ClipboardPayload: Identifiable, Hashable, Sendable {
 
     var editableText: String? {
         guard inlineTextEditability == .editable,
-            let representation = items[0].representations.first
+            let representation = inlinePlainTextRepresentation
         else {
             return nil
         }
@@ -186,6 +181,25 @@ struct ClipboardPayload: Identifiable, Hashable, Sendable {
             .data
     }
 
+    /// A single text pasteboard item may legitimately carry plain text plus
+    /// HTML, RTF, and source-app metadata. The plain-text representation is
+    /// still unambiguous as long as it occurs exactly once.
+    nonisolated private var inlinePlainTextRepresentation: PasteboardRepresentation? {
+        Self.inlinePlainTextRepresentation(items: items, kind: kind)
+    }
+
+    nonisolated private static func inlinePlainTextRepresentation(
+        items: [PasteboardItemPayload],
+        kind: ClipboardContentKind
+    ) -> PasteboardRepresentation? {
+        guard kind == .text, items.count == 1 else { return nil }
+        let matches = items[0].representations.filter { representation in
+            representation.typeIdentifier == utf8PlainTextTypeIdentifier
+        }
+        guard matches.count == 1 else { return nil }
+        return matches[0]
+    }
+
     nonisolated private static func decodeUTF8Prefix(
         _ data: Data,
         byteLimit: Int
@@ -207,11 +221,11 @@ struct ClipboardPayload: Identifiable, Hashable, Sendable {
         items: [PasteboardItemPayload],
         kind: ClipboardContentKind
     ) -> Bool {
-        guard kind == .text,
-            items.count == 1,
-            items[0].representations.count == 1,
-            let representation = items[0].representations.first,
-            representation.typeIdentifier == utf8PlainTextTypeIdentifier,
+        guard
+            let representation = inlinePlainTextRepresentation(
+                items: items,
+                kind: kind
+            ),
             representation.data.count <= maximumInlineEditableTextBytes
         else {
             return false

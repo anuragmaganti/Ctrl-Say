@@ -21,6 +21,10 @@ enum ClipboardHUDMetrics {
     static let maximumHeightFraction: CGFloat = 0.75
     static let headerHeight: CGFloat = 58
     static let rowHeight: CGFloat = 66
+    static let previewLineLimit = 2
+    // Two system callout lines plus the editor's five-point inset on each edge.
+    // Long content remains scrollable inside this fixed viewport.
+    static let inlineContentEditorHeight: CGFloat = 40
     static let emptyListHeight: CGFloat = 50
     static let listVerticalPadding: CGFloat = 12
     static let numberedFooterHeight: CGFloat = 24

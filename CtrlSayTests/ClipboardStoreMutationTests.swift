@@ -513,6 +513,97 @@ final class ClipboardStoreMutationTests: XCTestCase {
         XCTAssertEqual(replacement.editableText, editedText)
     }
 
+    func testTextWithAdditionalNativeRepresentationsIsInlineEditable() throws {
+        let text = "Chrome text"
+        let plainText = plainTextRepresentation(text)
+        let payload = ClipboardPayload(
+            items: [
+                PasteboardItemPayload(
+                    representations: [
+                        PasteboardRepresentation(
+                            typeIdentifier: "org.chromium.source-url",
+                            data: Data("https://example.com".utf8)
+                        ),
+                        plainText,
+                        PasteboardRepresentation(
+                            typeIdentifier: "public.html",
+                            data: Data("<p>Chrome text</p>".utf8)
+                        ),
+                    ]
+                )
+            ],
+            kind: .text,
+            preview: text,
+            byteCount:
+                Data("https://example.com".utf8).count
+                + plainText.data.count
+                + Data("<p>Chrome text</p>".utf8).count
+        )
+
+        XCTAssertEqual(payload.inlineTextEditability, .editable)
+        XCTAssertEqual(payload.editableText, text)
+
+        let replacement = try XCTUnwrap(
+            payload.replacingEditableText(with: "Edited text")
+        )
+        XCTAssertEqual(
+            replacement.items[0].representations,
+            [plainTextRepresentation("Edited text")]
+        )
+    }
+
+    @MainActor
+    func testReplaceTemporaryTextUpdatesNumberedAndNamedSlotsInPlace() throws {
+        let store = ClipboardStore()
+        let numbered = makeTextPayload("Numbered original")
+        let named = makeTextPayload("Named original")
+        try store.set(numbered, at: 2)
+        try store.setTemporaryNamed(named, named: "house")
+
+        try store.replaceNumberedText(
+            at: 2,
+            text: "Numbered edited",
+            expectedPayloadID: numbered.id
+        )
+        try store.replaceTemporaryNamedText(
+            named: "HOUSE!",
+            text: "Named edited",
+            expectedPayloadID: named.id
+        )
+
+        let editedNumbered = try XCTUnwrap(store.payload(at: 2))
+        let editedNamed = try XCTUnwrap(store.payload(temporaryNamed: "house"))
+        XCTAssertEqual(editedNumbered.id, numbered.id)
+        XCTAssertEqual(editedNumbered.editableText, "Numbered edited")
+        XCTAssertEqual(editedNamed.id, named.id)
+        XCTAssertEqual(editedNamed.editableText, "Named edited")
+        XCTAssertEqual(store.temporaryNamedSlots.map(\.name), ["house"])
+        XCTAssertEqual(
+            store.totalByteCount,
+            editedNumbered.byteCount + editedNamed.byteCount
+        )
+    }
+
+    @MainActor
+    func testReplaceTemporaryTextRejectsStalePayloadIdentity() throws {
+        let store = ClipboardStore()
+        let original = makeTextPayload("Original")
+        let replacement = makeTextPayload("Replacement")
+        try store.set(original, at: 1)
+        try store.set(replacement, at: 1)
+
+        XCTAssertThrowsError(
+            try store.replaceNumberedText(
+                at: 1,
+                text: "Stale edit",
+                expectedPayloadID: original.id
+            )
+        ) { error in
+            XCTAssertEqual(error as? ClipboardStoreError, .temporaryCopyChanged)
+        }
+        XCTAssertEqual(store.payload(at: 1), replacement)
+    }
+
     @MainActor
     func testReplaceNamedTextRejectsWhitespaceWithoutChangingPayload() throws {
         let store = ClipboardStore()
@@ -626,17 +717,14 @@ final class ClipboardStoreMutationTests: XCTestCase {
                 items: [
                     PasteboardItemPayload(
                         representations: [
-                            plainTextRepresentation("Caption"),
-                            PasteboardRepresentation(
-                                typeIdentifier: "public.rtf",
-                                data: Data("{\\rtf1 Caption}".utf8)
-                            ),
+                            plainTextRepresentation("First"),
+                            plainTextRepresentation("Second"),
                         ]
                     )
                 ],
                 kind: .text,
-                preview: "Caption",
-                byteCount: 23
+                preview: "Ambiguous text",
+                byteCount: 11
             ),
             ClipboardPayload(
                 items: [

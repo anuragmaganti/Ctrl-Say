@@ -168,6 +168,7 @@ struct ClipboardHUDView: View {
                             TemporaryCopyRow(
                                 slot: .numbered(number),
                                 payload: payload,
+                                editingSession: editingSession,
                                 copyToClipboard: {
                                     model.copyToSystemClipboard(payload)
                                 },
@@ -180,6 +181,13 @@ struct ClipboardHUDView: View {
                                 delete: {
                                     model.deleteNumberedCopy(number)
                                 },
+                                updateText: { payloadID, text in
+                                    try model.updateNumberedCopyText(
+                                        number,
+                                        payloadID: payloadID,
+                                        text: text
+                                    )
+                                },
                                 thumbnailProvider: thumbnailProvider
                             )
                             .id(payload.id)
@@ -191,6 +199,7 @@ struct ClipboardHUDView: View {
                             TemporaryCopyRow(
                                 slot: .named(name),
                                 payload: payload,
+                                editingSession: editingSession,
                                 copyToClipboard: {
                                     model.copyToSystemClipboard(payload)
                                 },
@@ -202,6 +211,13 @@ struct ClipboardHUDView: View {
                                 },
                                 delete: {
                                     model.deleteTemporaryNamedCopy(name)
+                                },
+                                updateText: { payloadID, text in
+                                    try model.updateTemporaryNamedCopyText(
+                                        name,
+                                        payloadID: payloadID,
+                                        text: text
+                                    )
                                 },
                                 thumbnailProvider: thumbnailProvider
                             )

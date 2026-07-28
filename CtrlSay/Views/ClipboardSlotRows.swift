@@ -23,7 +23,7 @@ private struct ClipboardPreview: View {
         Text(displayedText)
             .font(.callout)
             .foregroundStyle(.secondary)
-            .lineLimit(2)
+            .lineLimit(ClipboardHUDMetrics.previewLineLimit)
             .truncationMode(.tail)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -136,30 +136,65 @@ struct TemporaryCopyRow: View {
 
     let slot: Slot
     let payload: ClipboardPayload
+    let editingSession: ClipboardHUDEditingSession
     let copyToClipboard: () -> Void
     let paste: () -> Void
     let delete: @MainActor @Sendable () -> Void
+    let updateText: (UUID, String) throws -> Void
     let thumbnailProvider: ClipboardThumbnailProvider?
 
     @State private var isHovered = false
+    @State private var focusLossIsArmed = false
+    @FocusState private var contentIsFocused: Bool
 
     init(
         slot: Slot,
         payload: ClipboardPayload,
+        editingSession: ClipboardHUDEditingSession,
         copyToClipboard: @escaping () -> Void,
         paste: @escaping () -> Void,
         delete: @escaping @MainActor @Sendable () -> Void,
+        updateText: @escaping (UUID, String) throws -> Void,
         thumbnailProvider: ClipboardThumbnailProvider? = nil
     ) {
         self.slot = slot
         self.payload = payload
+        self.editingSession = editingSession
         self.copyToClipboard = copyToClipboard
         self.paste = paste
         self.delete = delete
+        self.updateText = updateText
         self.thumbnailProvider = thumbnailProvider
     }
 
     var body: some View {
+        accessibleRow
+            .onDisappear {
+                editingSession.cancelEditing(payloadID: payload.id)
+            }
+            .onChange(of: payload) { oldPayload, newPayload in
+                guard isEditingContent, newPayload != oldPayload else { return }
+                editingSession.markConflict(
+                    for: payload.id,
+                    message: editConflictMessage
+                )
+                focusContentEditor()
+            }
+    }
+
+    @ViewBuilder
+    private var accessibleRow: some View {
+        if canEditContents {
+            interactiveRow
+                .accessibilityAction(named: editAccessibilityLabel) {
+                    beginContentEditing()
+                }
+        } else {
+            interactiveRow
+        }
+    }
+
+    private var interactiveRow: some View {
         row
             .temporarySlotSwipeToDelete(action: delete)
             .contextMenu { menuItems }
@@ -176,19 +211,79 @@ struct TemporaryCopyRow: View {
     }
 
     private var row: some View {
-        HStack(spacing: 10) {
-            leadingCopyButton
+        HStack(alignment: isEditingContent ? .top : .center, spacing: 10) {
+            leadingControl
 
             VStack(alignment: .leading, spacing: 2) {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    titleCopyButton
+                if isEditingContent {
+                    Text(slot.title)
+                        .font(.callout.weight(.semibold))
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
 
-                    pasteButton
+                    TextEditor(text: boundedContentDraft)
+                        .font(.callout)
+                        .scrollContentBackground(.hidden)
+                        .padding(5)
+                        .frame(height: ClipboardHUDMetrics.inlineContentEditorHeight)
+                        .background(.quaternary, in: .rect(cornerRadius: 7))
+                        .focused($contentIsFocused)
+                        .onAppear {
+                            focusContentEditor()
+                        }
+                        .onKeyPress(.escape) {
+                            cancelEditing()
+                            return .handled
+                        }
+                        .onKeyPress(.return, phases: .down) { press in
+                            guard press.modifiers.contains(.command) else {
+                                return .ignored
+                            }
+                            _ = commitContentEdit()
+                            return .handled
+                        }
+                        .accessibilityLabel("Temporary copy contents")
+                        .accessibilityHint(
+                            "Press Command-Return to save or Escape to cancel"
+                        )
+
+                    if let validationMessage = editingSession.validationMessage {
+                        Text(validationMessage)
+                            .font(.caption2)
+                            .foregroundStyle(.red)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityLabel(
+                                "Editing error: \(validationMessage)"
+                            )
+                    }
+                } else {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        titleCopyButton
+
+                        pasteButton
+                    }
+
+                    previewCopyButton
                 }
-
-                previewCopyButton
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .onChange(of: contentIsFocused) { oldValue, newValue in
+                guard oldValue, !newValue, isEditingContent else { return }
+                guard focusLossIsArmed else {
+                    focusContentEditor()
+                    return
+                }
+                Task { @MainActor in
+                    await Task.yield()
+                    if isEditingContent, !contentIsFocused {
+                        _ = commitContentEdit()
+                    }
+                }
+            }
+
+            if isEditingContent {
+                editorControls
+            }
         }
         .padding(.leading, 8)
         .padding(.trailing, 8)
@@ -206,18 +301,25 @@ struct TemporaryCopyRow: View {
     }
 
     @ViewBuilder
-    private var leadingCopyButton: some View {
+    private var leadingControl: some View {
         if payload.kind.benefitsFromThumbnail,
             let thumbnailProvider
         {
-            Button(action: copyToClipboard) {
+            if isEditingContent {
                 ClipboardPayloadThumbnailView(
                     payload: payload,
                     provider: thumbnailProvider
                 )
+            } else {
+                Button(action: copyToClipboard) {
+                    ClipboardPayloadThumbnailView(
+                        payload: payload,
+                        provider: thumbnailProvider
+                    )
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(copyAccessibilityLabel)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(copyAccessibilityLabel)
         }
     }
 
@@ -254,13 +356,134 @@ struct TemporaryCopyRow: View {
             .help(pasteAccessibilityLabel)
     }
 
+    private var editorControls: some View {
+        HStack(spacing: 2) {
+            Button {
+                cancelEditing()
+            } label: {
+                Image(systemName: "xmark")
+                    .frame(width: 22, height: 24)
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Cancel editing")
+            .help("Cancel")
+
+            Button {
+                _ = commitContentEdit()
+            } label: {
+                Image(systemName: "checkmark")
+                    .fontWeight(.semibold)
+                    .frame(width: 22, height: 24)
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Save changes")
+            .help("Save")
+        }
+    }
+
     @ViewBuilder
     private var menuItems: some View {
         Button("Paste", systemImage: "doc.on.clipboard", action: paste)
         Divider()
+        Button("Edit Contents…", systemImage: "text.cursor") {
+            beginContentEditing()
+        }
+        .disabled(!canEditContents)
+        Divider()
         Button("Delete Copy", systemImage: "trash", role: .destructive) {
             delete()
         }
+    }
+
+    private var canEditContents: Bool {
+        payload.inlineTextEditability == .editable
+    }
+
+    private var editTarget: ClipboardHUDEditingSession.Target {
+        let location: ClipboardHUDEditingSession.Location
+        switch slot {
+        case .numbered(let number):
+            location = .numbered(number)
+        case .named(let name):
+            location = .temporaryNamed(name)
+        }
+        return ClipboardHUDEditingSession.Target(
+            payloadID: payload.id,
+            location: location,
+            field: .content
+        )
+    }
+
+    private var isEditingContent: Bool {
+        editingSession.isEditing(editTarget)
+    }
+
+    private func beginContentEditing() {
+        guard !isEditingContent,
+            let text = payload.editableText
+        else {
+            return
+        }
+        let payloadID = payload.id
+        _ = editingSession.begin(
+            target: editTarget,
+            initialDraft: text,
+            commit: { text in
+                try updateText(payloadID, text)
+            }
+        )
+    }
+
+    private var boundedContentDraft: Binding<String> {
+        let sizeMessage = "Copy content must be 256 KB or smaller."
+        return Binding(
+            get: { editingSession.draft },
+            set: { newValue in
+                guard
+                    newValue.utf8.count
+                        <= ClipboardPayload.maximumInlineEditableTextBytes
+                else {
+                    editingSession.setValidationMessage(sizeMessage)
+                    NSSound.beep()
+                    return
+                }
+                editingSession.updateDraft(newValue)
+                editingSession.clearValidationMessage(matching: sizeMessage)
+            }
+        )
+    }
+
+    @discardableResult
+    private func commitContentEdit() -> Bool {
+        guard isEditingContent else { return true }
+        let didCommit = editingSession.commit(editTarget)
+        if !didCommit {
+            focusContentEditor()
+        }
+        return didCommit
+    }
+
+    private func cancelEditing() {
+        focusLossIsArmed = false
+        contentIsFocused = false
+        editingSession.cancel(editTarget)
+    }
+
+    private func focusContentEditor() {
+        focusLossIsArmed = false
+        Task { @MainActor in
+            await Task.yield()
+            guard isEditingContent else { return }
+            contentIsFocused = true
+
+            await Task.yield()
+            guard isEditingContent else { return }
+            focusLossIsArmed = true
+        }
+    }
+
+    private var editConflictMessage: String {
+        "This temporary copy changed while you were editing. Cancel and edit the new copy."
     }
 
     private var copyAccessibilityLabel: String {
@@ -273,6 +496,10 @@ struct TemporaryCopyRow: View {
 
     private var deleteAccessibilityLabel: String {
         "Delete \(slot.actionAccessibilityName)"
+    }
+
+    private var editAccessibilityLabel: String {
+        "Edit contents of \(slot.actionAccessibilityName)"
     }
 }
 
@@ -292,15 +519,7 @@ struct PermanentCopyRow: View {
     let updateText: (UUID, String) throws -> Void
     let thumbnailProvider: ClipboardThumbnailProvider?
 
-    @State private var editingField: EditingField?
-    @State private var nameDraft = ""
-    @State private var contentDraft = ""
-    @State private var validationMessage: String?
     @State private var isHovered = false
-    @State private var editingToken: ClipboardHUDEditingSession.Token?
-    @State private var editingPayloadID: UUID?
-    @State private var editingPayloadSnapshot: ClipboardPayload?
-    @State private var editingOriginalName: String?
     @State private var nameSelection: TextSelection?
     @State private var focusLossIsArmed = false
     @FocusState private var focusedField: EditingField?
@@ -327,58 +546,46 @@ struct PermanentCopyRow: View {
         self.thumbnailProvider = thumbnailProvider
     }
 
-    @ViewBuilder
     var body: some View {
-        Group {
-            if editingField == nil {
-                idleAccessibleRow
-            } else {
-                row
-                    .accessibilityElement(children: .contain)
+        accessibleRow
+            .onDisappear {
+                editingSession.cancelEditing(payloadID: payload.id)
             }
-        }
-        .onDisappear {
-            if editingField != nil { cancelEditing() }
-        }
-        .onChange(of: payload) { _, newPayload in
-            guard editingField != nil,
-                let editingPayloadSnapshot,
-                newPayload != editingPayloadSnapshot
-            else {
-                return
+            .onChange(of: payload) { oldPayload, newPayload in
+                guard editingField != nil, newPayload != oldPayload else { return }
+                editingSession.markConflict(
+                    for: payload.id,
+                    message: editConflictMessage
+                )
+                if let editingField {
+                    focus(editingField, selectingAll: false)
+                }
             }
-            validationMessage = editConflictMessage
-            if let editingField {
-                focus(editingField, selectingAll: false)
+            .onChange(of: name) { oldName, newName in
+                guard editingField != nil, newName != oldName else { return }
+                editingSession.markConflict(
+                    for: payload.id,
+                    message: editConflictMessage
+                )
+                if let editingField {
+                    focus(editingField, selectingAll: false)
+                }
             }
-        }
-        .onChange(of: name) { _, newName in
-            guard editingField != nil,
-                let editingOriginalName,
-                newName != editingOriginalName
-            else {
-                return
-            }
-            validationMessage = editConflictMessage
-            if let editingField {
-                focus(editingField, selectingAll: false)
-            }
-        }
     }
 
     @ViewBuilder
-    private var idleAccessibleRow: some View {
+    private var accessibleRow: some View {
         if canEditContents {
-            idleRowActions
+            interactiveRow
                 .accessibilityAction(named: "Edit contents of permanent copy \(name)") {
                     beginContentEditing()
                 }
         } else {
-            idleRowActions
+            interactiveRow
         }
     }
 
-    private var idleRowActions: some View {
+    private var interactiveRow: some View {
         row
             .contextMenu { menuItems }
             .accessibilityElement(children: .contain)
@@ -410,7 +617,6 @@ struct PermanentCopyRow: View {
         }
         .padding(.leading, 8)
         .padding(.trailing, 8)
-        .padding(.vertical, editingField == .content ? 8 : 0)
         .frame(minHeight: ClipboardHUDMetrics.rowHeight)
         .contentShape(.rect(cornerRadius: 11))
         .background(
@@ -465,11 +671,14 @@ struct PermanentCopyRow: View {
             if editingField == .name {
                 TextField(
                     "Permanent copy name",
-                    text: $nameDraft,
+                    text: editingDraft,
                     selection: $nameSelection
                 )
                 .textFieldStyle(.roundedBorder)
                 .focused($focusedField, equals: .name)
+                .onAppear {
+                    focus(.name, selectingAll: true)
+                }
                 .onSubmit {
                     _ = commitCurrentEdit()
                 }
@@ -487,23 +696,21 @@ struct PermanentCopyRow: View {
                         .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
-                .simultaneousGesture(
-                    TapGesture(count: 2).onEnded {
-                        beginNameEditing()
-                    }
-                )
                 .accessibilityLabel("Copy permanent copy \(name) to clipboard")
-                .help("Click to copy; double-click to rename")
+                .help("Copy permanent copy \(name) to clipboard")
             }
 
             if editingField == .content {
                 TextEditor(text: boundedContentDraft)
-                    .font(.caption)
+                    .font(.callout)
                     .scrollContentBackground(.hidden)
                     .padding(5)
-                    .frame(minHeight: 64, maxHeight: 96)
+                    .frame(height: ClipboardHUDMetrics.inlineContentEditorHeight)
                     .background(.quaternary, in: .rect(cornerRadius: 7))
                     .focused($focusedField, equals: .content)
+                    .onAppear {
+                        focus(.content, selectingAll: false)
+                    }
                     .onKeyPress(.escape) {
                         cancelEditing()
                         return .handled
@@ -526,17 +733,10 @@ struct PermanentCopyRow: View {
                     .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
-                .simultaneousGesture(
-                    TapGesture(count: 2).onEnded {
-                        if canEditContents {
-                            beginContentEditing()
-                        }
-                    }
-                )
                 .accessibilityLabel("Copy permanent copy \(name) contents to clipboard")
             }
 
-            if let validationMessage {
+            if let validationMessage = editingSession.validationMessage {
                 Text(validationMessage)
                     .font(.caption2)
                     .foregroundStyle(.red)
@@ -627,14 +827,58 @@ struct PermanentCopyRow: View {
         payload.inlineTextEditability == .editable
     }
 
+    private var nameEditTarget: ClipboardHUDEditingSession.Target {
+        ClipboardHUDEditingSession.Target(
+            payloadID: payload.id,
+            location: .permanent,
+            field: .name
+        )
+    }
+
+    private var contentEditTarget: ClipboardHUDEditingSession.Target {
+        ClipboardHUDEditingSession.Target(
+            payloadID: payload.id,
+            location: .permanent,
+            field: .content
+        )
+    }
+
+    private var editingField: EditingField? {
+        if editingSession.isEditing(nameEditTarget) {
+            return .name
+        }
+        if editingSession.isEditing(contentEditTarget) {
+            return .content
+        }
+        return nil
+    }
+
+    private var activeEditTarget: ClipboardHUDEditingSession.Target? {
+        switch editingField {
+        case .name:
+            nameEditTarget
+        case .content:
+            contentEditTarget
+        case nil:
+            nil
+        }
+    }
+
+    private var editingDraft: Binding<String> {
+        Binding(
+            get: { editingSession.draft },
+            set: { editingSession.updateDraft($0) }
+        )
+    }
+
     private var displayName: String {
         name.prefix(1).uppercased() + String(name.dropFirst())
     }
 
-    private var contentHelp: String {
+    private var contentHelp: String? {
         switch payload.inlineTextEditability {
         case .editable:
-            "Double-click to edit contents"
+            nil
         case .notPlainText:
             "Only plain-text permanent copies can be edited"
         case .tooLarge:
@@ -645,143 +889,90 @@ struct PermanentCopyRow: View {
     }
 
     private func beginNameEditing() {
-        guard editingField == nil,
-            let token = editingSession.begin(
-                commit: { commitCurrentEdit() },
-                cancel: { cancelEditing() }
-            )
-        else {
-            return
-        }
-        nameDraft = name
-        validationMessage = nil
-        focusLossIsArmed = false
-        editingToken = token
-        editingPayloadID = payload.id
-        editingPayloadSnapshot = payload
-        editingOriginalName = name
-        editingField = .name
-        focus(.name, selectingAll: true)
+        guard editingField == nil else { return }
+        let payloadID = payload.id
+        _ = editingSession.begin(
+            target: nameEditTarget,
+            initialDraft: name,
+            commit: { requestedName in
+                _ = try rename(payloadID, requestedName)
+            }
+        )
     }
 
     private func beginContentEditing() {
         guard editingField == nil,
-            let text = payload.editableText,
-            let token = editingSession.begin(
-                commit: { commitCurrentEdit() },
-                cancel: { cancelEditing() }
-            )
+            let text = payload.editableText
         else {
             return
         }
-        contentDraft = text
-        validationMessage = nil
-        focusLossIsArmed = false
-        editingToken = token
-        editingPayloadID = payload.id
-        editingPayloadSnapshot = payload
-        editingOriginalName = name
-        editingField = .content
-        focus(.content, selectingAll: false)
+        let payloadID = payload.id
+        _ = editingSession.begin(
+            target: contentEditTarget,
+            initialDraft: text,
+            commit: { text in
+                try updateText(payloadID, text)
+            }
+        )
     }
 
     private var boundedContentDraft: Binding<String> {
         let sizeMessage = "Permanent copy content must be 256 KB or smaller."
         return Binding(
-            get: { contentDraft },
+            get: { editingSession.draft },
             set: { newValue in
                 guard newValue.utf8.count <= ClipboardPayload.maximumInlineEditableTextBytes else {
-                    validationMessage = sizeMessage
+                    editingSession.setValidationMessage(sizeMessage)
                     NSSound.beep()
                     return
                 }
-                contentDraft = newValue
-                if validationMessage == sizeMessage {
-                    validationMessage = nil
-                }
+                editingSession.updateDraft(newValue)
+                editingSession.clearValidationMessage(matching: sizeMessage)
             }
         )
     }
 
     @discardableResult
     private func commitCurrentEdit() -> Bool {
-        guard let editingField else { return true }
-        guard let editingPayloadID,
-            editingPayloadID == payload.id,
-            editingPayloadSnapshot == payload,
-            editingOriginalName == name
-        else {
-            validationMessage = editConflictMessage
-            focus(editingField, selectingAll: false)
-            return false
-        }
-
-        do {
-            switch editingField {
-            case .name:
-                _ = try rename(editingPayloadID, nameDraft)
-            case .content:
-                try updateText(editingPayloadID, contentDraft)
-            }
-            clearDrafts()
-            self.editingField = nil
-            self.editingPayloadID = nil
-            editingPayloadSnapshot = nil
-            editingOriginalName = nil
+        guard let editingField, let activeEditTarget else { return true }
+        let didCommit = editingSession.commit(activeEditTarget)
+        if didCommit {
             focusedField = nil
-            validationMessage = nil
+            nameSelection = nil
             focusLossIsArmed = false
-            finishEditingSession()
-            return true
-        } catch {
-            validationMessage = error.localizedDescription
+        } else {
             focus(editingField, selectingAll: false)
-            return false
         }
+        return didCommit
     }
 
     private func cancelEditing() {
-        clearDrafts()
-        editingField = nil
-        editingPayloadID = nil
-        editingPayloadSnapshot = nil
-        editingOriginalName = nil
+        guard let activeEditTarget else { return }
+        editingSession.cancel(activeEditTarget)
         focusedField = nil
-        validationMessage = nil
+        nameSelection = nil
         focusLossIsArmed = false
-        finishEditingSession()
-    }
-
-    private func finishEditingSession() {
-        guard let editingToken else { return }
-        self.editingToken = nil
-        editingSession.finish(editingToken)
     }
 
     private var editConflictMessage: String {
         "This permanent copy changed while you were editing. Cancel and edit the new copy."
     }
 
-    private func clearDrafts() {
-        nameDraft = String()
-        nameSelection = nil
-        contentDraft = String()
-    }
-
     private func focus(_ field: EditingField, selectingAll: Bool) {
-        let token = editingToken
+        focusLossIsArmed = false
         Task { @MainActor in
             await Task.yield()
-            guard editingField == field, editingToken == token else { return }
+            guard editingField == field else { return }
             focusedField = field
             if selectingAll, field == .name {
+                let draft = editingSession.draft
                 nameSelection = TextSelection(
-                    range: nameDraft.startIndex..<nameDraft.endIndex
+                    range: draft.startIndex..<draft.endIndex
                 )
             }
 
             await Task.yield()
-            guard editingField == field, editingToken == token else { return }
+            guard editingField == field else { return }
             focusLossIsArmed = true
         }
     }

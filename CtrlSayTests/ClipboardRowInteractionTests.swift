@@ -13,11 +13,13 @@ final class ClipboardRowInteractionTests: XCTestCase {
         let row = TemporaryCopyRow(
             slot: .numbered(1),
             payload: payload,
+            editingSession: ClipboardHUDEditingSession(),
             copyToClipboard: {
                 _ = try? service.writeToSystemClipboard(payload)
             },
             paste: {},
-            delete: {}
+            delete: {},
+            updateText: { _, _ in }
         )
 
         click(row, at: CGPoint(x: 120, y: 20))
@@ -38,11 +40,13 @@ final class ClipboardRowInteractionTests: XCTestCase {
         let row = TemporaryCopyRow(
             slot: .named("house"),
             payload: payload,
+            editingSession: ClipboardHUDEditingSession(),
             copyToClipboard: {
                 _ = try? service.writeToSystemClipboard(payload)
             },
             paste: {},
-            delete: {}
+            delete: {},
+            updateText: { _, _ in }
         )
 
         click(row, at: CGPoint(x: 120, y: 20))
@@ -82,13 +86,130 @@ final class ClipboardRowInteractionTests: XCTestCase {
     }
 
     @MainActor
-    func testPermanentTitleDoubleClickStillBeginsRenaming() {
+    func testPermanentNameEditorReplacesLabelWithoutEndingSession() {
         let payload = textPayload("Permanent row content")
         let editingSession = ClipboardHUDEditingSession()
-        var didBeginEditing = false
-        editingSession.onBeginEditing = {
-            didBeginEditing = true
-        }
+        let row = PermanentCopyRow(
+            name: "address",
+            payload: payload,
+            editingSession: editingSession,
+            copyToClipboard: {},
+            paste: {},
+            delete: {},
+            rename: { _, requestedName in requestedName },
+            updateText: { _, _ in }
+        )
+        let window = host(row, height: 96)
+        defer { window.orderOut(nil) }
+        let target = ClipboardHUDEditingSession.Target(
+            payloadID: payload.id,
+            location: .permanent,
+            field: .name
+        )
+
+        editingSession.begin(
+            target: target,
+            initialDraft: "address",
+            commit: { _ in }
+        )
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+
+        XCTAssertEqual(editingSession.activeTarget, target)
+        XCTAssertTrue(
+            containsSubview(ofType: NSTextField.self, in: window.contentView)
+        )
+    }
+
+    @MainActor
+    func testTemporaryContentEditorReplacesPreviewWithoutEndingSession() {
+        let payload = textPayload("Temporary row content")
+        let editingSession = ClipboardHUDEditingSession()
+        let row = TemporaryCopyRow(
+            slot: .numbered(1),
+            payload: payload,
+            editingSession: editingSession,
+            copyToClipboard: {},
+            paste: {},
+            delete: {},
+            updateText: { _, _ in }
+        )
+        let target = ClipboardHUDEditingSession.Target(
+            payloadID: payload.id,
+            location: .numbered(1),
+            field: .content
+        )
+
+        editingSession.begin(
+            target: target,
+            initialDraft: "Temporary row content",
+            commit: { _ in }
+        )
+
+        XCTAssertEqual(
+            fittingHeight(of: row),
+            ClipboardHUDMetrics.rowHeight,
+            accuracy: 0.5
+        )
+
+        let window = host(row, height: ClipboardHUDMetrics.rowHeight)
+        defer { window.orderOut(nil) }
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+
+        XCTAssertEqual(editingSession.activeTarget, target)
+        XCTAssertTrue(
+            containsSubview(ofType: NSTextView.self, in: window.contentView)
+        )
+    }
+
+    @MainActor
+    func testPermanentContentEditorStaysInsideStandardRowHeight() {
+        let payload = textPayload(
+            "Permanent content that continues well beyond the two visible editor lines "
+                + "so the field must scroll internally instead of expanding the HUD row."
+        )
+        let editingSession = ClipboardHUDEditingSession()
+        let row = PermanentCopyRow(
+            name: "address",
+            payload: payload,
+            editingSession: editingSession,
+            copyToClipboard: {},
+            paste: {},
+            delete: {},
+            rename: { _, requestedName in requestedName },
+            updateText: { _, _ in }
+        )
+        let target = ClipboardHUDEditingSession.Target(
+            payloadID: payload.id,
+            location: .permanent,
+            field: .content
+        )
+
+        editingSession.begin(
+            target: target,
+            initialDraft: payload.editableText ?? "",
+            commit: { _ in }
+        )
+
+        XCTAssertEqual(
+            fittingHeight(of: row),
+            ClipboardHUDMetrics.rowHeight,
+            accuracy: 0.5
+        )
+
+        let window = host(row, height: ClipboardHUDMetrics.rowHeight)
+        defer { window.orderOut(nil) }
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+
+        XCTAssertEqual(editingSession.activeTarget, target)
+        XCTAssertTrue(
+            containsSubview(ofType: NSTextView.self, in: window.contentView)
+        )
+    }
+
+    @MainActor
+    func testDoubleClickingPermanentTitleDoesNotBeginEditing() {
+        let payload = textPayload("Permanent row content")
+        let editingSession = ClipboardHUDEditingSession()
         let row = PermanentCopyRow(
             name: "address",
             payload: payload,
@@ -102,7 +223,7 @@ final class ClipboardRowInteractionTests: XCTestCase {
 
         click(row, at: CGPoint(x: 120, y: 42), clickCount: 2)
 
-        XCTAssertTrue(didBeginEditing)
+        XCTAssertFalse(editingSession.isEditing)
     }
 
     @MainActor
@@ -111,9 +232,11 @@ final class ClipboardRowInteractionTests: XCTestCase {
         let temporaryRow = TemporaryCopyRow(
             slot: .numbered(1),
             payload: payload,
+            editingSession: ClipboardHUDEditingSession(),
             copyToClipboard: {},
             paste: {},
-            delete: {}
+            delete: {},
+            updateText: { _, _ in }
         )
         let permanentRow = PermanentCopyRow(
             name: "address",
@@ -239,6 +362,42 @@ final class ClipboardRowInteractionTests: XCTestCase {
         )
         hostingView.layoutSubtreeIfNeeded()
         return hostingView.fittingSize.height
+    }
+
+    @MainActor
+    private func host<V: View>(_ view: V, height: CGFloat) -> NSWindow {
+        let size = CGSize(width: 344, height: height)
+        let hostingView = NSHostingView(
+            rootView: view.frame(width: size.width, height: size.height)
+        )
+        hostingView.frame = CGRect(origin: .zero, size: size)
+        let window = NSWindow(
+            contentRect: CGRect(
+                origin: CGPoint(x: -10_000, y: -10_000),
+                size: size
+            ),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.animationBehavior = .none
+        window.isReleasedWhenClosed = false
+        window.contentView = hostingView
+        window.makeKeyAndOrderFront(nil)
+        hostingView.layoutSubtreeIfNeeded()
+        return window
+    }
+
+    @MainActor
+    private func containsSubview<T: NSView>(
+        ofType type: T.Type,
+        in view: NSView?
+    ) -> Bool {
+        guard let view else { return false }
+        if view is T { return true }
+        return view.subviews.contains {
+            containsSubview(ofType: type, in: $0)
+        }
     }
 
     @MainActor

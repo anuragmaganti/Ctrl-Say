@@ -161,6 +161,30 @@ final class AppModel {
         scheduleVocabularyRefresh()
     }
 
+    func updateNumberedCopyText(
+        _ number: Int,
+        payloadID: UUID,
+        text: String
+    ) throws {
+        try slots.replaceNumberedText(
+            at: number,
+            text: text,
+            expectedPayloadID: payloadID
+        )
+    }
+
+    func updateTemporaryNamedCopyText(
+        _ name: String,
+        payloadID: UUID,
+        text: String
+    ) throws {
+        try slots.replaceTemporaryNamedText(
+            named: name,
+            text: text,
+            expectedPayloadID: payloadID
+        )
+    }
+
     func clearTemporaryCopies() {
         guard slots.hasTemporaryCopies else { return }
         slots.clearTemporary()
@@ -1520,7 +1544,7 @@ final class AppModel {
                 return "Copy not found"
             case .missingTemporaryCopy:
                 return "Copy not found"
-            case .permanentCopyChanged:
+            case .temporaryCopyChanged, .permanentCopyChanged:
                 return "Copy changed — try again"
             case .emptyContent:
                 return "Nothing was copied"

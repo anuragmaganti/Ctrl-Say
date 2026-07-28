@@ -29,8 +29,8 @@ final class NotchPanelLayoutTests: XCTestCase {
 
     func testNotchGeometryUsesTheGapBetweenAuxiliaryAreas() {
         XCTAssertEqual(
-            NotchPanelLayoutCalculator.surfaceStyle(for: notchedDisplay),
-            .attached(notchWidth: 220, notchHeight: 38)
+            NotchPanelLayoutCalculator.surfaceGeometry(for: notchedDisplay),
+            NotchSurfaceGeometry(notchWidth: 220, notchHeight: 38)
         )
     }
 
@@ -61,11 +61,10 @@ final class NotchPanelLayoutTests: XCTestCase {
         XCTAssertEqual(surface, rect)
     }
 
-    func testAttachedListeningCanvasKeepsThePhysicalNotchAsItsAnchor() {
-        let layout = NotchPanelLayoutCalculator.layout(
+    func testAttachedListeningCanvasKeepsThePhysicalNotchAsItsAnchor() throws {
+        let layout = try attachedLayout(
             visualState: .listening,
-            interactionMode: .passive,
-            display: notchedDisplay
+            interactionMode: .passive
         )
 
         XCTAssertEqual(layout.frame.width, 520)
@@ -79,11 +78,10 @@ final class NotchPanelLayoutTests: XCTestCase {
         )
     }
 
-    func testAttachedListeningSurfaceExactlyMatchesTheReportedExclusion() {
-        let layout = NotchPanelLayoutCalculator.layout(
+    func testAttachedListeningSurfaceExactlyMatchesTheReportedExclusion() throws {
+        let layout = try attachedLayout(
             visualState: .listening,
-            interactionMode: .passive,
-            display: notchedDisplay
+            interactionMode: .passive
         )
         let reportedNotchLeft = notchedDisplay
             .auxiliaryTopLeftArea!
@@ -106,16 +104,14 @@ final class NotchPanelLayoutTests: XCTestCase {
         )
     }
 
-    func testSuccessExpandsOnlyRightFromPhysicalNotch() {
-        let listening = NotchPanelLayoutCalculator.layout(
+    func testSuccessExpandsOnlyRightFromPhysicalNotch() throws {
+        let listening = try attachedLayout(
             visualState: .listening,
-            interactionMode: .passive,
-            display: notchedDisplay
+            interactionMode: .passive
         )
-        let success = NotchPanelLayoutCalculator.layout(
+        let success = try attachedLayout(
             visualState: .success(action: .copy, label: "House"),
-            interactionMode: .passive,
-            display: notchedDisplay
+            interactionMode: .passive
         )
 
         XCTAssertEqual(success.frame, listening.frame)
@@ -123,32 +119,28 @@ final class NotchPanelLayoutTests: XCTestCase {
         XCTAssertEqual(success.surfaceSize.height, listening.surfaceSize.height)
     }
 
-    func testPendingCopyUsesTheSameRightwardGeometryAsSuccess() {
-        let pending = NotchPanelLayoutCalculator.layout(
+    func testPendingCopyUsesTheSameRightwardGeometryAsSuccess() throws {
+        let pending = try attachedLayout(
             visualState: .pending(action: .copy, label: "House"),
-            interactionMode: .passive,
-            display: notchedDisplay
+            interactionMode: .passive
         )
-        let success = NotchPanelLayoutCalculator.layout(
+        let success = try attachedLayout(
             visualState: .success(action: .copy, label: "House"),
-            interactionMode: .passive,
-            display: notchedDisplay
+            interactionMode: .passive
         )
 
         XCTAssertEqual(pending.frame, success.frame)
         XCTAssertEqual(pending.surfaceSize, success.surfaceSize)
     }
 
-    func testFailureAlsoExpandsOnlyRightFromPhysicalNotch() {
-        let listening = NotchPanelLayoutCalculator.layout(
+    func testFailureAlsoExpandsOnlyRightFromPhysicalNotch() throws {
+        let listening = try attachedLayout(
             visualState: .listening,
-            interactionMode: .passive,
-            display: notchedDisplay
+            interactionMode: .passive
         )
-        let failure = NotchPanelLayoutCalculator.layout(
+        let failure = try attachedLayout(
             visualState: .failure(message: "Clipboard unavailable"),
-            interactionMode: .passive,
-            display: notchedDisplay
+            interactionMode: .passive
         )
 
         XCTAssertEqual(failure.frame, listening.frame)
@@ -156,7 +148,7 @@ final class NotchPanelLayoutTests: XCTestCase {
         XCTAssertEqual(failure.surfaceSize.height, listening.surfaceSize.height)
     }
 
-    func testDisplayWithoutNotchUsesFloatingPanelBelowMenuBar() {
+    func testDisplayWithoutNotchProducesNoPanelLayout() {
         let display = NotchDisplayGeometry(
             frame: CGRect(x: -1_440, y: 0, width: 1_440, height: 900),
             visibleFrame: CGRect(x: -1_440, y: 40, width: 1_440, height: 836),
@@ -164,52 +156,48 @@ final class NotchPanelLayoutTests: XCTestCase {
             auxiliaryTopLeftArea: nil,
             auxiliaryTopRightArea: nil
         )
-        let layout = NotchPanelLayoutCalculator.layout(
-            visualState: .listening,
-            interactionMode: .passive,
-            display: display
-        )
-
-        XCTAssertEqual(layout.surfaceStyle, .floating)
-        XCTAssertEqual(layout.frame.width, 452)
-        XCTAssertEqual(layout.frame.height, 38)
-        XCTAssertEqual(
-            layout.frame.maxY,
-            display.visibleFrame.maxY
-                - NotchPanelLayoutCalculator.floatingTopInset
-        )
-        XCTAssertEqual(layout.surfaceSize, CGSize(width: 152, height: 38))
-        XCTAssertEqual(
-            layout.frame.minX + layout.surfaceSize.width / 2,
-            display.frame.midX
+        XCTAssertNil(NotchPanelLayoutCalculator.surfaceGeometry(for: display))
+        XCTAssertNil(
+            NotchPanelLayoutCalculator.layout(
+                visualState: .listening,
+                interactionMode: .passive,
+                display: display
+            )
         )
     }
 
-    func testNotchlessSuccessKeepsListeningCapsuleLeftEdge() {
-        let display = NotchDisplayGeometry(
-            frame: CGRect(x: -1_440, y: 0, width: 1_440, height: 900),
-            visibleFrame: CGRect(x: -1_440, y: 40, width: 1_440, height: 836),
-            safeAreaTop: 0,
-            auxiliaryTopLeftArea: nil,
-            auxiliaryTopRightArea: nil
+    func testOnlyPrimaryBuiltInUnmirroredDisplayIsEligible() {
+        XCTAssertTrue(
+            NotchDisplayEligibility.allowsPresentation(
+                isPrimary: true,
+                isBuiltIn: true,
+                isMirrored: false
+            )
         )
-        let listening = NotchPanelLayoutCalculator.layout(
-            visualState: .listening,
-            interactionMode: .passive,
-            display: display
+        XCTAssertFalse(
+            NotchDisplayEligibility.allowsPresentation(
+                isPrimary: true,
+                isBuiltIn: false,
+                isMirrored: false
+            )
         )
-        let success = NotchPanelLayoutCalculator.layout(
-            visualState: .success(action: .paste, label: "2"),
-            interactionMode: .passive,
-            display: display
+        XCTAssertFalse(
+            NotchDisplayEligibility.allowsPresentation(
+                isPrimary: false,
+                isBuiltIn: true,
+                isMirrored: false
+            )
         )
-
-        XCTAssertEqual(success.frame, listening.frame)
-        XCTAssertGreaterThan(success.surfaceSize.width, listening.surfaceSize.width)
-        XCTAssertEqual(success.surfaceSize.height, listening.surfaceSize.height)
+        XCTAssertFalse(
+            NotchDisplayEligibility.allowsPresentation(
+                isPrimary: true,
+                isBuiltIn: true,
+                isMirrored: true
+            )
+        )
     }
 
-    func testSafeInsetWithoutAuxiliaryAreasFallsBackInsteadOfGuessing() {
+    func testSafeInsetWithoutAuxiliaryAreasProducesNoNotchGeometry() {
         let display = NotchDisplayGeometry(
             frame: CGRect(x: 0, y: 0, width: 1_024, height: 768),
             visibleFrame: CGRect(x: 0, y: 30, width: 1_024, height: 714),
@@ -218,27 +206,21 @@ final class NotchPanelLayoutTests: XCTestCase {
             auxiliaryTopRightArea: nil
         )
 
-        XCTAssertEqual(
-            NotchPanelLayoutCalculator.surfaceStyle(for: display),
-            .floating
-        )
+        XCTAssertNil(NotchPanelLayoutCalculator.surfaceGeometry(for: display))
     }
 
-    func testFutureInteractiveModesReuseTheSameAnchoredSurface() {
-        let passive = NotchPanelLayoutCalculator.layout(
+    func testFutureInteractiveModesReuseTheSameAnchoredSurface() throws {
+        let passive = try attachedLayout(
             visualState: .listening,
-            interactionMode: .passive,
-            display: notchedDisplay
+            interactionMode: .passive
         )
-        let compact = NotchPanelLayoutCalculator.layout(
+        let compact = try attachedLayout(
             visualState: .listening,
-            interactionMode: .compactInteractive,
-            display: notchedDisplay
+            interactionMode: .compactInteractive
         )
-        let expanded = NotchPanelLayoutCalculator.layout(
+        let expanded = try attachedLayout(
             visualState: .listening,
-            interactionMode: .expandedInteractive,
-            display: notchedDisplay
+            interactionMode: .expandedInteractive
         )
 
         XCTAssertGreaterThan(compact.frame.height, passive.frame.height)
@@ -247,5 +229,18 @@ final class NotchPanelLayoutTests: XCTestCase {
         XCTAssertEqual(expanded.surfaceSize, expanded.frame.size)
         XCTAssertEqual(compact.frame.maxY, passive.frame.maxY)
         XCTAssertEqual(expanded.frame.maxY, passive.frame.maxY)
+    }
+
+    private func attachedLayout(
+        visualState: NotchVisualState,
+        interactionMode: NotchInteractionMode
+    ) throws -> NotchPanelLayout {
+        try XCTUnwrap(
+            NotchPanelLayoutCalculator.layout(
+                visualState: visualState,
+                interactionMode: interactionMode,
+                display: notchedDisplay
+            )
+        )
     }
 }

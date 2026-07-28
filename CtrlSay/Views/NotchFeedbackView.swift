@@ -133,32 +133,28 @@ struct NotchFeedbackView: View {
 
     @ViewBuilder
     private var positionedFeedbackContent: some View {
-        switch windowContext.surfaceStyle {
-        case .attached(let notchWidth, let notchHeight):
-            feedbackContent
-                .padding(
-                    .leading,
-                    notchWidth + 12
-                )
-                .padding(.trailing, 12)
-                .frame(height: notchHeight, alignment: .leading)
-                .frame(
-                    maxWidth: .infinity,
-                    maxHeight: .infinity,
-                    alignment: .topLeading
-                )
-        case .floating:
-            feedbackContent
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(.horizontal, 14)
-        }
+        feedbackContent
+            .padding(
+                .leading,
+                windowContext.surfaceGeometry.notchWidth + 12
+            )
+            .padding(.trailing, 12)
+            .frame(
+                height: windowContext.surfaceGeometry.notchHeight,
+                alignment: .leading
+            )
+            .frame(
+                maxWidth: .infinity,
+                maxHeight: .infinity,
+                alignment: .topLeading
+            )
     }
 
     private func surfaceSize(in availableSize: CGSize) -> CGSize {
         let requested = NotchPanelLayoutCalculator.surfaceSize(
             visualState: presentationState.visualState,
             interactionMode: presentationState.interactionMode,
-            surfaceStyle: windowContext.surfaceStyle
+            surfaceGeometry: windowContext.surfaceGeometry
         )
         return CGSize(
             width: min(requested.width, availableSize.width),
@@ -167,28 +163,19 @@ struct NotchFeedbackView: View {
     }
 
     private func surfaceShape(in size: CGSize) -> AnyShape {
-        switch windowContext.surfaceStyle {
-        case .attached(_, let notchHeight):
-            let surfaceHeight =
-                presentationState.interactionMode == .passive
-                ? notchHeight
-                : size.height
-            return AnyShape(
-                AttachedNotchSurfaceShape(
-                    surfaceHeight: surfaceHeight,
-                    bottomCornerRadius:
-                        NotchPanelLayoutCalculator
-                        .attachedBottomCornerRadius(notchHeight: notchHeight)
-                )
+        let notchHeight = windowContext.surfaceGeometry.notchHeight
+        let surfaceHeight =
+            presentationState.interactionMode == .passive
+            ? notchHeight
+            : size.height
+        return AnyShape(
+            AttachedNotchSurfaceShape(
+                surfaceHeight: surfaceHeight,
+                bottomCornerRadius:
+                    NotchPanelLayoutCalculator
+                    .attachedBottomCornerRadius(notchHeight: notchHeight)
             )
-        case .floating:
-            return AnyShape(
-                RoundedRectangle(
-                    cornerRadius: min(20, size.height / 2),
-                    style: .continuous
-                )
-            )
-        }
+        )
     }
 
     private var feedbackAnimation: Animation? {

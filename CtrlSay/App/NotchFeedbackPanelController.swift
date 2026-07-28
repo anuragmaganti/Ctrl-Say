@@ -1,15 +1,19 @@
 import AppKit
+import CoreGraphics
 import Observation
 import SwiftUI
 
 @MainActor
 @Observable
 final class NotchWindowContext {
-    private(set) var surfaceStyle: NotchSurfaceStyle = .floating
+    private(set) var surfaceGeometry = NotchSurfaceGeometry(
+        notchWidth: 152,
+        notchHeight: 30
+    )
 
-    func update(surfaceStyle: NotchSurfaceStyle) {
-        guard self.surfaceStyle != surfaceStyle else { return }
-        self.surfaceStyle = surfaceStyle
+    func update(surfaceGeometry: NotchSurfaceGeometry) {
+        guard self.surfaceGeometry != surfaceGeometry else { return }
+        self.surfaceGeometry = surfaceGeometry
     }
 }
 
@@ -18,7 +22,6 @@ final class NotchFeedbackPanelController {
     private let panel: NonactivatingPanel
     private let presentationState: NotchFeedbackPresentationState
     private let windowContext = NotchWindowContext()
-    private weak var activeScreen: NSScreen?
     private var delayedHideTask: Task<Void, Never>?
     private var isPresentationUpdateScheduled = false
     private var scheduledUpdateShouldAnimate = false
@@ -84,8 +87,8 @@ final class NotchFeedbackPanelController {
     }
 
     func screenParametersDidChange() {
-        guard panel.isVisible else { return }
-        activeScreen = bestScreenForCurrentFrame()
+        // Reevaluate even while hidden. Listening may remain active while the
+        // built-in display becomes or stops being the eligible primary screen.
         updatePresentation(animated: false)
     }
 
@@ -128,17 +131,19 @@ final class NotchFeedbackPanelController {
             .interactionMode
             .acceptsPointerEvents
 
+        guard let display = eligiblePrimaryNotchedDisplay() else {
+            delayedHideTask?.cancel()
+            delayedHideTask = nil
+            panel.orderOut(nil)
+            return
+        }
+
         if visualState.isVisible {
             delayedHideTask?.cancel()
             delayedHideTask = nil
             let wasVisible = panel.isVisible
-            let screen =
-                wasVisible
-                ? (activeScreen ?? bestScreenForCurrentFrame())
-                : pointerScreen()
-            activeScreen = screen
             applyLayout(
-                on: screen,
+                display: display,
                 visualState: visualState
             )
 
@@ -173,13 +178,11 @@ final class NotchFeedbackPanelController {
         }
 
         guard panel.isVisible else { return }
-        let screen = activeScreen ?? bestScreenForCurrentFrame()
-        activeScreen = screen
         let shouldAnimate =
             animated
             && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         applyLayout(
-            on: screen,
+            display: display,
             visualState: .hidden
         )
         delayedHideTask?.cancel()
@@ -209,22 +212,20 @@ final class NotchFeedbackPanelController {
     }
 
     private func applyLayout(
-        on screen: NSScreen,
+        display: NotchDisplayGeometry,
         visualState: NotchVisualState
     ) {
-        let display = NotchDisplayGeometry(
-            frame: screen.frame,
-            visibleFrame: screen.visibleFrame,
-            safeAreaTop: screen.safeAreaInsets.top,
-            auxiliaryTopLeftArea: screen.auxiliaryTopLeftArea,
-            auxiliaryTopRightArea: screen.auxiliaryTopRightArea
-        )
-        let layout = NotchPanelLayoutCalculator.layout(
-            visualState: visualState,
-            interactionMode: presentationState.interactionMode,
-            display: display
-        )
-        windowContext.update(surfaceStyle: layout.surfaceStyle)
+        guard
+            let layout = NotchPanelLayoutCalculator.layout(
+                visualState: visualState,
+                interactionMode: presentationState.interactionMode,
+                display: display
+            )
+        else {
+            panel.orderOut(nil)
+            return
+        }
+        windowContext.update(surfaceGeometry: layout.surfaceGeometry)
         guard
             NotchPanelLayoutCalculator.requiresFrameUpdate(
                 current: panel.frame,
@@ -239,24 +240,41 @@ final class NotchFeedbackPanelController {
         panel.setFrame(layout.frame, display: false)
     }
 
-    private func pointerScreen() -> NSScreen {
-        let location = NSEvent.mouseLocation
-        return NSScreen.screens.first { $0.frame.contains(location) }
-            ?? NSScreen.main
-            ?? NSScreen.screens[0]
+    private func eligiblePrimaryNotchedDisplay() -> NotchDisplayGeometry? {
+        // Apple defines screens[0] as the system's primary display. NSScreen.main
+        // instead follows keyboard focus and may therefore be an external screen.
+        guard let screen = NSScreen.screens.first,
+            let displayID = directDisplayID(for: screen)
+        else {
+            return nil
+        }
+        let isEligibleHardware = NotchDisplayEligibility.allowsPresentation(
+            isPrimary: displayID == CGMainDisplayID(),
+            isBuiltIn: CGDisplayIsBuiltin(displayID) != 0,
+            // Suppress the panel while mirroring or casting so the physical
+            // notch feedback is never duplicated onto another display.
+            isMirrored: CGDisplayIsInMirrorSet(displayID) != 0
+        )
+        guard isEligibleHardware else { return nil }
+
+        let display = NotchDisplayGeometry(
+            frame: screen.frame,
+            visibleFrame: screen.visibleFrame,
+            safeAreaTop: screen.safeAreaInsets.top,
+            auxiliaryTopLeftArea: screen.auxiliaryTopLeftArea,
+            auxiliaryTopRightArea: screen.auxiliaryTopRightArea
+        )
+        guard NotchPanelLayoutCalculator.surfaceGeometry(for: display) != nil else {
+            return nil
+        }
+        return display
     }
 
-    private func bestScreenForCurrentFrame() -> NSScreen {
-        NSScreen.screens.max { first, second in
-            first.frame.intersection(panel.frame).area
-                < second.frame.intersection(panel.frame).area
-        } ?? pointerScreen()
-    }
-}
-
-extension CGRect {
-    fileprivate var area: CGFloat {
-        guard !isNull, !isInfinite else { return 0 }
-        return max(0, width) * max(0, height)
+    private func directDisplayID(for screen: NSScreen) -> CGDirectDisplayID? {
+        let key = NSDeviceDescriptionKey("NSScreenNumber")
+        guard let number = screen.deviceDescription[key] as? NSNumber else {
+            return nil
+        }
+        return CGDirectDisplayID(number.uint32Value)
     }
 }

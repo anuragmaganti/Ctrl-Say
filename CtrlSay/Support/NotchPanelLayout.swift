@@ -1,9 +1,9 @@
 import CoreGraphics
 import Foundation
 
-enum NotchSurfaceStyle: Equatable, Sendable {
-    case attached(notchWidth: CGFloat, notchHeight: CGFloat)
-    case floating
+struct NotchSurfaceGeometry: Equatable, Sendable {
+    let notchWidth: CGFloat
+    let notchHeight: CGFloat
 }
 
 struct NotchDisplayGeometry: Equatable, Sendable {
@@ -17,13 +17,22 @@ struct NotchDisplayGeometry: Equatable, Sendable {
 struct NotchPanelLayout: Equatable, Sendable {
     let frame: CGRect
     let surfaceSize: CGSize
-    let surfaceStyle: NotchSurfaceStyle
+    let surfaceGeometry: NotchSurfaceGeometry
+}
+
+enum NotchDisplayEligibility {
+    static func allowsPresentation(
+        isPrimary: Bool,
+        isBuiltIn: Bool,
+        isMirrored: Bool
+    ) -> Bool {
+        isPrimary && isBuiltIn && !isMirrored
+    }
 }
 
 enum NotchPanelLayoutCalculator {
-    static let floatingTopInset: CGFloat = 8
+    static let verticalScreenInset: CGFloat = 8
     static let horizontalScreenInset: CGFloat = 12
-    static let floatingListeningWidth: CGFloat = 152
     private static let maximumPassiveExtensionWidth: CGFloat = 300
     // NSScreen exposes the hardware exclusion rectangle, but no public corner-
     // radius property. Keep the product-drawn lower corners proportional and
@@ -55,39 +64,28 @@ enum NotchPanelLayoutCalculator {
         visualState: NotchVisualState,
         interactionMode: NotchInteractionMode,
         display: NotchDisplayGeometry
-    ) -> NotchPanelLayout {
-        let style = surfaceStyle(for: display)
+    ) -> NotchPanelLayout? {
+        guard let surfaceGeometry = surfaceGeometry(for: display) else {
+            return nil
+        }
         let requestedSurfaceSize = surfaceSize(
             visualState: visualState,
             interactionMode: interactionMode,
-            surfaceStyle: style
+            surfaceGeometry: surfaceGeometry
         )
         let requestedCanvasSize = canvasSize(
             interactionMode: interactionMode,
-            surfaceStyle: style
+            surfaceGeometry: surfaceGeometry
         )
         let maximumWidth = max(
             1,
             display.frame.width - horizontalScreenInset * 2
         )
-        let maximumHeight: CGFloat
-        let top: CGFloat
-
-        switch style {
-        case .attached:
-            maximumHeight = max(
-                1,
-                display.frame.maxY - display.visibleFrame.minY
-                    - floatingTopInset
-            )
-            top = display.frame.maxY
-        case .floating:
-            maximumHeight = max(
-                1,
-                display.visibleFrame.height - floatingTopInset * 2
-            )
-            top = display.visibleFrame.maxY - floatingTopInset
-        }
+        let maximumHeight = max(
+            1,
+            display.frame.maxY - display.visibleFrame.minY
+                - verticalScreenInset
+        )
 
         let size = CGSize(
             width: min(requestedCanvasSize.width, maximumWidth),
@@ -98,16 +96,13 @@ enum NotchPanelLayoutCalculator {
             height: min(requestedSurfaceSize.height, size.height)
         )
         let proposedX: CGFloat
-        switch (style, interactionMode) {
-        case (.attached(let notchWidth, _), .passive):
+        switch interactionMode {
+        case .passive:
             // Keep the canvas anchored to the hardware exclusion's left edge.
             // Only the black SwiftUI surface changes width, so command
             // feedback grows toward the right without resizing the window.
-            proposedX = display.frame.midX - notchWidth / 2
-        case (.floating, .passive):
-            // The notchless capsule follows the same left-anchored expansion.
-            proposedX = display.frame.midX - floatingListeningWidth / 2
-        default:
+            proposedX = display.frame.midX - surfaceGeometry.notchWidth / 2
+        case .compactInteractive, .expandedInteractive:
             // Future interactive surfaces remain centered as they expand.
             proposedX = display.frame.midX - size.width / 2
         }
@@ -119,25 +114,25 @@ enum NotchPanelLayoutCalculator {
         let x = proposedX.clamped(to: minimumX...max(minimumX, maximumX))
         let frame = CGRect(
             x: x,
-            y: top - size.height,
+            y: display.frame.maxY - size.height,
             width: size.width,
             height: size.height
         )
         return NotchPanelLayout(
             frame: frame,
             surfaceSize: clampedSurfaceSize,
-            surfaceStyle: style
+            surfaceGeometry: surfaceGeometry
         )
     }
 
-    static func surfaceStyle(
+    static func surfaceGeometry(
         for display: NotchDisplayGeometry
-    ) -> NotchSurfaceStyle {
+    ) -> NotchSurfaceGeometry? {
         guard display.safeAreaTop > 0,
             let left = display.auxiliaryTopLeftArea,
             let right = display.auxiliaryTopRightArea
         else {
-            return .floating
+            return nil
         }
 
         let notchLeft = max(display.frame.minX, left.maxX)
@@ -147,10 +142,10 @@ enum NotchPanelLayoutCalculator {
             notchWidth < display.frame.width,
             display.safeAreaTop < display.frame.height
         else {
-            return .floating
+            return nil
         }
 
-        return .attached(
+        return NotchSurfaceGeometry(
             notchWidth: notchWidth,
             notchHeight: display.safeAreaTop
         )
@@ -159,28 +154,28 @@ enum NotchPanelLayoutCalculator {
     static func surfaceSize(
         visualState: NotchVisualState,
         interactionMode: NotchInteractionMode,
-        surfaceStyle: NotchSurfaceStyle
+        surfaceGeometry: NotchSurfaceGeometry
     ) -> CGSize {
         switch interactionMode {
         case .passive:
             return passiveSurfaceSize(
                 visualState: visualState,
-                surfaceStyle: surfaceStyle
+                surfaceGeometry: surfaceGeometry
             )
         case .compactInteractive, .expandedInteractive:
             return interactiveSurfaceSize(
                 interactionMode: interactionMode,
-                surfaceStyle: surfaceStyle
+                surfaceGeometry: surfaceGeometry
             )
         }
     }
 
     private static func canvasSize(
         interactionMode: NotchInteractionMode,
-        surfaceStyle: NotchSurfaceStyle
+        surfaceGeometry: NotchSurfaceGeometry
     ) -> CGSize {
         let passiveMaximum = maximumPassiveSurfaceSize(
-            surfaceStyle: surfaceStyle
+            surfaceGeometry: surfaceGeometry
         )
         switch interactionMode {
         case .passive:
@@ -188,34 +183,34 @@ enum NotchPanelLayoutCalculator {
         case .compactInteractive, .expandedInteractive:
             return interactiveSurfaceSize(
                 interactionMode: interactionMode,
-                surfaceStyle: surfaceStyle
+                surfaceGeometry: surfaceGeometry
             )
         }
     }
 
     private static func interactiveSurfaceSize(
         interactionMode: NotchInteractionMode,
-        surfaceStyle: NotchSurfaceStyle
+        surfaceGeometry: NotchSurfaceGeometry
     ) -> CGSize {
         let requested: CGSize
         switch interactionMode {
         case .passive:
-            return maximumPassiveSurfaceSize(surfaceStyle: surfaceStyle)
+            return maximumPassiveSurfaceSize(surfaceGeometry: surfaceGeometry)
         case .compactInteractive:
             requested = interactiveSize(
                 width: 340,
                 contentHeight: 160,
-                surfaceStyle: surfaceStyle
+                surfaceGeometry: surfaceGeometry
             )
         case .expandedInteractive:
             requested = interactiveSize(
                 width: 420,
                 contentHeight: 320,
-                surfaceStyle: surfaceStyle
+                surfaceGeometry: surfaceGeometry
             )
         }
         let passiveMaximum = maximumPassiveSurfaceSize(
-            surfaceStyle: surfaceStyle
+            surfaceGeometry: surfaceGeometry
         )
         return CGSize(
             width: max(passiveMaximum.width, requested.width),
@@ -225,60 +220,37 @@ enum NotchPanelLayoutCalculator {
 
     private static func passiveSurfaceSize(
         visualState: NotchVisualState,
-        surfaceStyle: NotchSurfaceStyle
+        surfaceGeometry: NotchSurfaceGeometry
     ) -> CGSize {
-        switch surfaceStyle {
-        case .attached(let notchWidth, let notchHeight):
-            let baseSize = CGSize(width: notchWidth, height: notchHeight)
-            switch visualState {
-            case .hidden, .preparing, .listening:
-                return baseSize
-            case .pending(_, let label), .success(_, let label):
-                return CGSize(
-                    width: baseSize.width
-                        + successExtensionWidth(for: label),
-                    height: baseSize.height
-                )
-            case .failure(let message):
-                return CGSize(
-                    width: baseSize.width
-                        + failureExtensionWidth(for: message),
-                    height: baseSize.height
-                )
-            }
-
-        case .floating:
-            switch visualState {
-            case .hidden:
-                return CGSize(width: floatingListeningWidth, height: 36)
-            case .preparing, .listening:
-                return CGSize(width: floatingListeningWidth, height: 38)
-            case .pending(_, let label), .success(_, let label):
-                return CGSize(
-                    width: floatingListeningWidth
-                        + successExtensionWidth(for: label),
-                    height: 38
-                )
-            case .failure(let message):
-                return CGSize(
-                    width: floatingListeningWidth
-                        + failureExtensionWidth(for: message),
-                    height: 38
-                )
-            }
+        let baseSize = CGSize(
+            width: surfaceGeometry.notchWidth,
+            height: surfaceGeometry.notchHeight
+        )
+        switch visualState {
+        case .hidden, .preparing, .listening:
+            return baseSize
+        case .pending(_, let label), .success(_, let label):
+            return CGSize(
+                width: baseSize.width
+                    + successExtensionWidth(for: label),
+                height: baseSize.height
+            )
+        case .failure(let message):
+            return CGSize(
+                width: baseSize.width
+                    + failureExtensionWidth(for: message),
+                height: baseSize.height
+            )
         }
     }
 
     private static func maximumPassiveSurfaceSize(
-        surfaceStyle: NotchSurfaceStyle
+        surfaceGeometry: NotchSurfaceGeometry
     ) -> CGSize {
-        let baseSize: CGSize
-        switch surfaceStyle {
-        case .attached(let notchWidth, let notchHeight):
-            baseSize = CGSize(width: notchWidth, height: notchHeight)
-        case .floating:
-            baseSize = CGSize(width: floatingListeningWidth, height: 38)
-        }
+        let baseSize = CGSize(
+            width: surfaceGeometry.notchWidth,
+            height: surfaceGeometry.notchHeight
+        )
         return CGSize(
             width: baseSize.width + maximumPassiveExtensionWidth,
             height: baseSize.height
@@ -300,16 +272,12 @@ enum NotchPanelLayoutCalculator {
     private static func interactiveSize(
         width: CGFloat,
         contentHeight: CGFloat,
-        surfaceStyle: NotchSurfaceStyle
+        surfaceGeometry: NotchSurfaceGeometry
     ) -> CGSize {
-        let height: CGFloat
-        switch surfaceStyle {
-        case .attached(_, let notchHeight):
-            height = notchHeight + contentHeight
-        case .floating:
-            height = contentHeight
-        }
-        return CGSize(width: width, height: height)
+        CGSize(
+            width: width,
+            height: surfaceGeometry.notchHeight + contentHeight
+        )
     }
 }
 

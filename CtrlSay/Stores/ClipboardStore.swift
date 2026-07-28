@@ -273,22 +273,42 @@ final class ClipboardStore {
         {
             throw ClipboardStoreError.permanentCopyChanged
         }
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw ClipboardStoreError.emptyContent
-        }
-        guard text.utf8.count <= ClipboardPayload.maximumInlineEditableTextBytes else {
-            throw ClipboardStoreError.contentTooLarge
-        }
-        guard let replacement = payload.replacingEditableText(with: text) else {
-            throw ClipboardStoreError.noneditableContent
-        }
-        try ensureCapacity(
-            replacingBytes: payload.byteCount,
-            with: replacement
-        )
-
-        totalByteCount += replacement.byteCount - payload.byteCount
+        let replacement = try textReplacement(for: payload, text: text)
+        applyTextReplacement(replacement, replacing: payload)
         named[normalizedName] = replacement
+    }
+
+    func replaceNumberedText(
+        at number: Int,
+        text: String,
+        expectedPayloadID: UUID? = nil
+    ) throws {
+        guard let payload = numbered[number] else {
+            throw ClipboardStoreError.missingTemporaryCopy
+        }
+        if let expectedPayloadID, payload.id != expectedPayloadID {
+            throw ClipboardStoreError.temporaryCopyChanged
+        }
+        let replacement = try textReplacement(for: payload, text: text)
+        applyTextReplacement(replacement, replacing: payload)
+        numbered[number] = replacement
+    }
+
+    func replaceTemporaryNamedText(
+        named name: String,
+        text: String,
+        expectedPayloadID: UUID? = nil
+    ) throws {
+        let normalizedName = VoiceCommandParser.normalizeName(name)
+        guard let payload = temporaryNamed[normalizedName] else {
+            throw ClipboardStoreError.missingTemporaryCopy
+        }
+        if let expectedPayloadID, payload.id != expectedPayloadID {
+            throw ClipboardStoreError.temporaryCopyChanged
+        }
+        let replacement = try textReplacement(for: payload, text: text)
+        applyTextReplacement(replacement, replacing: payload)
+        temporaryNamed[normalizedName] = replacement
     }
 
     func clearTemporary() {
@@ -368,6 +388,33 @@ final class ClipboardStore {
         }
     }
 
+    private func textReplacement(
+        for payload: ClipboardPayload,
+        text: String
+    ) throws -> ClipboardPayload {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw ClipboardStoreError.emptyContent
+        }
+        guard text.utf8.count <= ClipboardPayload.maximumInlineEditableTextBytes else {
+            throw ClipboardStoreError.contentTooLarge
+        }
+        guard let replacement = payload.replacingEditableText(with: text) else {
+            throw ClipboardStoreError.noneditableContent
+        }
+        try ensureCapacity(
+            replacingBytes: payload.byteCount,
+            with: replacement
+        )
+        return replacement
+    }
+
+    private func applyTextReplacement(
+        _ replacement: ClipboardPayload,
+        replacing payload: ClipboardPayload
+    ) {
+        totalByteCount += replacement.byteCount - payload.byteCount
+    }
+
     private func validateRestoredPayload(_ payload: ClipboardPayload) throws {
         guard !payload.items.isEmpty,
             payload.byteCount >= 0,
@@ -415,6 +462,7 @@ enum ClipboardStoreError: LocalizedError, Equatable {
     case permanentNameAlreadyExists(String)
     case missingTemporaryCopy
     case missingPermanentCopy
+    case temporaryCopyChanged
     case permanentCopyChanged
     case emptyContent
     case contentTooLarge
@@ -440,14 +488,16 @@ enum ClipboardStoreError: LocalizedError, Equatable {
             "That temporary copy no longer exists."
         case .missingPermanentCopy:
             "That permanent copy no longer exists."
+        case .temporaryCopyChanged:
+            "That temporary copy changed before the edit could be saved."
         case .permanentCopyChanged:
             "That permanent copy changed before the edit could be saved."
         case .emptyContent:
-            "Permanent copy content cannot be empty."
+            "Copy content cannot be empty."
         case .contentTooLarge:
-            "Permanent copy content must be 256 KB or smaller to edit here."
+            "Copy content must be 256 KB or smaller to edit here."
         case .noneditableContent:
-            "Only a single valid plain-text clipboard item can be edited."
+            "Only one clipboard item with valid plain text can be edited."
         case .payloadTooLarge:
             "That copy exceeds Ctrl-Say’s 128 MB per-copy limit."
         case .storageLimitExceeded:

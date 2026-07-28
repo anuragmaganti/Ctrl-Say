@@ -143,11 +143,17 @@ final class DebugPresentationHarness {
                             : .passive
                     )
                 case 7:
-                    if let token = hudEditingSession.begin(
-                        commit: { true },
-                        cancel: {}
-                    ) {
-                        hudEditingSession.finish(token)
+                    let target = ClipboardHUDEditingSession.Target(
+                        payloadID: UUID(),
+                        location: .permanent,
+                        field: .name
+                    )
+                    if hudEditingSession.begin(
+                        target: target,
+                        initialDraft: "Stress",
+                        commit: { _ in }
+                    ) != nil {
+                        hudEditingSession.cancel(target)
                     }
                 case 8:
                     _ = model.slots.removeNamed("stress")
