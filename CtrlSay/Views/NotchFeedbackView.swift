@@ -5,34 +5,38 @@ struct NotchFeedbackView: View {
     let windowContext: NotchWindowContext
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         GeometryReader { proxy in
-            if presentationState.visualState.isVisible {
-                let surface = surfaceShape(in: proxy.size)
-                ZStack {
+            let surfaceSize = surfaceSize(in: proxy.size)
+            let surface = surfaceShape(in: surfaceSize)
+
+            ZStack(alignment: .topLeading) {
+                ZStack(alignment: .topLeading) {
                     surface
                         .fill(Color.black)
 
-                    NotchBorderLayerView(
-                        visualState: presentationState.visualState,
-                        interactionMode: presentationState.interactionMode,
-                        surfaceStyle: windowContext.surfaceStyle,
-                        reduceMotion: reduceMotion,
-                        increasedContrast: contrast == .increased
-                    )
-
                     positionedFeedbackContent
                 }
-                .frame(width: proxy.size.width, height: proxy.size.height)
-                .transition(.opacity)
+                .frame(
+                    width: surfaceSize.width,
+                    height: surfaceSize.height,
+                    alignment: .topLeading
+                )
+                .clipShape(surface)
+                .opacity(presentationState.visualState.isVisible ? 1 : 0)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(accessibilityLabel)
+                .accessibilityHidden(!presentationState.visualState.isVisible)
             }
+            .frame(
+                width: proxy.size.width,
+                height: proxy.size.height,
+                alignment: .topLeading
+            )
         }
         .animation(
-            reduceMotion ? nil : .snappy(duration: 0.24, extraBounce: 0.08),
+            feedbackAnimation,
             value: presentationState.visualState
         )
         .accessibilityIdentifier("ctrlSay.notchFeedback")
@@ -48,13 +52,14 @@ struct NotchFeedbackView: View {
                 HStack(spacing: 9) {
                     Image(systemName: action == .copy ? "doc.on.doc" : "arrow.down.doc")
                         .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(action == .copy ? .cyan : .purple)
+                        .symbolRenderingMode(.monochrome)
                     Text(label)
                         .font(.callout.weight(.semibold))
-                        .foregroundStyle(.white)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
                 }
+                .foregroundStyle(.white)
+                .transition(feedbackTransition)
 
             case .failure(let message):
                 HStack(spacing: 9) {
@@ -67,6 +72,7 @@ struct NotchFeedbackView: View {
                         .lineLimit(1)
                         .minimumScaleFactor(0.75)
                 }
+                .transition(feedbackTransition)
             }
         }
     }
@@ -78,17 +84,9 @@ struct NotchFeedbackView: View {
             feedbackContent
                 .padding(
                     .leading,
-                    NotchPanelLayoutCalculator
-                        .attachedHorizontalCanvasOutset
-                        + notchWidth
-                        + 12
+                    notchWidth + 12
                 )
-                .padding(
-                    .trailing,
-                    NotchPanelLayoutCalculator
-                        .attachedHorizontalCanvasOutset
-                        + 12
-                )
+                .padding(.trailing, 12)
                 .frame(height: notchHeight, alignment: .leading)
                 .frame(
                     maxWidth: .infinity,
@@ -102,6 +100,18 @@ struct NotchFeedbackView: View {
         }
     }
 
+    private func surfaceSize(in availableSize: CGSize) -> CGSize {
+        let requested = NotchPanelLayoutCalculator.surfaceSize(
+            visualState: presentationState.visualState,
+            interactionMode: presentationState.interactionMode,
+            surfaceStyle: windowContext.surfaceStyle
+        )
+        return CGSize(
+            width: min(requested.width, availableSize.width),
+            height: min(requested.height, availableSize.height)
+        )
+    }
+
     private func surfaceShape(in size: CGSize) -> AnyShape {
         switch windowContext.surfaceStyle {
         case .attached(_, let notchHeight):
@@ -111,8 +121,6 @@ struct NotchFeedbackView: View {
                 : size.height
             return AnyShape(
                 AttachedNotchSurfaceShape(
-                    horizontalCanvasOutset: NotchPanelLayoutCalculator
-                        .attachedHorizontalCanvasOutset,
                     surfaceHeight: surfaceHeight,
                     bottomCornerRadius:
                         NotchPanelLayoutCalculator
@@ -127,6 +135,24 @@ struct NotchFeedbackView: View {
                 )
             )
         }
+    }
+
+    private var feedbackAnimation: Animation? {
+        guard !reduceMotion else { return nil }
+        switch presentationState.visualState {
+        case .success, .failure:
+            return .smooth(duration: 0.34, extraBounce: 0.04)
+        case .hidden, .preparing, .listening:
+            return .smooth(duration: 0.38)
+        }
+    }
+
+    private var feedbackTransition: AnyTransition {
+        guard !reduceMotion else { return .opacity }
+        return .asymmetric(
+            insertion: .opacity.combined(with: .offset(x: -7)),
+            removal: .opacity.combined(with: .offset(x: -3))
+        )
     }
 
     private var accessibilityLabel: String {
@@ -146,7 +172,6 @@ struct NotchFeedbackView: View {
 }
 
 private struct AttachedNotchSurfaceShape: Shape {
-    let horizontalCanvasOutset: CGFloat
     let surfaceHeight: CGFloat
     let bottomCornerRadius: CGFloat
 
@@ -154,7 +179,6 @@ private struct AttachedNotchSurfaceShape: Shape {
         Path(
             AttachedNotchGeometry.surfacePath(
                 in: rect,
-                horizontalCanvasOutset: horizontalCanvasOutset,
                 surfaceHeight: surfaceHeight,
                 bottomCornerRadius: bottomCornerRadius
             )

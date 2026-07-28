@@ -50,61 +50,41 @@ final class NotchPanelLayoutTests: XCTestCase {
         )
     }
 
-    func testSurfaceAndBorderShareOneAttachedGeometrySource() {
-        let rect = CGRect(x: 0, y: 0, width: 232, height: 44)
+    func testAttachedSurfaceUsesTheExactRequestedBounds() {
+        let rect = CGRect(x: 0, y: 0, width: 220, height: 38)
         let surface = AttachedNotchGeometry.surfacePath(
             in: rect,
-            horizontalCanvasOutset: 6,
-            surfaceHeight: 38,
-            bottomCornerRadius: 12
-        ).boundingBoxOfPath
-        let border = AttachedNotchGeometry.borderPath(
-            in: rect,
-            horizontalCanvasOutset: 6,
-            visibleBorderOutset: 1,
             surfaceHeight: 38,
             bottomCornerRadius: 12
         ).boundingBoxOfPath
 
-        XCTAssertEqual(surface, CGRect(x: 6, y: 0, width: 220, height: 38))
-        XCTAssertEqual(border, CGRect(x: 5, y: 0, width: 222, height: 39))
+        XCTAssertEqual(surface, rect)
     }
 
-    func testAttachedListeningCanvasSurroundsSystemReportedNotch() {
+    func testAttachedListeningCanvasKeepsThePhysicalNotchAsItsAnchor() {
         let layout = NotchPanelLayoutCalculator.layout(
             visualState: .listening,
             interactionMode: .passive,
             display: notchedDisplay
         )
 
-        XCTAssertEqual(layout.frame.width, 232)
-        XCTAssertEqual(layout.frame.height, 44)
-        XCTAssertEqual(layout.frame.minX, 784)
-        XCTAssertEqual(layout.frame.midX, notchedDisplay.frame.midX)
+        XCTAssertEqual(layout.frame.width, 520)
+        XCTAssertEqual(layout.frame.height, 38)
+        XCTAssertEqual(layout.frame.minX, 790)
         XCTAssertEqual(layout.frame.maxY, notchedDisplay.frame.maxY)
+        XCTAssertEqual(layout.surfaceSize, CGSize(width: 220, height: 38))
         XCTAssertEqual(
-            layout.frame.minX
-                + NotchPanelLayoutCalculator
-                .attachedHorizontalCanvasOutset,
-            790
-        )
-        XCTAssertEqual(
-            layout.frame.minY
-                + NotchPanelLayoutCalculator.attachedBottomCanvasOutset,
-            1_131
+            layout.frame.minX + layout.surfaceSize.width / 2,
+            notchedDisplay.frame.midX
         )
     }
 
-    func testVisibleBorderExpandsOnePointBeyondHardwareExclusion() {
+    func testAttachedListeningSurfaceExactlyMatchesTheReportedExclusion() {
         let layout = NotchPanelLayoutCalculator.layout(
             visualState: .listening,
             interactionMode: .passive,
             display: notchedDisplay
         )
-        let horizontalCanvas = NotchPanelLayoutCalculator
-            .attachedHorizontalCanvasOutset
-        let borderOutset = NotchPanelLayoutCalculator
-            .attachedVisibleBorderOutset
         let reportedNotchLeft = notchedDisplay
             .auxiliaryTopLeftArea!
             .maxX
@@ -115,24 +95,14 @@ final class NotchPanelLayoutTests: XCTestCase {
             notchedDisplay.frame.maxY
             - notchedDisplay.safeAreaTop
 
-        XCTAssertEqual(borderOutset, 1)
+        XCTAssertEqual(layout.frame.minX, reportedNotchLeft)
         XCTAssertEqual(
-            layout.frame.minX + horizontalCanvas - borderOutset,
-            reportedNotchLeft - 1
+            layout.frame.minX + layout.surfaceSize.width,
+            reportedNotchRight
         )
         XCTAssertEqual(
-            layout.frame.maxX - horizontalCanvas + borderOutset,
-            reportedNotchRight + 1
-        )
-        XCTAssertEqual(
-            layout.frame.maxY
-                - notchedDisplay.safeAreaTop
-                - borderOutset,
-            reportedNotchBottom - 1
-        )
-        XCTAssertGreaterThan(
-            NotchPanelLayoutCalculator.attachedBottomCanvasOutset,
-            borderOutset
+            layout.frame.maxY - layout.surfaceSize.height,
+            reportedNotchBottom
         )
     }
 
@@ -148,12 +118,9 @@ final class NotchPanelLayoutTests: XCTestCase {
             display: notchedDisplay
         )
 
-        XCTAssertGreaterThan(success.frame.width, listening.frame.width)
-        XCTAssertEqual(success.frame.height, listening.frame.height)
-        XCTAssertEqual(success.frame.minX, listening.frame.minX)
-        XCTAssertEqual(success.frame.minY, listening.frame.minY)
-        XCTAssertEqual(success.frame.maxY, listening.frame.maxY)
-        XCTAssertGreaterThan(success.frame.maxX, listening.frame.maxX)
+        XCTAssertEqual(success.frame, listening.frame)
+        XCTAssertGreaterThan(success.surfaceSize.width, listening.surfaceSize.width)
+        XCTAssertEqual(success.surfaceSize.height, listening.surfaceSize.height)
     }
 
     func testFailureAlsoExpandsOnlyRightFromPhysicalNotch() {
@@ -168,10 +135,9 @@ final class NotchPanelLayoutTests: XCTestCase {
             display: notchedDisplay
         )
 
-        XCTAssertEqual(failure.frame.minX, listening.frame.minX)
-        XCTAssertEqual(failure.frame.minY, listening.frame.minY)
-        XCTAssertEqual(failure.frame.height, listening.frame.height)
-        XCTAssertGreaterThan(failure.frame.maxX, listening.frame.maxX)
+        XCTAssertEqual(failure.frame, listening.frame)
+        XCTAssertGreaterThan(failure.surfaceSize.width, listening.surfaceSize.width)
+        XCTAssertEqual(failure.surfaceSize.height, listening.surfaceSize.height)
     }
 
     func testDisplayWithoutNotchUsesFloatingPanelBelowMenuBar() {
@@ -189,14 +155,18 @@ final class NotchPanelLayoutTests: XCTestCase {
         )
 
         XCTAssertEqual(layout.surfaceStyle, .floating)
-        XCTAssertEqual(layout.frame.width, 152)
+        XCTAssertEqual(layout.frame.width, 452)
         XCTAssertEqual(layout.frame.height, 38)
         XCTAssertEqual(
             layout.frame.maxY,
             display.visibleFrame.maxY
                 - NotchPanelLayoutCalculator.floatingTopInset
         )
-        XCTAssertEqual(layout.frame.midX, display.frame.midX)
+        XCTAssertEqual(layout.surfaceSize, CGSize(width: 152, height: 38))
+        XCTAssertEqual(
+            layout.frame.minX + layout.surfaceSize.width / 2,
+            display.frame.midX
+        )
     }
 
     func testNotchlessSuccessKeepsListeningCapsuleLeftEdge() {
@@ -218,9 +188,9 @@ final class NotchPanelLayoutTests: XCTestCase {
             display: display
         )
 
-        XCTAssertEqual(success.frame.minX, listening.frame.minX)
-        XCTAssertEqual(success.frame.height, listening.frame.height)
-        XCTAssertGreaterThan(success.frame.maxX, listening.frame.maxX)
+        XCTAssertEqual(success.frame, listening.frame)
+        XCTAssertGreaterThan(success.surfaceSize.width, listening.surfaceSize.width)
+        XCTAssertEqual(success.surfaceSize.height, listening.surfaceSize.height)
     }
 
     func testSafeInsetWithoutAuxiliaryAreasFallsBackInsteadOfGuessing() {
@@ -255,10 +225,10 @@ final class NotchPanelLayoutTests: XCTestCase {
             display: notchedDisplay
         )
 
-        XCTAssertGreaterThan(compact.frame.width, passive.frame.width)
         XCTAssertGreaterThan(compact.frame.height, passive.frame.height)
-        XCTAssertGreaterThan(expanded.frame.width, compact.frame.width)
         XCTAssertGreaterThan(expanded.frame.height, compact.frame.height)
+        XCTAssertEqual(compact.surfaceSize, compact.frame.size)
+        XCTAssertEqual(expanded.surfaceSize, expanded.frame.size)
         XCTAssertEqual(compact.frame.maxY, passive.frame.maxY)
         XCTAssertEqual(expanded.frame.maxY, passive.frame.maxY)
     }

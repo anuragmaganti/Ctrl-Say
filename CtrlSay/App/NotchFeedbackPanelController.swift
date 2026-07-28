@@ -190,7 +190,10 @@ final class NotchFeedbackPanelController {
 
         delayedHideTask = Task { [weak self] in
             do {
-                try await Task.sleep(for: .milliseconds(240))
+                // Keep the transparent panel alive through the view's
+                // 380-millisecond collapse. The panel itself stays fixed;
+                // only the compositor-backed SwiftUI surface animates.
+                try await Task.sleep(for: .milliseconds(400))
             } catch {
                 return
             }
@@ -230,9 +233,9 @@ final class NotchFeedbackPanelController {
         else {
             return
         }
-        // SwiftUI/Core Animation own the visual transition inside the panel.
-        // Forcing display during NSWindow geometry mutation can re-enter the
-        // hosting view's layout pass under rapid feedback changes.
+        // SwiftUI owns the visual transition inside a stable transparent
+        // canvas. This frame changes only for display or interaction-mode
+        // changes, not for ordinary copy/paste feedback.
         panel.setFrame(layout.frame, display: false)
     }
 

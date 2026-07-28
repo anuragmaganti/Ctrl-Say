@@ -16,6 +16,7 @@ struct NotchDisplayGeometry: Equatable, Sendable {
 
 struct NotchPanelLayout: Equatable, Sendable {
     let frame: CGRect
+    let surfaceSize: CGSize
     let surfaceStyle: NotchSurfaceStyle
 }
 
@@ -23,13 +24,7 @@ enum NotchPanelLayoutCalculator {
     static let floatingTopInset: CGFloat = 8
     static let horizontalScreenInset: CGFloat = 12
     static let floatingListeningWidth: CGFloat = 152
-    // NSScreen reports the rectangular hardware exclusion. A border drawn on
-    // that rectangle is physically hidden by the camera housing. These canvas
-    // margins keep the outward half of a boundary-aligned stroke and its glow
-    // inside the panel while the black surface remains on the hardware bounds.
-    static let attachedHorizontalCanvasOutset: CGFloat = 6
-    static let attachedBottomCanvasOutset: CGFloat = 6
-    static let attachedVisibleBorderOutset: CGFloat = 1
+    private static let maximumPassiveExtensionWidth: CGFloat = 300
     // NSScreen exposes the hardware exclusion rectangle, but no public corner-
     // radius property. Keep the product-drawn lower corners proportional and
     // bounded; this is visual geometry, not a claim about hidden hardware data.
@@ -62,8 +57,12 @@ enum NotchPanelLayoutCalculator {
         display: NotchDisplayGeometry
     ) -> NotchPanelLayout {
         let style = surfaceStyle(for: display)
-        let requestedSize = panelSize(
+        let requestedSurfaceSize = surfaceSize(
             visualState: visualState,
+            interactionMode: interactionMode,
+            surfaceStyle: style
+        )
+        let requestedCanvasSize = canvasSize(
             interactionMode: interactionMode,
             surfaceStyle: style
         )
@@ -91,18 +90,20 @@ enum NotchPanelLayoutCalculator {
         }
 
         let size = CGSize(
-            width: min(requestedSize.width, maximumWidth),
-            height: min(requestedSize.height, maximumHeight)
+            width: min(requestedCanvasSize.width, maximumWidth),
+            height: min(requestedCanvasSize.height, maximumHeight)
+        )
+        let clampedSurfaceSize = CGSize(
+            width: min(requestedSurfaceSize.width, size.width),
+            height: min(requestedSurfaceSize.height, size.height)
         )
         let proposedX: CGFloat
         switch (style, interactionMode) {
         case (.attached(let notchWidth, _), .passive):
-            // The transparent canvas starts outside the physical exclusion;
-            // command feedback still grows only toward the right.
-            proposedX =
-                display.frame.midX
-                - notchWidth / 2
-                - attachedHorizontalCanvasOutset
+            // Keep the canvas anchored to the hardware exclusion's left edge.
+            // Only the black SwiftUI surface changes width, so command
+            // feedback grows toward the right without resizing the window.
+            proposedX = display.frame.midX - notchWidth / 2
         case (.floating, .passive):
             // The notchless capsule follows the same left-anchored expansion.
             proposedX = display.frame.midX - floatingListeningWidth / 2
@@ -122,7 +123,11 @@ enum NotchPanelLayoutCalculator {
             width: size.width,
             height: size.height
         )
-        return NotchPanelLayout(frame: frame, surfaceStyle: style)
+        return NotchPanelLayout(
+            frame: frame,
+            surfaceSize: clampedSurfaceSize,
+            surfaceStyle: style
+        )
     }
 
     static func surfaceStyle(
@@ -151,46 +156,80 @@ enum NotchPanelLayoutCalculator {
         )
     }
 
-    private static func panelSize(
+    static func surfaceSize(
         visualState: NotchVisualState,
         interactionMode: NotchInteractionMode,
         surfaceStyle: NotchSurfaceStyle
     ) -> CGSize {
-        let feedbackSize = feedbackPanelSize(
-            visualState: visualState,
-            surfaceStyle: surfaceStyle
-        )
-
         switch interactionMode {
         case .passive:
-            return feedbackSize
-        case .compactInteractive:
-            return interactiveSize(
-                width: 340,
-                contentHeight: 160,
-                feedbackSize: feedbackSize,
+            return passiveSurfaceSize(
+                visualState: visualState,
                 surfaceStyle: surfaceStyle
             )
-        case .expandedInteractive:
-            return interactiveSize(
-                width: 420,
-                contentHeight: 320,
-                feedbackSize: feedbackSize,
+        case .compactInteractive, .expandedInteractive:
+            return interactiveSurfaceSize(
+                interactionMode: interactionMode,
                 surfaceStyle: surfaceStyle
             )
         }
     }
 
-    private static func feedbackPanelSize(
+    private static func canvasSize(
+        interactionMode: NotchInteractionMode,
+        surfaceStyle: NotchSurfaceStyle
+    ) -> CGSize {
+        let passiveMaximum = maximumPassiveSurfaceSize(
+            surfaceStyle: surfaceStyle
+        )
+        switch interactionMode {
+        case .passive:
+            return passiveMaximum
+        case .compactInteractive, .expandedInteractive:
+            return interactiveSurfaceSize(
+                interactionMode: interactionMode,
+                surfaceStyle: surfaceStyle
+            )
+        }
+    }
+
+    private static func interactiveSurfaceSize(
+        interactionMode: NotchInteractionMode,
+        surfaceStyle: NotchSurfaceStyle
+    ) -> CGSize {
+        let requested: CGSize
+        switch interactionMode {
+        case .passive:
+            return maximumPassiveSurfaceSize(surfaceStyle: surfaceStyle)
+        case .compactInteractive:
+            requested = interactiveSize(
+                width: 340,
+                contentHeight: 160,
+                surfaceStyle: surfaceStyle
+            )
+        case .expandedInteractive:
+            requested = interactiveSize(
+                width: 420,
+                contentHeight: 320,
+                surfaceStyle: surfaceStyle
+            )
+        }
+        let passiveMaximum = maximumPassiveSurfaceSize(
+            surfaceStyle: surfaceStyle
+        )
+        return CGSize(
+            width: max(passiveMaximum.width, requested.width),
+            height: max(passiveMaximum.height, requested.height)
+        )
+    }
+
+    private static func passiveSurfaceSize(
         visualState: NotchVisualState,
         surfaceStyle: NotchSurfaceStyle
     ) -> CGSize {
         switch surfaceStyle {
         case .attached(let notchWidth, let notchHeight):
-            let baseSize = CGSize(
-                width: notchWidth + attachedHorizontalCanvasOutset * 2,
-                height: notchHeight + attachedBottomCanvasOutset
-            )
+            let baseSize = CGSize(width: notchWidth, height: notchHeight)
             switch visualState {
             case .hidden, .preparing, .listening:
                 return baseSize
@@ -230,6 +269,22 @@ enum NotchPanelLayoutCalculator {
         }
     }
 
+    private static func maximumPassiveSurfaceSize(
+        surfaceStyle: NotchSurfaceStyle
+    ) -> CGSize {
+        let baseSize: CGSize
+        switch surfaceStyle {
+        case .attached(let notchWidth, let notchHeight):
+            baseSize = CGSize(width: notchWidth, height: notchHeight)
+        case .floating:
+            baseSize = CGSize(width: floatingListeningWidth, height: 38)
+        }
+        return CGSize(
+            width: baseSize.width + maximumPassiveExtensionWidth,
+            height: baseSize.height
+        )
+    }
+
     private static func successExtensionWidth(for label: String) -> CGFloat {
         let estimatedLabelWidth = CGFloat(label.count) * 7.2
         return (24 + 16 + 9 + estimatedLabelWidth)
@@ -245,40 +300,32 @@ enum NotchPanelLayoutCalculator {
     private static func interactiveSize(
         width: CGFloat,
         contentHeight: CGFloat,
-        feedbackSize: CGSize,
         surfaceStyle: NotchSurfaceStyle
     ) -> CGSize {
         let height: CGFloat
         switch surfaceStyle {
         case .attached(_, let notchHeight):
-            height =
-                notchHeight
-                + attachedBottomCanvasOutset
-                + contentHeight
+            height = notchHeight + contentHeight
         case .floating:
             height = contentHeight
         }
-        return CGSize(
-            width: max(width, feedbackSize.width),
-            height: max(height, feedbackSize.height)
-        )
+        return CGSize(width: width, height: height)
     }
 }
 
-/// One geometry source for both the SwiftUI black surface and its
-/// compositor-driven Core Animation border. Keeping the shared edges here
-/// prevents the two renderers from drifting apart.
+/// Geometry for the pure-black surface that visually extends the hardware
+/// notch. The top edge is closed only for filling; it remains hidden beneath
+/// the top of the display.
 enum AttachedNotchGeometry {
     nonisolated static func surfacePath(
         in rect: CGRect,
-        horizontalCanvasOutset: CGFloat,
         surfaceHeight: CGFloat,
         bottomCornerRadius: CGFloat
     ) -> CGPath {
         let surfaceRect = CGRect(
-            x: rect.minX + horizontalCanvasOutset,
+            x: rect.minX,
             y: rect.minY,
-            width: max(0, rect.width - horizontalCanvasOutset * 2),
+            width: max(0, rect.width),
             height: min(max(0, surfaceHeight), rect.height)
         )
         return openTopPath(
@@ -288,29 +335,6 @@ enum AttachedNotchGeometry {
             bottom: surfaceRect.maxY,
             bottomCornerRadius: bottomCornerRadius,
             closesPath: true
-        )
-    }
-
-    nonisolated static func borderPath(
-        in rect: CGRect,
-        horizontalCanvasOutset: CGFloat,
-        visibleBorderOutset: CGFloat,
-        surfaceHeight: CGFloat,
-        bottomCornerRadius: CGFloat
-    ) -> CGPath {
-        let left = rect.minX + horizontalCanvasOutset - visibleBorderOutset
-        let right = rect.maxX - horizontalCanvasOutset + visibleBorderOutset
-        let bottom = min(
-            rect.maxY,
-            rect.minY + max(0, surfaceHeight) + visibleBorderOutset
-        )
-        return openTopPath(
-            left: left,
-            right: right,
-            top: rect.minY,
-            bottom: bottom,
-            bottomCornerRadius: bottomCornerRadius + visibleBorderOutset,
-            closesPath: false
         )
     }
 
