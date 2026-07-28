@@ -71,6 +71,40 @@ private struct ClipboardPreview: View {
     }
 }
 
+private struct ClipboardInlineEditControls: View {
+    let cancel: () -> Void
+    let save: () -> Void
+
+    var body: some View {
+        HStack(spacing: 2) {
+            Button(action: cancel) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(
+                        Color(nsColor: .systemRed).opacity(0.78)
+                    )
+                    .frame(width: 22, height: 24)
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Cancel editing")
+            .help("Cancel")
+
+            Button(action: save) {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(
+                        Color(nsColor: .systemGreen).opacity(0.78)
+                    )
+                    .frame(width: 22, height: 24)
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Save changes")
+            .help("Save")
+        }
+        .fixedSize()
+    }
+}
+
 struct PendingClipboardCopyRow: View {
     let copy: PendingClipboardCopy
 
@@ -216,10 +250,14 @@ struct TemporaryCopyRow: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 if isEditingContent {
-                    Text(slot.title)
-                        .font(.callout.weight(.semibold))
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    HStack(spacing: 8) {
+                        Text(slot.title)
+                            .font(.callout.weight(.semibold))
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+
+                        editorControls
+                    }
 
                     TextEditor(text: boundedContentDraft)
                         .font(.callout)
@@ -281,16 +319,15 @@ struct TemporaryCopyRow: View {
                 }
             }
 
-            if isEditingContent {
-                editorControls
-            }
         }
         .padding(.leading, 8)
         .padding(.trailing, 8)
         .frame(minHeight: ClipboardHUDMetrics.rowHeight)
         .contentShape(.rect(cornerRadius: 11))
         .background(
-            isHovered ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear),
+            isHovered || isEditingContent
+                ? AnyShapeStyle(.quaternary)
+                : AnyShapeStyle(.clear),
             in: .rect(cornerRadius: 11)
         )
         .onHover { hovering in
@@ -357,28 +394,12 @@ struct TemporaryCopyRow: View {
     }
 
     private var editorControls: some View {
-        HStack(spacing: 2) {
-            Button {
-                cancelEditing()
-            } label: {
-                Image(systemName: "xmark")
-                    .frame(width: 22, height: 24)
-            }
-            .buttonStyle(.borderless)
-            .accessibilityLabel("Cancel editing")
-            .help("Cancel")
-
-            Button {
+        ClipboardInlineEditControls(
+            cancel: cancelEditing,
+            save: {
                 _ = commitContentEdit()
-            } label: {
-                Image(systemName: "checkmark")
-                    .fontWeight(.semibold)
-                    .frame(width: 22, height: 24)
             }
-            .buttonStyle(.borderless)
-            .accessibilityLabel("Save changes")
-            .help("Save")
-        }
+        )
     }
 
     @ViewBuilder
@@ -611,8 +632,6 @@ struct PermanentCopyRow: View {
 
             if editingField == nil {
                 rowActions
-            } else {
-                editorControls
             }
         }
         .padding(.leading, 8)
@@ -620,7 +639,9 @@ struct PermanentCopyRow: View {
         .frame(minHeight: ClipboardHUDMetrics.rowHeight)
         .contentShape(.rect(cornerRadius: 11))
         .background(
-            isHovered ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear),
+            isHovered || editingField != nil
+                ? AnyShapeStyle(.quaternary)
+                : AnyShapeStyle(.clear),
             in: .rect(cornerRadius: 11)
         )
         .onHover { hovering in
@@ -668,36 +689,42 @@ struct PermanentCopyRow: View {
     @ViewBuilder
     private var editorOrLabels: some View {
         VStack(alignment: .leading, spacing: 2) {
-            if editingField == .name {
-                TextField(
-                    "Permanent copy name",
-                    text: editingDraft,
-                    selection: $nameSelection
-                )
-                .textFieldStyle(.roundedBorder)
-                .focused($focusedField, equals: .name)
-                .onAppear {
-                    focus(.name, selectingAll: true)
+            HStack(spacing: 8) {
+                if editingField == .name {
+                    TextField(
+                        "Permanent copy name",
+                        text: editingDraft,
+                        selection: $nameSelection
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    .focused($focusedField, equals: .name)
+                    .onAppear {
+                        focus(.name, selectingAll: true)
+                    }
+                    .onSubmit {
+                        _ = commitCurrentEdit()
+                    }
+                    .onKeyPress(.escape) {
+                        cancelEditing()
+                        return .handled
+                    }
+                    .accessibilityLabel("Permanent copy name")
+                } else {
+                    Button(action: copyToClipboard) {
+                        Text(displayName)
+                            .font(.callout.weight(.semibold))
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Copy permanent copy \(name) to clipboard")
+                    .help("Copy permanent copy \(name) to clipboard")
                 }
-                .onSubmit {
-                    _ = commitCurrentEdit()
+
+                if editingField != nil {
+                    editorControls
                 }
-                .onKeyPress(.escape) {
-                    cancelEditing()
-                    return .handled
-                }
-                .accessibilityLabel("Permanent copy name")
-            } else {
-                Button(action: copyToClipboard) {
-                    Text(displayName)
-                        .font(.callout.weight(.semibold))
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(.rect)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Copy permanent copy \(name) to clipboard")
-                .help("Copy permanent copy \(name) to clipboard")
             }
 
             if editingField == .content {
@@ -765,28 +792,12 @@ struct PermanentCopyRow: View {
     }
 
     private var editorControls: some View {
-        HStack(spacing: 2) {
-            Button {
-                cancelEditing()
-            } label: {
-                Image(systemName: "xmark")
-                    .frame(width: 22, height: 24)
-            }
-            .buttonStyle(.borderless)
-            .accessibilityLabel("Cancel editing")
-            .help("Cancel")
-
-            Button {
+        ClipboardInlineEditControls(
+            cancel: cancelEditing,
+            save: {
                 _ = commitCurrentEdit()
-            } label: {
-                Image(systemName: "checkmark")
-                    .fontWeight(.semibold)
-                    .frame(width: 22, height: 24)
             }
-            .buttonStyle(.borderless)
-            .accessibilityLabel("Save changes")
-            .help("Save")
-        }
+        )
     }
 
     private var optionsMenu: some View {

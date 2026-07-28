@@ -463,7 +463,16 @@ struct ClipboardHUDView: View {
         .accessibilityElement(children: .combine)
     }
 
+    @ViewBuilder
     private var numberedFooter: some View {
+        if editingSession.isEditingTemporaryCopy {
+            numberedFooterButton.hidden()
+        } else {
+            numberedFooterButton
+        }
+    }
+
+    private var numberedFooterButton: some View {
         Button {
             model.clearTemporaryCopies()
         } label: {

@@ -41,6 +41,15 @@ final class ClipboardHUDEditingSession {
     @ObservationIgnored private var activeToken: Token?
 
     var isEditing: Bool { activeTarget != nil }
+    var isEditingTemporaryCopy: Bool {
+        guard let activeTarget else { return false }
+        switch activeTarget.location {
+        case .numbered, .temporaryNamed:
+            return true
+        case .permanent:
+            return false
+        }
+    }
     var activeSessionToken: Token? { activeToken }
 
     @discardableResult

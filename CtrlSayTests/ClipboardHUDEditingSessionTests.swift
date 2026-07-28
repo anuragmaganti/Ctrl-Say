@@ -48,6 +48,48 @@ final class ClipboardHUDEditingSessionTests: XCTestCase {
         XCTAssertEqual(session.draft, "")
     }
 
+    func testTemporaryEditStateCoversNumberedAndNamedCopies() {
+        let session = ClipboardHUDEditingSession()
+        let numberedTarget = temporaryTarget(number: 1)
+        let namedTarget = ClipboardHUDEditingSession.Target(
+            payloadID: UUID(),
+            location: .temporaryNamed("house"),
+            field: .content
+        )
+
+        XCTAssertFalse(session.isEditingTemporaryCopy)
+
+        session.begin(
+            target: numberedTarget,
+            initialDraft: "Numbered",
+            commit: { _ in }
+        )
+        XCTAssertTrue(session.isEditingTemporaryCopy)
+
+        session.begin(
+            target: namedTarget,
+            initialDraft: "Named",
+            commit: { _ in }
+        )
+        XCTAssertTrue(session.isEditingTemporaryCopy)
+
+        session.cancel(namedTarget)
+        XCTAssertFalse(session.isEditingTemporaryCopy)
+    }
+
+    func testPermanentEditDoesNotHideTemporaryFooterAction() {
+        let session = ClipboardHUDEditingSession()
+        let target = permanentContentTarget()
+
+        session.begin(
+            target: target,
+            initialDraft: "Permanent",
+            commit: { _ in }
+        )
+
+        XCTAssertFalse(session.isEditingTemporaryCopy)
+    }
+
     func testDismissalCommitsValidDraftAndEndsEditing() {
         let session = ClipboardHUDEditingSession()
         let target = temporaryTarget(number: 1)
