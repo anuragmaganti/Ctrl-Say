@@ -508,7 +508,7 @@ final class SpeechRecognitionService {
             bufferingPolicy: .bufferingNewest(2)
         )
         audioContinuation = continuation
-        audioTimeline.resetDroppedBufferCount()
+        audioTimeline.beginCaptureSession()
 
         let tapBlock = makeAudioTapBlock(
             continuation: continuation,
@@ -535,7 +535,8 @@ final class SpeechRecognitionService {
         }
         let maximumAudioAgeNanoseconds: UInt64 = 250_000_000
         audioTask = Task.detached(priority: .userInitiated) { [weak self] in
-            var didPublishTimelineStart = false
+            await converter.beginCaptureSession()
+            var didPublishAnalyzerTimelineStart = false
             var didPublishSessionStart = false
             var didLogTapShape = false
             var observedMicrophoneDrops = 0
@@ -553,12 +554,6 @@ final class SpeechRecognitionService {
                         Telemetry.speech.info(
                             "Audio tap frames=\(transfer.buffer.frameLength, privacy: .public) rate=\(transfer.buffer.format.sampleRate, privacy: .public) duration_ms=\(durationMilliseconds, privacy: .public)"
                         )
-                    }
-                    if !didPublishTimelineStart,
-                        let timelineStart = transfer.timelineStartUptimeNanoseconds
-                    {
-                        await self?.setAnalysisTimelineStartIfNeeded(timelineStart)
-                        didPublishTimelineStart = true
                     }
                     if transfer.precedingDroppedBufferCount > observedMicrophoneDrops {
                         observedMicrophoneDrops = transfer.precedingDroppedBufferCount
@@ -585,10 +580,10 @@ final class SpeechRecognitionService {
                         continue
                     }
                     if converterNeedsReset {
-                        await converter.reset()
+                        await converter.resetAfterInputDiscontinuity()
                         converterNeedsReset = false
                     }
-                    let analyzerInputs = try await converter.convert(
+                    let convertedAnalyzerInputs = try await converter.convert(
                         transfer,
                         to: analyzerFormatTransfer
                     )
@@ -606,15 +601,28 @@ final class SpeechRecognitionService {
                         }
                         continue
                     }
+                    if !didPublishAnalyzerTimelineStart,
+                        let analyzerStart =
+                            convertedAnalyzerInputs.first?.startTime,
+                        let timelineOrigin =
+                            transfer.analyzerTimelineOriginUptimeNanoseconds(
+                                for: analyzerStart
+                            )
+                    {
+                        await self?.setAnalysisTimelineStart(timelineOrigin)
+                        didPublishAnalyzerTimelineStart = true
+                    }
                     if !didPublishSessionStart,
-                        !analyzerInputs.isEmpty,
-                        let sessionStartTime = transfer.bufferStartTime
+                        let sessionStartTime =
+                            convertedAnalyzerInputs.first?.startTime
                     {
                         await self?.recordSessionAudioStart(sessionStartTime)
                         didPublishSessionStart = true
                     }
-                    for analyzerInput in analyzerInputs {
-                        let yieldResult = analyzerInputContinuation.yield(analyzerInput)
+                    for convertedAnalyzerInput in convertedAnalyzerInputs {
+                        let yieldResult = analyzerInputContinuation.yield(
+                            convertedAnalyzerInput.input
+                        )
                         if case .dropped = yieldResult {
                             droppedAnalyzerInputs += 1
                             if droppedAnalyzerInputs == 1
@@ -628,8 +636,8 @@ final class SpeechRecognitionService {
                         if case .terminated = yieldResult {
                             continue
                         }
-                        if let bufferEndTime = transfer.bufferEndTime {
-                            latestAnalyzerInputEndTime = bufferEndTime
+                        if let endTime = convertedAnalyzerInput.endTime {
+                            latestAnalyzerInputEndTime = endTime
                         }
                     }
                 }
@@ -648,10 +656,10 @@ final class SpeechRecognitionService {
         try audioEngine.start()
     }
 
-    private func setAnalysisTimelineStartIfNeeded(_ nanoseconds: UInt64) {
-        if analysisStartedAtNanoseconds == nil {
-            analysisStartedAtNanoseconds = nanoseconds
-        }
+    private func setAnalysisTimelineStart(_ nanoseconds: UInt64) {
+        // Each microphone session has a new wall-clock origin mapped onto the
+        // analyzer's continuous audio-only timeline.
+        analysisStartedAtNanoseconds = nanoseconds
     }
 
     private func recordSessionAudioStart(_ time: CMTime) {
@@ -688,7 +696,7 @@ final class SpeechRecognitionService {
         audioTask?.cancel()
         await audioTask?.value
         audioTask = nil
-        await converter.reset()
+        await converter.endCaptureSession()
         analyzerInputContinuation?.finish()
         analyzerInputContinuation = nil
 
@@ -728,6 +736,7 @@ final class SpeechRecognitionService {
         }
 
         await stopCurrentInputSequence()
+        await converter.reset()
 
         let activeResultsTask = resultsTask
         activeResultsTask?.cancel()

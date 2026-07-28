@@ -34,34 +34,63 @@ nonisolated struct AudioBufferTransfer: @unchecked Sendable {
         return CMTimeAdd(bufferStartTime, duration)
     }
 
+    var bufferStartUptimeNanoseconds: UInt64? {
+        uptimeNanoseconds(for: bufferStartTime)
+    }
+
+    func analyzerTimelineOriginUptimeNanoseconds(
+        for analyzerStartTime: CMTime
+    ) -> UInt64? {
+        guard let bufferStartUptimeNanoseconds else { return nil }
+        let seconds = analyzerStartTime.seconds
+        guard seconds.isFinite, seconds >= 0 else { return nil }
+        let offset = seconds * 1_000_000_000
+        guard offset <= Double(bufferStartUptimeNanoseconds) else { return nil }
+        return bufferStartUptimeNanoseconds - UInt64(offset)
+    }
+
     func ageNanoseconds(at uptimeNanoseconds: UInt64) -> UInt64? {
-        guard let timelineStartUptimeNanoseconds,
-            let bufferStartTime,
-            bufferStartTime.isNumeric
+        let sampleRate = buffer.format.sampleRate
+        guard sampleRate.isFinite, sampleRate > 0 else { return nil }
+        guard let bufferStartUptimeNanoseconds else { return nil }
+        let duration = Double(buffer.frameLength) / sampleRate * 1_000_000_000
+        guard duration.isFinite,
+            duration >= 0,
+            duration <= Double(UInt64.max - bufferStartUptimeNanoseconds)
         else {
             return nil
         }
-        let sampleRate = buffer.format.sampleRate
-        guard sampleRate.isFinite, sampleRate > 0 else { return nil }
+        let audioEndUptimeNanoseconds =
+            bufferStartUptimeNanoseconds + UInt64(duration)
+        guard uptimeNanoseconds >= audioEndUptimeNanoseconds else { return 0 }
+        return uptimeNanoseconds - audioEndUptimeNanoseconds
+    }
 
-        let audioEndSeconds =
-            bufferStartTime.seconds
-            + Double(buffer.frameLength) / sampleRate
-        guard audioEndSeconds.isFinite, audioEndSeconds >= 0 else { return nil }
-        let offset = audioEndSeconds * 1_000_000_000
+    private func uptimeNanoseconds(for time: CMTime?) -> UInt64? {
+        guard let timelineStartUptimeNanoseconds,
+            let time,
+            time.isNumeric
+        else {
+            return nil
+        }
+        let seconds = time.seconds
+        guard seconds.isFinite, seconds >= 0 else { return nil }
+        let offset = seconds * 1_000_000_000
         guard offset <= Double(UInt64.max - timelineStartUptimeNanoseconds) else {
             return nil
         }
-        let audioEndUptimeNanoseconds =
-            timelineStartUptimeNanoseconds
-            + UInt64(offset)
-        guard uptimeNanoseconds >= audioEndUptimeNanoseconds else { return 0 }
-        return uptimeNanoseconds - audioEndUptimeNanoseconds
+        return timelineStartUptimeNanoseconds + UInt64(offset)
     }
 }
 
 nonisolated struct AudioFormatTransfer: @unchecked Sendable {
     let format: AVAudioFormat
+}
+
+nonisolated struct ConvertedAnalyzerInput: @unchecked Sendable {
+    let input: AnalyzerInput
+    let startTime: CMTime?
+    let endTime: CMTime?
 }
 
 // MARK: - Real-Time Audio Tap
@@ -95,196 +124,6 @@ nonisolated func makeAudioTapBlock(
     }
 }
 
-// MARK: - Audio Timeline
-
-nonisolated private struct AudioTapTiming {
-    let bufferStartTime: CMTime?
-    let timelineStartUptimeNanoseconds: UInt64?
-    let startsNewSourceSegment: Bool
-}
-
-nonisolated final class SpeechAudioTimeline: @unchecked Sendable {
-    private struct SampleAnchor {
-        let sampleTime: AVAudioFramePosition
-        let sampleRate: Double
-        let timelineTime: CMTime
-    }
-
-    private var sampleAnchor: SampleAnchor?
-    private var nextTimelineTime = CMTime.zero
-    private var timelineStartUptimeNanoseconds: UInt64?
-    var droppedBufferCount = 0
-
-    func resetDroppedBufferCount() {
-        droppedBufferCount = 0
-    }
-
-    fileprivate func timing(
-        for time: AVAudioTime,
-        buffer: AVAudioPCMBuffer
-    ) -> AudioTapTiming {
-        var startsNewSourceSegment = false
-        var bufferStartTime = nextTimelineTime
-
-        if let sampleTime = validSampleTime(from: time) {
-            if sampleAnchor == nil
-                || sampleAnchor?.sampleRate != time.sampleRate
-                || sampleTime < (sampleAnchor?.sampleTime ?? sampleTime)
-            {
-                startsNewSourceSegment = sampleAnchor != nil
-                sampleAnchor = SampleAnchor(
-                    sampleTime: sampleTime,
-                    sampleRate: time.sampleRate,
-                    timelineTime: nextTimelineTime
-                )
-            }
-
-            if let sampleAnchor,
-                let sampleOffset = duration(
-                    frameCount: sampleTime - sampleAnchor.sampleTime,
-                    sampleRate: sampleAnchor.sampleRate
-                )
-            {
-                let proposedStart = CMTimeAdd(
-                    sampleAnchor.timelineTime,
-                    sampleOffset
-                )
-                if CMTimeCompare(proposedStart, nextTimelineTime) >= 0 {
-                    bufferStartTime = proposedStart
-                } else {
-                    // Rebase a reset/overlap to the end of already-published
-                    // audio so SpeechAnalyzer never receives overlapping time.
-                    startsNewSourceSegment = true
-                    bufferStartTime = nextTimelineTime
-                    self.sampleAnchor = SampleAnchor(
-                        sampleTime: sampleTime,
-                        sampleRate: time.sampleRate,
-                        timelineTime: bufferStartTime
-                    )
-                }
-            }
-        }
-
-        if let hostRelativeStart = hostRelativeTimelineTime(for: time) {
-            let hostLead = CMTimeGetSeconds(
-                CMTimeSubtract(hostRelativeStart, bufferStartTime)
-            )
-            if hostLead.isFinite, hostLead > 0.005 {
-                // Host time continues across device/route resets. Preserve a
-                // real pause instead of compressing it out of the analyzer's
-                // input timeline.
-                bufferStartTime = hostRelativeStart
-                startsNewSourceSegment = true
-                if let sampleTime = validSampleTime(from: time) {
-                    sampleAnchor = SampleAnchor(
-                        sampleTime: sampleTime,
-                        sampleRate: time.sampleRate,
-                        timelineTime: bufferStartTime
-                    )
-                }
-            }
-        }
-
-        if let bufferDuration = duration(
-            frameCount: AVAudioFramePosition(buffer.frameLength),
-            sampleRate: buffer.format.sampleRate
-        ) {
-            nextTimelineTime = CMTimeAdd(bufferStartTime, bufferDuration)
-        }
-
-        establishTimelineOriginIfPossible(
-            from: time,
-            bufferStartTime: bufferStartTime
-        )
-        return AudioTapTiming(
-            bufferStartTime: bufferStartTime,
-            timelineStartUptimeNanoseconds: timelineStartUptimeNanoseconds,
-            startsNewSourceSegment: startsNewSourceSegment
-        )
-    }
-
-    private func validSampleTime(from time: AVAudioTime) -> AVAudioFramePosition? {
-        guard time.isSampleTimeValid,
-            time.sampleTime >= 0,
-            time.sampleRate.isFinite,
-            time.sampleRate > 0,
-            time.sampleRate <= Double(Int32.max)
-        else {
-            return nil
-        }
-        return time.sampleTime
-    }
-
-    private func establishTimelineOriginIfPossible(
-        from time: AVAudioTime,
-        bufferStartTime: CMTime
-    ) {
-        guard timelineStartUptimeNanoseconds == nil,
-            time.isHostTimeValid
-        else {
-            return
-        }
-
-        guard let hostUptimeNanoseconds = hostUptimeNanoseconds(for: time) else {
-            return
-        }
-        let relativeSeconds = bufferStartTime.seconds
-        guard relativeSeconds.isFinite,
-            relativeSeconds >= 0,
-            relativeSeconds <= Double(Int64.max) / 1_000_000_000
-        else {
-            return
-        }
-        let relativeNanoseconds = UInt64(relativeSeconds * 1_000_000_000)
-        guard hostUptimeNanoseconds >= relativeNanoseconds else { return }
-        timelineStartUptimeNanoseconds = hostUptimeNanoseconds - relativeNanoseconds
-    }
-
-    private func hostRelativeTimelineTime(for time: AVAudioTime) -> CMTime? {
-        guard let timelineStartUptimeNanoseconds,
-            let hostUptimeNanoseconds = hostUptimeNanoseconds(for: time),
-            hostUptimeNanoseconds >= timelineStartUptimeNanoseconds
-        else {
-            return nil
-        }
-        let relativeNanoseconds = hostUptimeNanoseconds - timelineStartUptimeNanoseconds
-        guard relativeNanoseconds <= UInt64(Int64.max) else { return nil }
-        return CMTime(
-            value: CMTimeValue(relativeNanoseconds),
-            timescale: 1_000_000_000
-        )
-    }
-
-    private func hostUptimeNanoseconds(for time: AVAudioTime) -> UInt64? {
-        guard time.isHostTimeValid else { return nil }
-        let hostSeconds = AVAudioTime.seconds(forHostTime: time.hostTime)
-        guard hostSeconds.isFinite,
-            hostSeconds >= 0,
-            hostSeconds <= Double(Int64.max) / 1_000_000_000
-        else {
-            return nil
-        }
-        return UInt64(hostSeconds * 1_000_000_000)
-    }
-
-    private func duration(
-        frameCount: AVAudioFramePosition,
-        sampleRate: Double
-    ) -> CMTime? {
-        guard frameCount >= 0,
-            sampleRate.isFinite,
-            sampleRate > 0,
-            sampleRate <= Double(Int32.max)
-        else {
-            return nil
-        }
-        return CMTime(
-            value: frameCount,
-            timescale: CMTimeScale(sampleRate.rounded())
-        )
-    }
-}
-
 // MARK: - Format Conversion
 
 nonisolated private final class ConverterInputState: @unchecked Sendable {
@@ -300,24 +139,40 @@ actor AudioBufferConverter {
     private static let maximumConversionPasses = 64
 
     private var converter: AVAudioConverter?
-    private var nextOutputStartTime: CMTime?
+    private var analyzerClock = SpeechAnalyzerInputClock()
     private var expectedInputStartTime: CMTime?
     private var observedDroppedBufferCount = 0
+
+    func beginCaptureSession() {
+        clearConverterState()
+        analyzerClock.beginCaptureSession()
+    }
+
+    func endCaptureSession() {
+        clearConverterState()
+    }
+
+    func resetAfterInputDiscontinuity() {
+        clearConverterState()
+    }
 
     func convert(
         _ transfer: AudioBufferTransfer,
         to outputTransfer: AudioFormatTransfer
-    ) throws -> [AnalyzerInput] {
+    ) throws -> [ConvertedAnalyzerInput] {
         let input = transfer.buffer
         let outputFormat = outputTransfer.format
         guard input.frameLength > 0 else { return [] }
 
         if input.format == outputFormat {
-            clearConversionState()
+            clearConverterState()
+            analyzerClock.prepareForInput(
+                proposedStartTime: transfer.bufferStartTime
+            )
             return [
-                AnalyzerInput(
-                    buffer: input,
-                    bufferStartTime: transfer.bufferStartTime
+                analyzerInput(
+                    for: input,
+                    fallbackStartTime: transfer.bufferStartTime
                 )
             ]
         }
@@ -330,9 +185,11 @@ actor AudioBufferConverter {
             // waiting for read-ahead frames at the beginning of each session.
             newConverter.primeMethod = .none
             converter = newConverter
-            nextOutputStartTime = transfer.bufferStartTime
             expectedInputStartTime = nil
             observedDroppedBufferCount = transfer.precedingDroppedBufferCount
+            analyzerClock.prepareForInput(
+                proposedStartTime: transfer.bufferStartTime
+            )
         }
 
         guard let converter else {
@@ -341,8 +198,8 @@ actor AudioBufferConverter {
 
         if inputTimelineIsDiscontinuous(transfer, sampleRate: input.format.sampleRate) {
             converter.reset()
-            nextOutputStartTime = rebasedOutputStartTime(
-                proposed: transfer.bufferStartTime
+            analyzerClock.prepareForInput(
+                proposedStartTime: transfer.bufferStartTime
             )
         }
         observedDroppedBufferCount = transfer.precedingDroppedBufferCount
@@ -353,7 +210,7 @@ actor AudioBufferConverter {
                 (Double(input.frameLength) * ratio).rounded(.up)
             ) + 32
         let inputState = ConverterInputState(buffer: input)
-        var analyzerInputs: [AnalyzerInput] = []
+        var analyzerInputs: [ConvertedAnalyzerInput] = []
 
         for _ in 0..<Self.maximumConversionPasses {
             guard
@@ -410,13 +267,13 @@ actor AudioBufferConverter {
     }
 
     func reset() {
-        clearConversionState()
+        clearConverterState()
+        analyzerClock.reset()
     }
 
-    private func clearConversionState() {
+    private func clearConverterState() {
         converter?.reset()
         converter = nil
-        nextOutputStartTime = nil
         expectedInputStartTime = nil
         observedDroppedBufferCount = 0
     }
@@ -441,28 +298,25 @@ actor AudioBufferConverter {
         return delta.isFinite && delta > max(2 / sampleRate, 0.000_1)
     }
 
-    private func rebasedOutputStartTime(proposed: CMTime?) -> CMTime? {
-        guard let proposed else { return nil }
-        guard let nextOutputStartTime else { return proposed }
-        return CMTimeCompare(proposed, nextOutputStartTime) >= 0
-            ? proposed
-            : nextOutputStartTime
-    }
-
     private func analyzerInput(
         for output: AVAudioPCMBuffer,
         fallbackStartTime: CMTime?
-    ) -> AnalyzerInput {
-        let startTime = nextOutputStartTime ?? fallbackStartTime
-        if let startTime,
-            let outputDuration = duration(
+    ) -> ConvertedAnalyzerInput {
+        let outputTiming = analyzerClock.consumeOutput(
+            duration: duration(
                 frameCount: output.frameLength,
                 sampleRate: output.format.sampleRate
-            )
-        {
-            nextOutputStartTime = CMTimeAdd(startTime, outputDuration)
-        }
-        return AnalyzerInput(buffer: output, bufferStartTime: startTime)
+            ),
+            fallbackStartTime: fallbackStartTime
+        )
+        return ConvertedAnalyzerInput(
+            input: AnalyzerInput(
+                buffer: output,
+                bufferStartTime: outputTiming.start
+            ),
+            startTime: outputTiming.start,
+            endTime: outputTiming.end
+        )
     }
 
     private func duration(

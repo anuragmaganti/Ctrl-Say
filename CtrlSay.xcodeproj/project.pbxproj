@@ -32,6 +32,7 @@
 		FE40000000000000000000001 /* CtrlSay/Views/TemporarySlotSwipeAction.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE40000000000000000000002 /* CtrlSay/Views/TemporarySlotSwipeAction.swift */; };
 		FF10000000000000000000001 /* CtrlSay/Models/SpeechSessionResultGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF10000000000000000000002 /* CtrlSay/Models/SpeechSessionResultGate.swift */; };
 		FF20000000000000000000001 /* CtrlSay/Models/PendingClipboardCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF20000000000000000000002 /* CtrlSay/Models/PendingClipboardCopy.swift */; };
+		FF30000000000000000000001 /* CtrlSay/Services/SpeechAudioTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF30000000000000000000002 /* CtrlSay/Services/SpeechAudioTimeline.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -62,6 +63,7 @@
 		FE40000000000000000000002 /* CtrlSay/Views/TemporarySlotSwipeAction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CtrlSay/Views/TemporarySlotSwipeAction.swift; sourceTree = SOURCE_ROOT; };
 		FF10000000000000000000002 /* CtrlSay/Models/SpeechSessionResultGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CtrlSay/Models/SpeechSessionResultGate.swift; sourceTree = SOURCE_ROOT; };
 		FF20000000000000000000002 /* CtrlSay/Models/PendingClipboardCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CtrlSay/Models/PendingClipboardCopy.swift; sourceTree = SOURCE_ROOT; };
+		FF30000000000000000000002 /* CtrlSay/Services/SpeechAudioTimeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CtrlSay/Services/SpeechAudioTimeline.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -142,6 +144,7 @@
 				FE40000000000000000000002 /* CtrlSay/Views/TemporarySlotSwipeAction.swift */,
 				FF10000000000000000000002 /* CtrlSay/Models/SpeechSessionResultGate.swift */,
 				FF20000000000000000000002 /* CtrlSay/Models/PendingClipboardCopy.swift */,
+				FF30000000000000000000002 /* CtrlSay/Services/SpeechAudioTimeline.swift */,
 			);
 			name = "Test Support Sources";
 			sourceTree = "<group>";
@@ -285,6 +288,7 @@
 				FE40000000000000000000001 /* CtrlSay/Views/TemporarySlotSwipeAction.swift in Sources */,
 				FF10000000000000000000001 /* CtrlSay/Models/SpeechSessionResultGate.swift in Sources */,
 				FF20000000000000000000001 /* CtrlSay/Models/PendingClipboardCopy.swift in Sources */,
+				FF30000000000000000000001 /* CtrlSay/Services/SpeechAudioTimeline.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
