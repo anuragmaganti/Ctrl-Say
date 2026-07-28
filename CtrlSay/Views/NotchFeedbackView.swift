@@ -1,5 +1,44 @@
 import SwiftUI
 
+private struct NotchFeedbackContent {
+    enum Tone {
+        case pending
+        case success
+        case failure
+    }
+
+    let systemImage: String
+    let text: String
+    let tone: Tone
+
+    var iconSize: CGFloat {
+        tone == .failure ? 14 : 15
+    }
+
+    var textWeight: Font.Weight {
+        tone == .failure ? .medium : .semibold
+    }
+
+    var minimumScaleFactor: CGFloat {
+        tone == .failure ? 0.75 : 0.8
+    }
+
+    var iconColor: Color {
+        switch tone {
+        case .pending:
+            .white.opacity(0.72)
+        case .success:
+            .white
+        case .failure:
+            .orange
+        }
+    }
+
+    var textColor: Color {
+        tone == .pending ? .white.opacity(0.72) : .white
+    }
+}
+
 struct NotchFeedbackView: View {
     let presentationState: NotchFeedbackPresentationState
     let windowContext: NotchWindowContext
@@ -37,44 +76,59 @@ struct NotchFeedbackView: View {
         }
         .animation(
             feedbackAnimation,
-            value: presentationState.visualState
+            value: presentationState.visualState.presentationPhase
         )
         .accessibilityIdentifier("ctrlSay.notchFeedback")
     }
 
     private var feedbackContent: some View {
         Group {
-            switch presentationState.visualState {
-            case .hidden, .preparing, .listening:
-                EmptyView()
-
-            case .success(let action, let label):
+            if let content = currentFeedbackContent {
                 HStack(spacing: 9) {
-                    Image(systemName: action == .copy ? "doc.on.doc" : "arrow.down.doc")
-                        .font(.system(size: 15, weight: .semibold))
+                    Image(systemName: content.systemImage)
+                        .font(.system(size: content.iconSize, weight: .semibold))
                         .symbolRenderingMode(.monochrome)
-                    Text(label)
-                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(content.iconColor)
+                        .contentTransition(.identity)
+                    Text(content.text)
+                        .font(.callout.weight(content.textWeight))
+                        .foregroundStyle(content.textColor)
                         .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                }
-                .foregroundStyle(.white)
-                .transition(feedbackTransition)
-
-            case .failure(let message):
-                HStack(spacing: 9) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.orange)
-                    Text(message)
-                        .font(.callout.weight(.medium))
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.75)
+                        .minimumScaleFactor(content.minimumScaleFactor)
+                        .contentTransition(.identity)
                 }
                 .transition(feedbackTransition)
             }
         }
+    }
+
+    private var currentFeedbackContent: NotchFeedbackContent? {
+        switch presentationState.visualState {
+        case .hidden, .preparing, .listening:
+            nil
+        case .pending(let action, let label):
+            NotchFeedbackContent(
+                systemImage: commandSymbol(for: action),
+                text: label,
+                tone: .pending
+            )
+        case .success(let action, let label):
+            NotchFeedbackContent(
+                systemImage: commandSymbol(for: action),
+                text: label,
+                tone: .success
+            )
+        case .failure(let message):
+            NotchFeedbackContent(
+                systemImage: "exclamationmark.triangle.fill",
+                text: message,
+                tone: .failure
+            )
+        }
+    }
+
+    private func commandSymbol(for action: NotchCommandAction) -> String {
+        action == .copy ? "doc.on.doc" : "arrow.down.doc"
     }
 
     @ViewBuilder
@@ -139,10 +193,10 @@ struct NotchFeedbackView: View {
 
     private var feedbackAnimation: Animation? {
         guard !reduceMotion else { return nil }
-        switch presentationState.visualState {
-        case .success, .failure:
-            return .smooth(duration: 0.34, extraBounce: 0.04)
-        case .hidden, .preparing, .listening:
+        switch presentationState.visualState.presentationPhase {
+        case .feedback:
+            return .smooth(duration: 0.16)
+        case .hidden, .listening:
             return .smooth(duration: 0.38)
         }
     }
@@ -163,6 +217,8 @@ struct NotchFeedbackView: View {
             "Ctrl-Say is preparing to listen"
         case .listening:
             "Ctrl-Say is listening"
+        case .pending(let action, let label):
+            action == .copy ? "Copying to \(label)" : "Pasting \(label)"
         case .success(let action, let label):
             action == .copy ? "Copied to \(label)" : "Pasted \(label)"
         case .failure(let message):

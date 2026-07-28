@@ -15,7 +15,7 @@ final class AppModel {
     private(set) var hasKeyboardMonitoringAccess = false
     private(set) var isClipboardHUDPresented = false
     private(set) var permanentStorageState: PermanentCopyPersistenceState = .loading
-    private(set) var notchFeedbackSignal: NotchFeedbackSignal?
+    private(set) var pendingClipboardCopies = PendingClipboardCopyState()
 
     #if DEBUG
     private(set) var debugDiagnostics = DebugPipelineSnapshot()
@@ -23,6 +23,7 @@ final class AppModel {
 
     @ObservationIgnored private let clipboard = ClipboardService()
     @ObservationIgnored private let permanentRepository: any PermanentCopyPersisting
+    @ObservationIgnored var onNotchFeedback: (@MainActor (NotchFeedbackEvent) -> Void)?
     @ObservationIgnored private var rightOptionMonitor: RightOptionKeyMonitor?
     @ObservationIgnored private var speechCommandGate = SpeechCommandGate()
     @ObservationIgnored private var streamingCommandScanner = StreamingVoiceCommandScanner()
@@ -40,11 +41,11 @@ final class AppModel {
             payloadID: UUID,
             storedAtNanoseconds: UInt64
         )?
+    @ObservationIgnored private var appearedPendingCopyIDs: Set<PendingClipboardCopy.ID> = []
     @ObservationIgnored private var permanentRestoreTask: Task<Void, Never>?
     @ObservationIgnored private var permanentPersistenceTask: Task<Void, Never>?
     @ObservationIgnored private var permanentMutationQueue = PermanentMutationQueueState()
     @ObservationIgnored private var didRestorePermanentStorage = false
-    @ObservationIgnored private var notchFeedbackSequence: UInt64 = 0
 
     // MARK: - State
 
@@ -183,8 +184,26 @@ final class AppModel {
                 DispatchTime.now().uptimeNanoseconds
                     - pendingHUDRowAppearance.storedAtNanoseconds
             ) / 1_000_000
-        Telemetry.interface.debug(
+        Telemetry.performance.info(
             "HUD row appeared store_to_row_ms=\(milliseconds, privacy: .public)"
+        )
+    }
+
+    func recordPendingHUDRowAppearance(for id: PendingClipboardCopy.ID) {
+        let now = DispatchTime.now().uptimeNanoseconds
+        guard isClipboardHUDPresented,
+            let pendingCopy = pendingClipboardCopies.copy(id: id),
+            now >= pendingCopy.commandReadyAtNanoseconds,
+            appearedPendingCopyIDs.insert(id).inserted
+        else {
+            return
+        }
+        let milliseconds =
+            Double(
+                now - pendingCopy.commandReadyAtNanoseconds
+            ) / 1_000_000
+        Telemetry.performance.info(
+            "copy-feedback command_ready_to_hud_pending_ms=\(milliseconds, privacy: .public)"
         )
     }
 
@@ -412,6 +431,7 @@ final class AppModel {
     // MARK: - Speech Results
 
     private func received(_ result: RecognizedSpeechResult) {
+        let scannerStartedAtNanoseconds = DispatchTime.now().uptimeNanoseconds
         let exactCommand = VoiceCommandParser.parse(result.text)
         let timelineTokens: [StreamingVoiceCommandToken]
         if case .permanentCopy = exactCommand {
@@ -440,6 +460,15 @@ final class AppModel {
             ),
             knownNamedCopies: slots.allNamedKeys
         )
+        let scannerMilliseconds = milliseconds(
+            from: scannerStartedAtNanoseconds,
+            to: DispatchTime.now().uptimeNanoseconds
+        )
+        if !streamingUpdate.mutations.isEmpty {
+            Telemetry.speech.info(
+                "Speech result scanned duration_ms=\(scannerMilliseconds, privacy: .public) mutations=\(streamingUpdate.mutations.count, privacy: .public) final=\(result.isFinal, privacy: .public)"
+            )
+        }
         for mutation in streamingUpdate.mutations {
             apply(mutation, from: result)
         }
@@ -484,9 +513,7 @@ final class AppModel {
 
         let metadata = SpeechCommandMetadata(
             resultReceivedAtNanoseconds: result.receivedAtNanoseconds,
-            audioEndUptimeNanoseconds: result.audioEndUptimeNanoseconds,
-            minimumConfidence: result.minimumConfidence,
-            isFinal: result.isFinal
+            audioEndUptimeNanoseconds: result.audioEndUptimeNanoseconds
         )
         let observation = SpeechCommandObservation(
             range: SpeechResultRange(result.range),
@@ -565,6 +592,50 @@ final class AppModel {
             )
             #endif
             let identity = SpeechCommandIdentity.streaming(candidate.id)
+            let metadata = SpeechCommandMetadata(
+                resultReceivedAtNanoseconds: resultReceivedAtNanoseconds,
+                audioEndUptimeNanoseconds: audioEndUptimeNanoseconds?(
+                    candidate.range
+                )
+            )
+            let isExistingNamedRevision =
+                candidate.command.isRevisableNamedCopy
+                && activeNamedCopyCommands[candidate.id] != nil
+            if !isExistingNamedRevision,
+                SpeechCommandFreshnessPolicy.rejectionReason(
+                    metadata,
+                    at: DispatchTime.now().uptimeNanoseconds
+                ) == .recognition
+            {
+                recordRejectedSpeechCandidate(
+                    candidate.command,
+                    metadata: metadata,
+                    reason: .recognition
+                )
+                removePendingCopy(identity: identity)
+                streamingCommandScanner.markCommitted(candidate.id)
+                capturedSpeechTargets.removeValue(forKey: identity)
+                return
+            }
+            let pendingDestination = pendingCopyDestination(
+                for: candidate.command
+            )
+            let hasStoredNamedCapture =
+                activeNamedCopyCommands[candidate.id]?.payloadID != nil
+            if candidate.isReadyForDispatch,
+                !hasStoredNamedCapture,
+                let pendingDestination
+            {
+                upsertPendingCopy(
+                    identity: identity,
+                    destination: pendingDestination,
+                    commandReadyAtNanoseconds: resultReceivedAtNanoseconds
+                )
+            } else if !candidate.isReadyForDispatch
+                || pendingDestination == nil
+            {
+                removePendingCopy(identity: identity)
+            }
             if candidate.command.isRevisableNamedCopy {
                 if updateActiveNamedCopyCommand(
                     with: candidate,
@@ -591,14 +662,6 @@ final class AppModel {
                 }
                 return
             }
-            let metadata = SpeechCommandMetadata(
-                resultReceivedAtNanoseconds: resultReceivedAtNanoseconds,
-                audioEndUptimeNanoseconds: audioEndUptimeNanoseconds?(
-                    candidate.range
-                ),
-                minimumConfidence: candidate.minimumConfidence,
-                isFinal: resultIsFinal
-            )
             let queued = QueuedCommand(
                 operation: .voice(candidate.command),
                 speechMetadata: metadata,
@@ -624,6 +687,7 @@ final class AppModel {
             )
             #endif
             let identity = SpeechCommandIdentity.streaming(candidateID)
+            removePendingCopy(identity: identity)
             cancelActiveNamedCopyCommand(candidateID, removeStoredCopy: true)
             capturedSpeechTargets.removeValue(forKey: identity)
             guard commandQueue.revoke(identity: identity) else { return }
@@ -825,6 +889,7 @@ final class AppModel {
         _ candidateID: StreamingVoiceCommandID,
         removeStoredCopy: Bool
     ) {
+        removePendingCopy(identity: .streaming(candidateID))
         guard
             let active = activeNamedCopyCommands.removeValue(
                 forKey: candidateID
@@ -981,7 +1046,12 @@ final class AppModel {
         guard !isProcessingCommand else { return }
         isProcessingCommand = true
 
-        Task { [weak self] in
+        // Start in this MainActor turn so native Copy/Paste dispatch reaches
+        // its first suspension before observation-driven HUD layout runs.
+        Task.immediate(
+            name: "clipboard-command-worker",
+            priority: .userInitiated
+        ) { @MainActor [weak self] in
             await self?.drainCommandQueue()
         }
     }
@@ -1050,9 +1120,8 @@ final class AppModel {
         if case .voice(let command) = queued.operation,
             command.requiresExternalTarget,
             let metadata = queued.speechMetadata,
-            !SpeechCommandFreshnessPolicy.isFresh(
+            let rejectionReason = SpeechCommandFreshnessPolicy.rejectionReason(
                 metadata,
-                command: command,
                 at: DispatchTime.now().uptimeNanoseconds
             )
         {
@@ -1065,9 +1134,13 @@ final class AppModel {
                 succeeded: false
             )
             Telemetry.commands.warning(
-                "\(queued.operation.telemetryName, privacy: .public) dropped because recognition was stale"
+                "\(queued.operation.telemetryName, privacy: .public) dropped stale_stage=\(rejectionReason.rawValue, privacy: .public)"
             )
+            removePendingCopy(identity: identity)
             finishActiveNamedCopyAfterFailure(identity)
+            publishNotchFeedback(
+                .commandFailed(message: "Command expired")
+            )
             return
         }
 
@@ -1087,6 +1160,7 @@ final class AppModel {
                     let capture = try await clipboard.captureSelection(target: queued.target)
                     try slots.set(capture.payload, at: number)
                     markHUDStoreUpdate(for: capture.payload.id)
+                    removePendingCopy(identity: identity, clearsNotch: false)
                     clipboardMilliseconds = capture.milliseconds
                     targetStatus = .verified
                     successfulNotchFeedback = .commandSucceeded(
@@ -1113,6 +1187,7 @@ final class AppModel {
                         identity: identity,
                         target: queued.target
                     )
+                    removePendingCopy(identity: identity, clearsNotch: false)
                     clipboardMilliseconds = result.capture.milliseconds
                     targetStatus = .verified
                     successfulNotchFeedback = .commandSucceeded(
@@ -1127,6 +1202,7 @@ final class AppModel {
                         identity: identity,
                         target: queued.target
                     )
+                    removePendingCopy(identity: identity, clearsNotch: false)
                     clipboardMilliseconds = result.capture.milliseconds
                     targetStatus = .verified
                     successfulNotchFeedback = .commandSucceeded(
@@ -1238,6 +1314,7 @@ final class AppModel {
                 publishNotchFeedback(successfulNotchFeedback)
             }
         } catch {
+            removePendingCopy(identity: identity)
             if error is CancellationError {
                 finishActiveNamedCopyAfterFailure(identity)
                 return
@@ -1272,6 +1349,57 @@ final class AppModel {
 
     // MARK: - Telemetry and Feedback
 
+    private func pendingCopyDestination(
+        for command: VoiceCommand
+    ) -> PendingClipboardCopy.Destination? {
+        switch command {
+        case .copyNumber(let number):
+            .numbered(number)
+        case .copyNamed(let name):
+            .temporaryNamed(VoiceCommandParser.normalizeName(name))
+        case .permanentCopy(let name):
+            .permanentNamed(VoiceCommandParser.normalizeName(name))
+        default:
+            nil
+        }
+    }
+
+    private func upsertPendingCopy(
+        identity: SpeechCommandIdentity,
+        destination: PendingClipboardCopy.Destination,
+        commandReadyAtNanoseconds: UInt64
+    ) {
+        guard case .streaming(let id) = identity else { return }
+        let result = pendingClipboardCopies.upsert(
+            id: id,
+            destination: destination,
+            commandReadyAtNanoseconds: commandReadyAtNanoseconds
+        )
+        guard result != .unchanged else { return }
+
+        publishNotchFeedback(
+            .commandPending(
+                action: .copy,
+                label: destination.displayTitle
+            ),
+            commandReadyAtNanoseconds: result == .inserted
+                ? commandReadyAtNanoseconds
+                : nil
+        )
+    }
+
+    private func removePendingCopy(
+        identity: SpeechCommandIdentity?,
+        clearsNotch: Bool = true
+    ) {
+        guard case .streaming(let id) = identity else { return }
+        guard pendingClipboardCopies.remove(id: id) != nil else { return }
+        appearedPendingCopyIDs.remove(id)
+        if clearsNotch {
+            publishNotchFeedback(.commandPendingCancelled)
+        }
+    }
+
     private func recordPipeline(
         _ queued: QueuedCommand,
         queueWaitMilliseconds: Double,
@@ -1284,6 +1412,20 @@ final class AppModel {
         let clipboardMilliseconds = clipboardMilliseconds ?? -1
         Telemetry.performance.info(
             "\(queued.operation.telemetryName, privacy: .public) speech_ms=\(speechMilliseconds, privacy: .public) queue_ms=\(queueWaitMilliseconds, privacy: .public) execute_ms=\(executionMilliseconds, privacy: .public) clipboard_ms=\(clipboardMilliseconds, privacy: .public) target_status=\(targetStatus.rawValue, privacy: .public) success=\(succeeded, privacy: .public)"
+        )
+    }
+
+    private func recordRejectedSpeechCandidate(
+        _ command: VoiceCommand,
+        metadata: SpeechCommandMetadata,
+        reason: SpeechCommandFreshnessPolicy.RejectionReason
+    ) {
+        let speechMilliseconds = metadata.recognitionLatencyMilliseconds ?? -1
+        Telemetry.performance.info(
+            "\(command.telemetryName, privacy: .public) speech_ms=\(speechMilliseconds, privacy: .public) queue_ms=0.0 execute_ms=0.0 clipboard_ms=-1.0 target_status=\(TargetTelemetryStatus.notChecked.rawValue, privacy: .public) success=false stale_stage=\(reason.rawValue, privacy: .public)"
+        )
+        Telemetry.commands.warning(
+            "\(command.telemetryName, privacy: .public) rejected before dispatch stale_stage=\(reason.rawValue, privacy: .public)"
         )
     }
 
@@ -1305,11 +1447,26 @@ final class AppModel {
         }
     }
 
-    private func publishNotchFeedback(_ event: NotchFeedbackEvent) {
-        notchFeedbackSequence &+= 1
-        notchFeedbackSignal = NotchFeedbackSignal(
-            sequence: notchFeedbackSequence,
-            event: event
+    private func publishNotchFeedback(
+        _ event: NotchFeedbackEvent,
+        commandReadyAtNanoseconds: UInt64? = nil
+    ) {
+        let hasPresentationConsumer = onNotchFeedback != nil
+        onNotchFeedback?(event)
+
+        guard hasPresentationConsumer,
+            let commandReadyAtNanoseconds,
+            DispatchTime.now().uptimeNanoseconds >= commandReadyAtNanoseconds
+        else {
+            return
+        }
+        let milliseconds =
+            Double(
+                DispatchTime.now().uptimeNanoseconds
+                    - commandReadyAtNanoseconds
+            ) / 1_000_000
+        Telemetry.performance.info(
+            "copy-feedback command_ready_to_notch_state_ms=\(milliseconds, privacy: .public)"
         )
     }
 
@@ -1419,6 +1576,8 @@ final class AppModel {
         streamingCommandScanner.reset()
         capturedSpeechTargets.removeAll(keepingCapacity: true)
         activeNamedCopyCommands.removeAll(keepingCapacity: true)
+        pendingClipboardCopies.removeAll()
+        appearedPendingCopyIDs.removeAll(keepingCapacity: true)
     }
 
     // MARK: - HUD Timing

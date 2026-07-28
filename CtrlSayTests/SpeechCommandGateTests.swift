@@ -2,63 +2,61 @@ import CoreMedia
 import XCTest
 
 final class SpeechCommandGateTests: XCTestCase {
-    func testSideEffectFreshnessRejectsDelayedSpeechWithoutAddingDelay() {
-        let maximum = SpeechCommandFreshnessPolicy
-            .maximumSideEffectAgeNanoseconds
+    func testRecognitionFreshnessRejectsLateResultWithoutAddingDelay() {
+        let maximum = SpeechCommandFreshnessPolicy.maximumRecognitionAgeNanoseconds
         let metadata = SpeechCommandMetadata(
             resultReceivedAtNanoseconds: 1_000,
-            audioEndUptimeNanoseconds: 1_000,
-            minimumConfidence: nil,
-            isFinal: false
+            audioEndUptimeNanoseconds: 1_000
         )
 
-        XCTAssertTrue(
-            SpeechCommandFreshnessPolicy.isFresh(
+        XCTAssertNil(
+            SpeechCommandFreshnessPolicy.rejectionReason(
                 metadata,
-                command: .pasteNumber(1),
                 at: 1_000 + maximum
             )
         )
-        XCTAssertFalse(
-            SpeechCommandFreshnessPolicy.isFresh(
+        XCTAssertEqual(
+            SpeechCommandFreshnessPolicy.rejectionReason(
                 metadata,
-                command: .pasteNumber(1),
                 at: 1_001 + maximum
-            )
+            ),
+            .recognition
         )
     }
 
-    func testNamedCopyFreshnessStartsWhenBoundaryMakesItExecutable() {
-        let maximum = SpeechCommandFreshnessPolicy
-            .maximumSideEffectAgeNanoseconds
-        let boundaryReceivedAt: UInt64 = 10_000_000_000
+    func testDispatchFreshnessRemainsIndependentFromRecognitionAge() {
+        let maximum = SpeechCommandFreshnessPolicy.maximumDispatchAgeNanoseconds
+        let receivedAt: UInt64 = 10_000_000_000
         let metadata = SpeechCommandMetadata(
-            resultReceivedAtNanoseconds: boundaryReceivedAt,
-            audioEndUptimeNanoseconds: 1_000,
-            minimumConfidence: nil,
-            isFinal: false
+            resultReceivedAtNanoseconds: receivedAt,
+            audioEndUptimeNanoseconds: nil
         )
 
-        XCTAssertTrue(
-            SpeechCommandFreshnessPolicy.isFresh(
+        XCTAssertNil(
+            SpeechCommandFreshnessPolicy.rejectionReason(
                 metadata,
-                command: .copyNamed("house"),
-                at: boundaryReceivedAt + maximum
+                at: receivedAt + maximum
             )
         )
-        XCTAssertFalse(
-            SpeechCommandFreshnessPolicy.isFresh(
+        XCTAssertEqual(
+            SpeechCommandFreshnessPolicy.rejectionReason(
                 metadata,
-                command: .copyNamed("house"),
-                at: boundaryReceivedAt + maximum + 1
-            )
+                at: receivedAt + maximum + 1
+            ),
+            .dispatch
         )
-        XCTAssertFalse(
-            SpeechCommandFreshnessPolicy.isFresh(
-                metadata,
-                command: .pasteNamed("house"),
-                at: boundaryReceivedAt
-            )
+    }
+
+    func testRecognitionStalenessWinsWhenBothLimitsAreExceeded() {
+        let metadata = SpeechCommandMetadata(
+            resultReceivedAtNanoseconds: 1_000,
+            audioEndUptimeNanoseconds: 500
+        )
+        let now = 1_000 + SpeechCommandFreshnessPolicy.maximumDispatchAgeNanoseconds + 1
+
+        XCTAssertEqual(
+            SpeechCommandFreshnessPolicy.rejectionReason(metadata, at: now),
+            .recognition
         )
     }
 
@@ -371,7 +369,6 @@ final class SpeechCommandGateTests: XCTestCase {
 
         let metadata = try XCTUnwrap(update.mutations.upsertMetadata)
         XCTAssertEqual(metadata.resultReceivedAtNanoseconds, 9_000_000)
-        XCTAssertTrue(metadata.isFinal)
     }
 
     func testEarlierUnsafeRevisionAlsoRevokesQueuedLaterCommand() throws {
@@ -514,9 +511,7 @@ final class SpeechCommandGateTests: XCTestCase {
             acceptsVolatileResult: acceptsVolatile,
             metadata: SpeechCommandMetadata(
                 resultReceivedAtNanoseconds: receivedAtNanoseconds,
-                audioEndUptimeNanoseconds: 1_000_000,
-                minimumConfidence: 0.8,
-                isFinal: isFinal
+                audioEndUptimeNanoseconds: 1_000_000
             )
         )
     }

@@ -47,6 +47,73 @@ final class NotchFeedbackTests: XCTestCase {
         XCTAssertEqual(state.visualState, .listening)
     }
 
+    func testPendingCopyExpandsWithoutStartingAnExpiration() {
+        let presented = NotchFeedbackReducer.reduce(
+            .init(listeningActivity: .listening),
+            event: .present(.pending(action: .copy, label: "House"))
+        )
+
+        XCTAssertEqual(
+            presented.state.visualState,
+            .pending(action: .copy, label: "House")
+        )
+        XCTAssertNil(presented.expiration)
+    }
+
+    func testSuccessReplacesPendingCopyAndStartsItsExpiration() {
+        let pending = NotchFeedbackReducer.reduce(
+            .init(listeningActivity: .listening),
+            event: .present(.pending(action: .copy, label: "House"))
+        ).state
+        let succeeded = NotchFeedbackReducer.reduce(
+            pending,
+            event: .present(.success(action: .copy, label: "House"))
+        )
+
+        XCTAssertEqual(
+            succeeded.state.visualState,
+            .success(action: .copy, label: "House")
+        )
+        XCTAssertEqual(succeeded.expiration?.duration, .seconds(1))
+    }
+
+    func testPendingAndSuccessShareOnePresentationPhase() {
+        let pending = NotchVisualState.pending(
+            action: .copy,
+            label: "House"
+        )
+        let success = NotchVisualState.success(
+            action: .copy,
+            label: "House"
+        )
+
+        XCTAssertEqual(pending.presentationPhase, .feedback)
+        XCTAssertEqual(success.presentationPhase, .feedback)
+        XCTAssertEqual(
+            pending.presentationPhase,
+            success.presentationPhase,
+            "Pending-to-success must not restart the notch entrance animation"
+        )
+        XCTAssertNotEqual(
+            NotchVisualState.listening.presentationPhase,
+            pending.presentationPhase
+        )
+    }
+
+    func testCancellingPendingCopyReturnsToListening() {
+        let pending = NotchFeedbackReducer.reduce(
+            .init(listeningActivity: .listening),
+            event: .present(.pending(action: .copy, label: "House"))
+        ).state
+        let cancelled = NotchFeedbackReducer.reduce(
+            pending,
+            event: .clearTransient
+        ).state
+
+        XCTAssertEqual(cancelled.visualState, .listening)
+        XCTAssertNil(cancelled.transientFeedback)
+    }
+
     func testNewFeedbackMakesAnOlderExpirationHarmless() {
         var state = NotchFeedbackReducerState(
             listeningActivity: .listening

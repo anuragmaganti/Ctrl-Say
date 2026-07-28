@@ -40,8 +40,6 @@ struct SpeechResultRange: Hashable, Sendable {
 struct SpeechCommandMetadata: Equatable, Sendable {
     let resultReceivedAtNanoseconds: UInt64
     let audioEndUptimeNanoseconds: UInt64?
-    let minimumConfidence: Double?
-    let isFinal: Bool
 
     var recognitionLatencyMilliseconds: Double? {
         guard let audioEndUptimeNanoseconds,
@@ -52,45 +50,51 @@ struct SpeechCommandMetadata: Equatable, Sendable {
         return Double(resultReceivedAtNanoseconds - audioEndUptimeNanoseconds) / 1_000_000
     }
 
-    func finalized(releasedAtNanoseconds: UInt64? = nil) -> SpeechCommandMetadata {
+    func released(atNanoseconds: UInt64) -> SpeechCommandMetadata {
         SpeechCommandMetadata(
-            resultReceivedAtNanoseconds: releasedAtNanoseconds
-                ?? resultReceivedAtNanoseconds,
-            audioEndUptimeNanoseconds: audioEndUptimeNanoseconds,
-            minimumConfidence: minimumConfidence,
-            isFinal: true
+            resultReceivedAtNanoseconds: atNanoseconds,
+            audioEndUptimeNanoseconds: audioEndUptimeNanoseconds
         )
     }
 }
 
 enum SpeechCommandFreshnessPolicy {
-    // This adds no wait. It prevents a command that is already executable from
-    // sitting behind startup or clipboard work and firing much later.
-    static let maximumSideEffectAgeNanoseconds: UInt64 = 1_500_000_000
+    enum RejectionReason: String, Equatable, Sendable {
+        case recognition
+        case dispatch
+    }
 
-    static func isFresh(
+    // Apple's fast volatile results normally arrive well inside one audio-tap
+    // interval. A result that is already this old must not perform a delayed
+    // copy or paste. This adds no wait; it only rejects late delivery.
+    static let maximumRecognitionAgeNanoseconds: UInt64 = 500_000_000
+
+    // A fresh result may still spend a short time behind earlier serialized
+    // clipboard work. Keep that protection separate from recognition age so
+    // lowering the late-result ceiling does not reduce safe queue capacity.
+    static let maximumDispatchAgeNanoseconds: UInt64 = 1_500_000_000
+
+    static func rejectionReason(
         _ metadata: SpeechCommandMetadata,
-        command: VoiceCommand,
         at uptimeNanoseconds: UInt64
-    ) -> Bool {
-        let readyAtNanoseconds: UInt64
-        switch command {
-        case .copyNamed, .permanentCopy:
-            // Arbitrary names intentionally remain pending while Apple's
-            // volatile text is incomplete. Their stale clock begins only when
-            // a phrase boundary or finalization makes the latest name safe.
-            readyAtNanoseconds = metadata.resultReceivedAtNanoseconds
-        default:
-            readyAtNanoseconds =
-                metadata.audioEndUptimeNanoseconds
-                ?? metadata.resultReceivedAtNanoseconds
+    ) -> RejectionReason? {
+        if let audioEndUptimeNanoseconds = metadata.audioEndUptimeNanoseconds,
+            uptimeNanoseconds >= audioEndUptimeNanoseconds,
+            uptimeNanoseconds - audioEndUptimeNanoseconds
+                > maximumRecognitionAgeNanoseconds
+        {
+            return .recognition
         }
 
-        guard uptimeNanoseconds >= readyAtNanoseconds else {
-            return true
+        guard uptimeNanoseconds >= metadata.resultReceivedAtNanoseconds else {
+            return nil
         }
-        return uptimeNanoseconds - readyAtNanoseconds
-            <= maximumSideEffectAgeNanoseconds
+        if uptimeNanoseconds - metadata.resultReceivedAtNanoseconds
+            > maximumDispatchAgeNanoseconds
+        {
+            return .dispatch
+        }
+        return nil
     }
 }
 
@@ -178,9 +182,6 @@ struct SpeechCommandGate {
                 || observation.command != nil
             state.metadata = observation.metadata
             state.acceptsVolatileResult = observation.acceptsVolatileResult
-            if state.isFinalized {
-                state.metadata = observation.metadata.finalized()
-            }
         }
 
         states[stateIndex] = state
@@ -243,8 +244,8 @@ struct SpeechCommandGate {
                 continue
             }
             states[index].isFinalized = true
-            states[index].metadata = states[index].metadata.finalized(
-                releasedAtNanoseconds: releasedAtNanoseconds
+            states[index].metadata = states[index].metadata.released(
+                atNanoseconds: releasedAtNanoseconds
             )
         }
     }

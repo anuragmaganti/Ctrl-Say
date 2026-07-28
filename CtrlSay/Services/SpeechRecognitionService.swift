@@ -847,6 +847,10 @@ struct RecognizedSpeechResult: Sendable {
         _ result: SpeechTranscriber.Result,
         analysisStartedAtNanoseconds: UInt64?
     ) {
+        // Capture delivery before attributed-text assembly so `speech_ms`
+        // measures Apple's result latency, while preparation timing below
+        // accounts for Ctrl-Say's own result transformation separately.
+        receivedAtNanoseconds = DispatchTime.now().uptimeNanoseconds
         let attributedText = result.text
         text = String(attributedText.characters)
         let fragments = attributedText.runs.map { run in
@@ -866,7 +870,6 @@ struct RecognizedSpeechResult: Sendable {
         minimumConfidence = attributedText.runs
             .compactMap(\.transcriptionConfidence)
             .min()
-        receivedAtNanoseconds = DispatchTime.now().uptimeNanoseconds
         self.analysisStartedAtNanoseconds = analysisStartedAtNanoseconds
         audioEndUptimeNanoseconds = Self.audioEndUptimeNanoseconds(
             for: result.range.end,

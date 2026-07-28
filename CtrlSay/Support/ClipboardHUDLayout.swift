@@ -29,7 +29,8 @@ enum ClipboardHUDMetrics {
     static func idealHeight(
         itemCount: Int,
         collection: ClipboardCollection,
-        permanentStatusLayout: ClipboardHUDPermanentStatusLayout = .none
+        permanentStatusLayout: ClipboardHUDPermanentStatusLayout = .none,
+        showsNumberedFooter: Bool? = nil
     ) -> CGFloat {
         let copyContentHeight =
             itemCount == 0
@@ -45,7 +46,8 @@ enum ClipboardHUDMetrics {
             listHeight = permanentStatusHeight + copyContentHeight
         }
         let footerHeight =
-            collection == .numbered && itemCount > 0
+            collection == .numbered
+                && (showsNumberedFooter ?? (itemCount > 0))
             ? numberedFooterHeight
             : 0
         let showsStoredCopies =
@@ -65,13 +67,15 @@ enum ClipboardHUDMetrics {
         itemCount: Int,
         collection: ClipboardCollection,
         permanentStatusLayout: ClipboardHUDPermanentStatusLayout = .none,
+        showsNumberedFooter: Bool? = nil,
         visibleFrame: CGRect
     ) -> CGFloat {
         min(
             idealHeight(
                 itemCount: itemCount,
                 collection: collection,
-                permanentStatusLayout: permanentStatusLayout
+                permanentStatusLayout: permanentStatusLayout,
+                showsNumberedFooter: showsNumberedFooter
             ),
             max(0, visibleFrame.height * maximumHeightFraction)
         )

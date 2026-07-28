@@ -138,12 +138,14 @@ Ctrl-Say keeps the latency-sensitive path in memory and uses the native clipboar
 1. After launch, Ctrl-Say prepares one reusable Apple `SpeechAnalyzer` and `SpeechTranscriber` without opening the microphone.
 2. Each Listening session creates a fresh timestamped input stream. `AVAudioEngine` supplies microphone buffers only until Listening stops.
 3. A streaming command scanner evaluates volatile partial results and dispatches safe, complete commands early.
-4. A serial command queue preserves spoken order and prevents clipboard operations from racing.
-5. Copy sends the normal Command-C event to the captured frontmost app and watches `NSPasteboard.changeCount` for bounded completion.
-6. Ctrl-Say deep-snapshots every supported pasteboard item and representation into its in-memory `ClipboardStore`.
-7. Permanent changes update memory immediately, then enter an ordered asynchronous SwiftData persistence queue.
-8. Paste writes the stored payload to `NSPasteboard.general` and sends Command-V to the validated target app.
-9. HUD thumbnails, visual feedback, diagnostics, and persistence telemetry stay outside the critical copy-and-paste path.
+4. A result that arrives outside the measured real-time window is rejected before dispatch, preventing delayed final-result echoes from copying or pasting unexpectedly. Fresh commands do not wait on this check.
+5. An actionable copy records a presentation-only pending label for the HUD and camera-housing feedback. It contains no clipboard content and cannot be pasted.
+6. A serial, user-initiated command worker starts immediately, posting Command-C before the next presentation pass while preserving spoken order and preventing clipboard operations from racing.
+7. Copy sends the normal Command-C event to the captured frontmost app and watches `NSPasteboard.changeCount` for bounded completion.
+8. Ctrl-Say deep-snapshots every supported pasteboard item and representation into its in-memory `ClipboardStore`, replacing the pending row only after capture succeeds.
+9. Permanent changes update memory immediately, then enter an ordered asynchronous SwiftData persistence queue.
+10. Paste writes the stored payload to `NSPasteboard.general` and sends Command-V to the validated target app.
+11. HUD thumbnails, visual rendering, diagnostics, and persistence telemetry stay outside the clipboard I/O path.
 
 ```text
 ClipboardStore (in memory)

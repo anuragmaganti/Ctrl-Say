@@ -8,13 +8,10 @@ enum NotchCommandAction: String, Equatable, Sendable {
 enum NotchFeedbackEvent: Equatable, Sendable {
     case listeningRequested
     case listeningStopped
+    case commandPending(action: NotchCommandAction, label: String)
+    case commandPendingCancelled
     case commandSucceeded(action: NotchCommandAction, label: String)
     case commandFailed(message: String)
-}
-
-struct NotchFeedbackSignal: Equatable, Sendable {
-    let sequence: UInt64
-    let event: NotchFeedbackEvent
 }
 
 enum NotchListeningActivity: Equatable, Sendable {
@@ -36,24 +33,45 @@ enum NotchInteractionMode: Equatable, Sendable {
     }
 }
 
+enum NotchPresentationPhase: Equatable, Sendable {
+    case hidden
+    case listening
+    case feedback
+}
+
 enum NotchVisualState: Equatable, Sendable {
     case hidden
     case preparing
     case listening
+    case pending(action: NotchCommandAction, label: String)
     case success(action: NotchCommandAction, label: String)
     case failure(message: String)
 
     var isVisible: Bool {
         self != .hidden
     }
+
+    var presentationPhase: NotchPresentationPhase {
+        switch self {
+        case .hidden:
+            .hidden
+        case .preparing, .listening:
+            .listening
+        case .pending, .success, .failure:
+            .feedback
+        }
+    }
 }
 
 enum NotchTransientFeedback: Equatable, Sendable {
+    case pending(action: NotchCommandAction, label: String)
     case success(action: NotchCommandAction, label: String)
     case failure(message: String)
 
     var visualState: NotchVisualState {
         switch self {
+        case .pending(let action, let label):
+            .pending(action: action, label: label)
         case .success(let action, let label):
             .success(action: action, label: label)
         case .failure(let message):
@@ -61,8 +79,10 @@ enum NotchTransientFeedback: Equatable, Sendable {
         }
     }
 
-    var duration: Duration {
+    var duration: Duration? {
         switch self {
+        case .pending:
+            nil
         case .success:
             .seconds(1)
         case .failure:
@@ -95,6 +115,7 @@ struct NotchFeedbackReducerState: Equatable, Sendable {
 enum NotchFeedbackReductionEvent: Equatable, Sendable {
     case listeningActivityChanged(NotchListeningActivity)
     case present(NotchTransientFeedback)
+    case clearTransient
     case transientExpired(generation: UInt64)
     case interactionModeChanged(NotchInteractionMode)
 }
@@ -132,10 +153,16 @@ enum NotchFeedbackReducer {
         case .present(let feedback):
             next.transientGeneration &+= 1
             next.transientFeedback = feedback
-            expiration = (
-                generation: next.transientGeneration,
-                duration: feedback.duration
-            )
+            if let duration = feedback.duration {
+                expiration = (
+                    generation: next.transientGeneration,
+                    duration: duration
+                )
+            }
+
+        case .clearTransient:
+            next.transientFeedback = nil
+            next.transientGeneration &+= 1
 
         case .transientExpired(let generation):
             guard generation == state.transientGeneration else {

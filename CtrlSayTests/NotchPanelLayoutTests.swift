@@ -123,6 +123,22 @@ final class NotchPanelLayoutTests: XCTestCase {
         XCTAssertEqual(success.surfaceSize.height, listening.surfaceSize.height)
     }
 
+    func testPendingCopyUsesTheSameRightwardGeometryAsSuccess() {
+        let pending = NotchPanelLayoutCalculator.layout(
+            visualState: .pending(action: .copy, label: "House"),
+            interactionMode: .passive,
+            display: notchedDisplay
+        )
+        let success = NotchPanelLayoutCalculator.layout(
+            visualState: .success(action: .copy, label: "House"),
+            interactionMode: .passive,
+            display: notchedDisplay
+        )
+
+        XCTAssertEqual(pending.frame, success.frame)
+        XCTAssertEqual(pending.surfaceSize, success.surfaceSize)
+    }
+
     func testFailureAlsoExpandsOnlyRightFromPhysicalNotch() {
         let listening = NotchPanelLayoutCalculator.layout(
             visualState: .listening,

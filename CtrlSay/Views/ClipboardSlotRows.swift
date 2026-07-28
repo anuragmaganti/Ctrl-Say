@@ -71,6 +71,36 @@ private struct ClipboardPreview: View {
     }
 }
 
+struct PendingClipboardCopyRow: View {
+    let copy: PendingClipboardCopy
+
+    var body: some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(copy.destination.displayTitle)
+                    .font(.callout.weight(.semibold))
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                Text("Copying…")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+
+            Image(systemName: "doc.on.doc")
+                .font(.system(size: 14, weight: .medium))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+        }
+        .padding(.horizontal, 8)
+        .frame(minHeight: ClipboardHUDMetrics.rowHeight)
+        .allowsHitTesting(false)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Copying to \(copy.destination.displayTitle)")
+    }
+}
+
 struct TemporaryCopyRow: View {
     enum Slot {
         case numbered(Int)

@@ -233,7 +233,7 @@ enum NotchPanelLayoutCalculator {
             switch visualState {
             case .hidden, .preparing, .listening:
                 return baseSize
-            case .success(_, let label):
+            case .pending(_, let label), .success(_, let label):
                 return CGSize(
                     width: baseSize.width
                         + successExtensionWidth(for: label),
@@ -253,7 +253,7 @@ enum NotchPanelLayoutCalculator {
                 return CGSize(width: floatingListeningWidth, height: 36)
             case .preparing, .listening:
                 return CGSize(width: floatingListeningWidth, height: 38)
-            case .success(_, let label):
+            case .pending(_, let label), .success(_, let label):
                 return CGSize(
                     width: floatingListeningWidth
                         + successExtensionWidth(for: label),

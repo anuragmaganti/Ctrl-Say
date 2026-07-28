@@ -34,7 +34,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var notchPresentationState = NotchFeedbackPresentationState()
     private var hudPanel: ClipboardHUDPanelController?
     private var notchPanel: NotchFeedbackPanelController?
-    private var processedNotchFeedbackSequence: UInt64 = 0
     private var terminationTask: Task<Void, Never>?
     #if DEBUG
     private var debugPresentationHarness: DebugPresentationHarness?
@@ -60,9 +59,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        model.onNotchFeedback = { [weak self] event in
+            self?.processNotchFeedback(event)
+        }
         observeListeningState()
         observeHUDPresentation()
-        observeNotchFeedback()
         model.prewarmSpeechRecognitionIfReady()
 
         #if DEBUG
@@ -85,6 +86,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         terminationTask?.cancel()
+        model.onNotchFeedback = nil
         hudPanel?.hide()
         notchPresentationState.reset()
         notchPanel?.hideImmediately()
@@ -145,36 +147,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateNotchListeningPresentation()
     }
 
-    private func observeNotchFeedback() {
-        withObservationTracking {
-            _ = model.notchFeedbackSignal
-        } onChange: { [weak self] in
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                self.processLatestNotchFeedback()
-                self.observeNotchFeedback()
-            }
-        }
-        processLatestNotchFeedback()
-    }
-
     // MARK: - Notch Feedback
 
-    private func processLatestNotchFeedback() {
-        guard let signal = model.notchFeedbackSignal,
-            signal.sequence > processedNotchFeedbackSequence
-        else {
-            return
-        }
-        processedNotchFeedbackSequence = signal.sequence
-
-        switch signal.event {
+    private func processNotchFeedback(_ event: NotchFeedbackEvent) {
+        switch event {
         case .listeningRequested:
             _ = ensureNotchPanel()
             notchPresentationState.setListeningActivity(.preparing)
 
         case .listeningStopped:
             notchPresentationState.setListeningActivity(.inactive)
+
+        case .commandPending(let action, let label):
+            _ = ensureNotchPanel()
+            notchPresentationState.present(
+                .pending(
+                    action: action,
+                    label: NotchFeedbackText.displayLabel(label)
+                )
+            )
+
+        case .commandPendingCancelled:
+            notchPresentationState.clearTransientFeedback()
 
         case .commandSucceeded(let action, let label):
             _ = ensureNotchPanel()

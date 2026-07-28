@@ -23,6 +23,10 @@ final class NotchFeedbackPresentationState {
         apply(.present(feedback))
     }
 
+    func clearTransientFeedback() {
+        apply(.clearTransient)
+    }
+
     func setInteractionMode(_ interactionMode: NotchInteractionMode) {
         apply(.interactionModeChanged(interactionMode))
     }
@@ -56,13 +60,16 @@ final class NotchFeedbackPresentationState {
         // unbounded AppKit constraint-update cycle after command feedback.
         reducerState = reduction.state
 
+        if case .present = event {
+            expirationTask?.cancel()
+            expirationTask = nil
+        }
         if reduction.state.transientFeedback == nil {
             expirationTask?.cancel()
             expirationTask = nil
         }
         guard let expiration = reduction.expiration else { return }
 
-        expirationTask?.cancel()
         expirationTask = Task { [weak self] in
             do {
                 try await Task.sleep(for: expiration.duration)

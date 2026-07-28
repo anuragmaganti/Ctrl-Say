@@ -193,6 +193,7 @@ final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
             itemCount: count,
             collection: presentationState.selectedCollection,
             permanentStatusLayout: permanentStatusLayout,
+            showsNumberedFooter: model.slots.hasTemporaryCopies,
             visibleFrame: screen.visibleFrame
         )
         let frame: CGRect
@@ -289,6 +290,7 @@ final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
             _ = model.slots.numbered.count
             _ = model.slots.temporaryNamed.count
             _ = model.slots.named.count
+            _ = model.pendingClipboardCopies
             _ = model.permanentStorageState
             _ = presentationState.selectedCollection
         } onChange: { [weak self] in
@@ -325,6 +327,7 @@ final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
             itemCount: visibleItemCount,
             collection: presentationState.selectedCollection,
             permanentStatusLayout: permanentStatusLayout,
+            showsNumberedFooter: model.slots.hasTemporaryCopies,
             visibleFrame: screen.visibleFrame
         )
         let target = ClipboardHUDPlacement.resizedFrame(
@@ -340,6 +343,7 @@ final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
             itemCount: visibleItemCount,
             collection: presentationState.selectedCollection,
             permanentStatusLayout: permanentStatusLayout,
+            showsNumberedFooter: model.slots.hasTemporaryCopies,
             visibleFrame: screen.visibleFrame
         )
         let size = CGSize(width: ClipboardHUDMetrics.width, height: height)
@@ -440,9 +444,28 @@ final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
     private var visibleItemCount: Int {
         switch presentationState.selectedCollection {
         case .numbered:
-            model.slots.temporaryCopyCount
+            let storedDestinations = Set(
+                model.slots.numbered.keys.map {
+                    PendingClipboardCopy.Destination.numbered($0)
+                }
+                    + model.slots.temporaryNamed.keys.map {
+                        PendingClipboardCopy.Destination.temporaryNamed($0)
+                    }
+            )
+            return model.pendingClipboardCopies.visibleItemCount(
+                in: .temporary,
+                storedDestinations: storedDestinations
+            )
         case .permanent:
-            model.slots.named.count
+            let storedDestinations = Set(
+                model.slots.named.keys.map {
+                    PendingClipboardCopy.Destination.permanentNamed($0)
+                }
+            )
+            return model.pendingClipboardCopies.visibleItemCount(
+                in: .permanent,
+                storedDestinations: storedDestinations
+            )
         }
     }
 

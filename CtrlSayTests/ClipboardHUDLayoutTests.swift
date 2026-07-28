@@ -2,6 +2,24 @@ import CoreGraphics
 import XCTest
 
 final class ClipboardHUDLayoutTests: XCTestCase {
+    func testPendingOnlyTemporaryRowDoesNotReserveClearAllFooter() {
+        let pendingOnly = ClipboardHUDMetrics.idealHeight(
+            itemCount: 1,
+            collection: .numbered,
+            showsNumberedFooter: false
+        )
+        let storedCopy = ClipboardHUDMetrics.idealHeight(
+            itemCount: 1,
+            collection: .numbered,
+            showsNumberedFooter: true
+        )
+
+        XCTAssertEqual(
+            storedCopy - pendingOnly,
+            ClipboardHUDMetrics.numberedFooterHeight
+        )
+    }
+
     func testDefaultPlacementUsesTopRightInset() {
         let visible = CGRect(x: -1_920, y: 23, width: 1_920, height: 1_057)
         let frame = ClipboardHUDPlacement.defaultFrame(
