@@ -30,7 +30,8 @@ struct DebugPipelineSnapshot {
 
         let metadata = SpeechCommandMetadata(
             resultReceivedAtNanoseconds: result.receivedAtNanoseconds,
-            audioEndUptimeNanoseconds: result.audioEndUptimeNanoseconds
+            audioEndUptimeNanoseconds: result.audioEndUptimeNanoseconds,
+            isFinalResult: result.isFinal
         )
         recognitionLatency =
             metadata.recognitionLatencyMilliseconds

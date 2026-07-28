@@ -77,7 +77,13 @@ struct StreamingVoiceCommandScanner {
         let id: SegmentID
         var range: SpeechResultRange
         var tokens: [StreamingVoiceCommandToken]
+        // The analyzer's volatile-range callback can make a segment stable
+        // before its already-produced result-stream revisions are consumed.
+        // Keep that state separate from whether the result stream itself has
+        // advanced far enough for us to discard the segment's identity.
         var isFinalized: Bool
+        var hasFinalResult: Bool
+        var isResultStreamFinalized: Bool
         var hasTrailingPhraseBoundary: Bool
     }
 
@@ -167,11 +173,20 @@ struct StreamingVoiceCommandScanner {
         let segmentIndex =
             indexForRevision(of: segment.range)
             ?? appendSegment(for: segment)
-        segments[segmentIndex].range = segments[segmentIndex].range.union(segment.range)
+        let previousRange = segments[segmentIndex].range
+        let finalResultCoversSegment =
+            segment.isFinal && segment.range.contains(previousRange)
+        segments[segmentIndex].range = previousRange.union(segment.range)
         segments[segmentIndex].tokens = segment.tokens
         segments[segmentIndex].isFinalized =
             segments[segmentIndex].isFinalized
             || segment.isFinal
+        segments[segmentIndex].hasFinalResult =
+            segments[segmentIndex].hasFinalResult
+            || segment.isFinal
+        segments[segmentIndex].isResultStreamFinalized =
+            segments[segmentIndex].isResultStreamFinalized
+            || finalResultCoversSegment
         segments[segmentIndex].hasTrailingPhraseBoundary =
             segment.hasTrailingPhraseBoundary
 
@@ -226,6 +241,8 @@ struct StreamingVoiceCommandScanner {
                 range: observation.range,
                 tokens: observation.tokens,
                 isFinalized: observation.isFinal,
+                hasFinalResult: observation.isFinal,
+                isResultStreamFinalized: observation.isFinal,
                 hasTrailingPhraseBoundary: observation.hasTrailingPhraseBoundary
             )
         )
@@ -240,7 +257,7 @@ struct StreamingVoiceCommandScanner {
         }
 
         return segments.firstIndex { state in
-            !state.isFinalized && state.range.overlaps(range)
+            !state.hasFinalResult && state.range.overlaps(range)
         }
     }
 
@@ -268,6 +285,16 @@ struct StreamingVoiceCommandScanner {
             || CMTimeCompare(watermark, resultStreamFinalizedThrough) > 0
         {
             resultStreamFinalizedThrough = watermark
+        }
+
+        for index in segments.indices
+        where
+            CMTimeCompare(
+                segments[index].range.end,
+                resultStreamFinalizedThrough
+            ) <= 0
+        {
+            segments[index].isResultStreamFinalized = true
         }
     }
 
@@ -837,7 +864,7 @@ struct StreamingVoiceCommandScanner {
         let maximumGap = maximumCrossSegmentGap
 
         segments.removeAll { segment in
-            guard segment.isFinalized,
+            guard segment.isResultStreamFinalized,
                 !queuedSourceIDs.contains(segment.id),
                 latestEnd.isNumeric,
                 segment.range.end.isNumeric

@@ -40,6 +40,7 @@ struct SpeechResultRange: Hashable, Sendable {
 struct SpeechCommandMetadata: Equatable, Sendable {
     let resultReceivedAtNanoseconds: UInt64
     let audioEndUptimeNanoseconds: UInt64?
+    let isFinalResult: Bool
 
     var recognitionLatencyMilliseconds: Double? {
         guard let audioEndUptimeNanoseconds,
@@ -53,7 +54,8 @@ struct SpeechCommandMetadata: Equatable, Sendable {
     func released(atNanoseconds: UInt64) -> SpeechCommandMetadata {
         SpeechCommandMetadata(
             resultReceivedAtNanoseconds: atNanoseconds,
-            audioEndUptimeNanoseconds: audioEndUptimeNanoseconds
+            audioEndUptimeNanoseconds: audioEndUptimeNanoseconds,
+            isFinalResult: true
         )
     }
 }
@@ -65,9 +67,15 @@ enum SpeechCommandFreshnessPolicy {
     }
 
     // Apple's fast volatile results normally arrive well inside one audio-tap
-    // interval. A result that is already this old must not perform a delayed
-    // copy or paste. This adds no wait; it only rejects late delivery.
+    // interval. Keep their deadline tight so old tentative interpretations
+    // cannot perform delayed side effects.
     static let maximumRecognitionAgeNanoseconds: UInt64 = 500_000_000
+
+    // Apple doesn't guarantee that every phrase receives a useful tentative
+    // interpretation. A first-seen finalized command therefore gets a bounded
+    // fallback window. This is a deadline, never an added wait: dispatch still
+    // begins as soon as the result arrives.
+    static let maximumFinalRecognitionAgeNanoseconds: UInt64 = 1_500_000_000
 
     // A fresh result may still spend a short time behind earlier serialized
     // clipboard work. Keep that protection separate from recognition age so
@@ -81,7 +89,9 @@ enum SpeechCommandFreshnessPolicy {
         if let audioEndUptimeNanoseconds = metadata.audioEndUptimeNanoseconds,
             uptimeNanoseconds >= audioEndUptimeNanoseconds,
             uptimeNanoseconds - audioEndUptimeNanoseconds
-                > maximumRecognitionAgeNanoseconds
+                > (metadata.isFinalResult
+                    ? maximumFinalRecognitionAgeNanoseconds
+                    : maximumRecognitionAgeNanoseconds)
         {
             return .recognition
         }

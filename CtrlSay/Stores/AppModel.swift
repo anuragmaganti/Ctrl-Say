@@ -513,7 +513,8 @@ final class AppModel {
 
         let metadata = SpeechCommandMetadata(
             resultReceivedAtNanoseconds: result.receivedAtNanoseconds,
-            audioEndUptimeNanoseconds: result.audioEndUptimeNanoseconds
+            audioEndUptimeNanoseconds: result.audioEndUptimeNanoseconds,
+            isFinalResult: result.isFinal
         )
         let observation = SpeechCommandObservation(
             range: SpeechResultRange(result.range),
@@ -596,7 +597,8 @@ final class AppModel {
                 resultReceivedAtNanoseconds: resultReceivedAtNanoseconds,
                 audioEndUptimeNanoseconds: audioEndUptimeNanoseconds?(
                     candidate.range
-                )
+                ),
+                isFinalResult: resultIsFinal
             )
             let isExistingNamedRevision =
                 candidate.command.isRevisableNamedCopy
@@ -1409,9 +1411,15 @@ final class AppModel {
         succeeded: Bool
     ) {
         let speechMilliseconds = queued.speechMetadata?.recognitionLatencyMilliseconds ?? -1
+        let resultState: String
+        if let isFinalResult = queued.speechMetadata?.isFinalResult {
+            resultState = isFinalResult ? "final" : "volatile"
+        } else {
+            resultState = "none"
+        }
         let clipboardMilliseconds = clipboardMilliseconds ?? -1
         Telemetry.performance.info(
-            "\(queued.operation.telemetryName, privacy: .public) speech_ms=\(speechMilliseconds, privacy: .public) queue_ms=\(queueWaitMilliseconds, privacy: .public) execute_ms=\(executionMilliseconds, privacy: .public) clipboard_ms=\(clipboardMilliseconds, privacy: .public) target_status=\(targetStatus.rawValue, privacy: .public) success=\(succeeded, privacy: .public)"
+            "\(queued.operation.telemetryName, privacy: .public) result_state=\(resultState, privacy: .public) speech_ms=\(speechMilliseconds, privacy: .public) queue_ms=\(queueWaitMilliseconds, privacy: .public) execute_ms=\(executionMilliseconds, privacy: .public) clipboard_ms=\(clipboardMilliseconds, privacy: .public) target_status=\(targetStatus.rawValue, privacy: .public) success=\(succeeded, privacy: .public)"
         )
     }
 
@@ -1421,8 +1429,9 @@ final class AppModel {
         reason: SpeechCommandFreshnessPolicy.RejectionReason
     ) {
         let speechMilliseconds = metadata.recognitionLatencyMilliseconds ?? -1
+        let resultState = metadata.isFinalResult ? "final" : "volatile"
         Telemetry.performance.info(
-            "\(command.telemetryName, privacy: .public) speech_ms=\(speechMilliseconds, privacy: .public) queue_ms=0.0 execute_ms=0.0 clipboard_ms=-1.0 target_status=\(TargetTelemetryStatus.notChecked.rawValue, privacy: .public) success=false stale_stage=\(reason.rawValue, privacy: .public)"
+            "\(command.telemetryName, privacy: .public) result_state=\(resultState, privacy: .public) speech_ms=\(speechMilliseconds, privacy: .public) queue_ms=0.0 execute_ms=0.0 clipboard_ms=-1.0 target_status=\(TargetTelemetryStatus.notChecked.rawValue, privacy: .public) success=false stale_stage=\(reason.rawValue, privacy: .public)"
         )
         Telemetry.commands.warning(
             "\(command.telemetryName, privacy: .public) rejected before dispatch stale_stage=\(reason.rawValue, privacy: .public)"

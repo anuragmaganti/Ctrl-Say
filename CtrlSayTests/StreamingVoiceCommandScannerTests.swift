@@ -1085,6 +1085,50 @@ final class StreamingVoiceCommandScannerTests: XCTestCase {
         )
     }
 
+    func testExternalFinalizationDoesNotDiscardIdentityBeforeQueuedFinalPartition() throws {
+        var scanner = StreamingVoiceCommandScanner()
+        let volatile = scanner.ingest(
+            StreamingVoiceCommandSegment(
+                range: timeRange(0, 1.665),
+                tokens: [
+                    StreamingVoiceCommandToken(
+                        "please paste two now",
+                        range: timeRange(0, 1.665)
+                    )
+                ]
+            )
+        )
+        let id = try XCTUnwrap(upserts(in: volatile).first?.id)
+        scanner.markCommitted(id)
+
+        // SpeechAnalyzer documents that its volatile-range callback can run
+        // before already-produced result-stream elements are consumed. Newer
+        // audio may therefore arrive while the corresponding final partition
+        // is still queued behind this external finalization signal.
+        XCTAssertTrue(
+            scanner.advanceFinalization(to: time(1.665)).mutations.isEmpty
+        )
+        XCTAssertTrue(
+            scanner.ingest(
+                segment(2...4, words: ["unrelated", "speech"])
+            ).mutations.isEmpty
+        )
+
+        let queuedFinalPartition = scanner.ingest(
+            StreamingVoiceCommandSegment(
+                range: timeRange(0.660, 1.320),
+                tokens: [
+                    token("paste", 0.660, 1.140),
+                    token("two", 1.140, 1.320),
+                ],
+                finalizationTime: time(1.320),
+                isFinal: true
+            )
+        )
+
+        XCTAssertTrue(queuedFinalPartition.mutations.isEmpty)
+    }
+
     func testFinalPartitionCanRevealARealSecondRepeatedCommand() throws {
         var scanner = StreamingVoiceCommandScanner()
         let volatile = scanner.ingest(

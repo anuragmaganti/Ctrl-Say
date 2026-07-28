@@ -6,7 +6,8 @@ final class SpeechCommandGateTests: XCTestCase {
         let maximum = SpeechCommandFreshnessPolicy.maximumRecognitionAgeNanoseconds
         let metadata = SpeechCommandMetadata(
             resultReceivedAtNanoseconds: 1_000,
-            audioEndUptimeNanoseconds: 1_000
+            audioEndUptimeNanoseconds: 1_000,
+            isFinalResult: false
         )
 
         XCTAssertNil(
@@ -24,12 +25,39 @@ final class SpeechCommandGateTests: XCTestCase {
         )
     }
 
+    func testFinalResultGetsBoundedFallbackWindowWithoutAddingDelay() {
+        let audioEnd: UInt64 = 1_000_000_000
+        let resultReceived = audioEnd + 1_105_000_000
+        let metadata = SpeechCommandMetadata(
+            resultReceivedAtNanoseconds: resultReceived,
+            audioEndUptimeNanoseconds: audioEnd,
+            isFinalResult: true
+        )
+
+        XCTAssertNil(
+            SpeechCommandFreshnessPolicy.rejectionReason(
+                metadata,
+                at: resultReceived
+            )
+        )
+        XCTAssertEqual(
+            SpeechCommandFreshnessPolicy.rejectionReason(
+                metadata,
+                at: audioEnd
+                    + SpeechCommandFreshnessPolicy
+                    .maximumFinalRecognitionAgeNanoseconds + 1
+            ),
+            .recognition
+        )
+    }
+
     func testDispatchFreshnessRemainsIndependentFromRecognitionAge() {
         let maximum = SpeechCommandFreshnessPolicy.maximumDispatchAgeNanoseconds
         let receivedAt: UInt64 = 10_000_000_000
         let metadata = SpeechCommandMetadata(
             resultReceivedAtNanoseconds: receivedAt,
-            audioEndUptimeNanoseconds: nil
+            audioEndUptimeNanoseconds: nil,
+            isFinalResult: false
         )
 
         XCTAssertNil(
@@ -50,7 +78,8 @@ final class SpeechCommandGateTests: XCTestCase {
     func testRecognitionStalenessWinsWhenBothLimitsAreExceeded() {
         let metadata = SpeechCommandMetadata(
             resultReceivedAtNanoseconds: 1_000,
-            audioEndUptimeNanoseconds: 500
+            audioEndUptimeNanoseconds: 500,
+            isFinalResult: false
         )
         let now = 1_000 + SpeechCommandFreshnessPolicy.maximumDispatchAgeNanoseconds + 1
 
@@ -369,6 +398,7 @@ final class SpeechCommandGateTests: XCTestCase {
 
         let metadata = try XCTUnwrap(update.mutations.upsertMetadata)
         XCTAssertEqual(metadata.resultReceivedAtNanoseconds, 9_000_000)
+        XCTAssertTrue(metadata.isFinalResult)
     }
 
     func testEarlierUnsafeRevisionAlsoRevokesQueuedLaterCommand() throws {
@@ -511,7 +541,8 @@ final class SpeechCommandGateTests: XCTestCase {
             acceptsVolatileResult: acceptsVolatile,
             metadata: SpeechCommandMetadata(
                 resultReceivedAtNanoseconds: receivedAtNanoseconds,
-                audioEndUptimeNanoseconds: 1_000_000
+                audioEndUptimeNanoseconds: 1_000_000,
+                isFinalResult: isFinal
             )
         )
     }
