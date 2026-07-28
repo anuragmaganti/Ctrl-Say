@@ -33,7 +33,7 @@ Numbered and ordinary named copies are temporary working slots. Permanent copies
 
 ## Highlights
 
-- **Fast streaming commands.** Ctrl-Say uses Apple’s on-device speech APIs and can act on a complete command from a partial transcription instead of waiting for an entire utterance to finish.
+- **Fast, warm streaming commands.** After setup, Ctrl-Say prepares Apple’s on-device analyzer in the background, reuses it across listening sessions, and can act on a complete command from a partial transcription instead of waiting for an entire utterance to finish.
 - **Numbers or natural names.** Use slots `1` through `10`, or memorable one-to-five-word names such as `project summary` and `New York address`.
 - **Durable permanent copies.** Explicitly permanent slots survive relaunches, restarts, rebuilds, and app updates.
 - **Native clipboard fidelity.** Plain text, rich text, images, files, mixed content, multiple items, and their original pasteboard representations are preserved.
@@ -89,12 +89,13 @@ Ctrl-Say asks macOS only for permissions required by its core interaction:
 | Input Monitoring | Detects the physical Right Option key outside Ctrl-Say |
 | Accessibility | Sends native Copy and Paste keyboard events to the frontmost app |
 
-The first listening session may ask macOS to install Apple’s English on-device speech asset.
+After setup, macOS may need to install Apple’s English on-device speech asset. Ctrl-Say then prepares recognition in the background without opening the microphone.
 
 ## Privacy
 
 - Ctrl-Say does not continuously collect native clipboard history.
 - Only content explicitly assigned with a copy command enters a slot.
+- The microphone and audio engine run only while Listening is enabled. The prepared Apple analyzer receives no audio between sessions and is released under memory pressure.
 - Temporary copies disappear when the app quits.
 - Permanent copies remain local to the current macOS user and do not sync to a cloud service.
 - Clipboard contents, preview text, thumbnails, filenames, and copied content are never written to application logs.
@@ -134,14 +135,15 @@ This local install is for development and personal use. Public distribution stil
 
 Ctrl-Say keeps the latency-sensitive path in memory and uses the native clipboard only as a bridge to other apps:
 
-1. `AVAudioEngine` streams microphone buffers into Apple’s `SpeechAnalyzer` and `SpeechTranscriber`.
-2. A streaming command scanner evaluates volatile partial results and dispatches safe, complete commands early.
-3. A serial command queue preserves spoken order and prevents clipboard operations from racing.
-4. Copy sends the normal Command-C event to the captured frontmost app and watches `NSPasteboard.changeCount` for bounded completion.
-5. Ctrl-Say deep-snapshots every supported pasteboard item and representation into its in-memory `ClipboardStore`.
-6. Permanent changes update memory immediately, then enter an ordered asynchronous SwiftData persistence queue.
-7. Paste writes the stored payload to `NSPasteboard.general` and sends Command-V to the validated target app.
-8. HUD thumbnails, visual feedback, diagnostics, and persistence telemetry stay outside the critical copy-and-paste path.
+1. After launch, Ctrl-Say prepares one reusable Apple `SpeechAnalyzer` and `SpeechTranscriber` without opening the microphone.
+2. Each Listening session creates a fresh timestamped input stream. `AVAudioEngine` supplies microphone buffers only until Listening stops.
+3. A streaming command scanner evaluates volatile partial results and dispatches safe, complete commands early.
+4. A serial command queue preserves spoken order and prevents clipboard operations from racing.
+5. Copy sends the normal Command-C event to the captured frontmost app and watches `NSPasteboard.changeCount` for bounded completion.
+6. Ctrl-Say deep-snapshots every supported pasteboard item and representation into its in-memory `ClipboardStore`.
+7. Permanent changes update memory immediately, then enter an ordered asynchronous SwiftData persistence queue.
+8. Paste writes the stored payload to `NSPasteboard.general` and sends Command-V to the validated target app.
+9. HUD thumbnails, visual feedback, diagnostics, and persistence telemetry stay outside the critical copy-and-paste path.
 
 ```text
 ClipboardStore (in memory)
@@ -218,7 +220,7 @@ xcodebuild build \
   ONLY_ACTIVE_ARCH=NO
 ```
 
-The test suite covers command grammar, streaming-speech revisions, Right Option gestures, clipboard payload limits, permanent-storage round trips, mutation ordering, HUD layout and interactions, thumbnails, camera-housing geometry, Launch at Login, and lifecycle failures.
+The test suite covers command grammar, streaming-speech revisions, cross-session result isolation, Right Option gestures, clipboard payload limits, permanent-storage round trips, mutation ordering, HUD layout and interactions, thumbnails, camera-housing geometry, Launch at Login, and lifecycle failures.
 
 The test bundle is intentionally unhosted: it compiles only the production
 support files listed under Xcode’s **Test Support Sources** group. Tests therefore

@@ -18,6 +18,22 @@ nonisolated struct AudioBufferTransfer: @unchecked Sendable {
         return Double(buffer.frameLength) / sampleRate * 1_000
     }
 
+    var bufferEndTime: CMTime? {
+        guard let bufferStartTime,
+            bufferStartTime.isNumeric,
+            buffer.format.sampleRate.isFinite,
+            buffer.format.sampleRate > 0,
+            buffer.format.sampleRate <= Double(Int32.max)
+        else {
+            return nil
+        }
+        let duration = CMTime(
+            value: CMTimeValue(buffer.frameLength),
+            timescale: CMTimeScale(buffer.format.sampleRate.rounded())
+        )
+        return CMTimeAdd(bufferStartTime, duration)
+    }
+
     func ageNanoseconds(at uptimeNanoseconds: UInt64) -> UInt64? {
         guard let timelineStartUptimeNanoseconds,
             let bufferStartTime,
@@ -51,30 +67,30 @@ nonisolated struct AudioFormatTransfer: @unchecked Sendable {
 // MARK: - Real-Time Audio Tap
 
 nonisolated func makeAudioTapBlock(
-    continuation: AsyncStream<AudioBufferTransfer>.Continuation
+    continuation: AsyncStream<AudioBufferTransfer>.Continuation,
+    timeline: SpeechAudioTimeline
 ) -> AVAudioNodeTapBlock {
-    let state = AudioTapState()
     return { buffer, time in
         // Core Audio invokes taps on its real-time queue. Constructing this
         // block outside MainActor isolation prevents Swift 6 from asserting
         // that the callback must execute on the main dispatch queue.
-        let timing = state.timing(for: time, buffer: buffer)
+        let timing = timeline.timing(for: time, buffer: buffer)
         guard let ownedBuffer = buffer.copy() as? AVAudioPCMBuffer else {
-            state.droppedBufferCount += 1
+            timeline.droppedBufferCount += 1
             return
         }
         let transfer = AudioBufferTransfer(
             buffer: ownedBuffer,
             bufferStartTime: timing.bufferStartTime,
             timelineStartUptimeNanoseconds: timing.timelineStartUptimeNanoseconds,
-            precedingDroppedBufferCount: state.droppedBufferCount,
+            precedingDroppedBufferCount: timeline.droppedBufferCount,
             startsNewSourceSegment: timing.startsNewSourceSegment
         )
         if case .dropped = continuation.yield(transfer) {
             // AVAudioEngine serializes callbacks for a tap. Reporting the
             // cumulative value on the next retained buffer keeps logging and
             // task creation off the real-time audio queue.
-            state.droppedBufferCount += 1
+            timeline.droppedBufferCount += 1
         }
     }
 }
@@ -87,7 +103,7 @@ nonisolated private struct AudioTapTiming {
     let startsNewSourceSegment: Bool
 }
 
-nonisolated private final class AudioTapState: @unchecked Sendable {
+nonisolated final class SpeechAudioTimeline: @unchecked Sendable {
     private struct SampleAnchor {
         let sampleTime: AVAudioFramePosition
         let sampleRate: Double
@@ -99,7 +115,11 @@ nonisolated private final class AudioTapState: @unchecked Sendable {
     private var timelineStartUptimeNanoseconds: UInt64?
     var droppedBufferCount = 0
 
-    func timing(
+    func resetDroppedBufferCount() {
+        droppedBufferCount = 0
+    }
+
+    fileprivate func timing(
         for time: AVAudioTime,
         buffer: AVAudioPCMBuffer
     ) -> AudioTapTiming {
@@ -373,64 +393,12 @@ actor AudioBufferConverter {
                 guard inputState.suppliedInput else {
                     throw SpeechServiceError.audioConversionFailed
                 }
-                expectedInputStartTime = inputEndTime(for: transfer)
+                expectedInputStartTime = transfer.bufferEndTime
                 return analyzerInputs
             case .haveData:
                 guard output.frameLength > 0 else {
                     throw SpeechServiceError.audioConversionFailed
                 }
-            case .error:
-                throw SpeechServiceError.audioConversionFailed
-            @unknown default:
-                throw SpeechServiceError.audioConversionFailed
-            }
-        }
-
-        throw SpeechServiceError.audioConversionFailed
-    }
-
-    func finish(to outputTransfer: AudioFormatTransfer) throws -> [AnalyzerInput] {
-        guard let converter else { return [] }
-        let outputFormat = outputTransfer.format
-        let capacity = AVAudioFrameCount(
-            max(256, min(4_096, outputFormat.sampleRate * 0.05))
-        )
-        var analyzerInputs: [AnalyzerInput] = []
-
-        for _ in 0..<Self.maximumConversionPasses {
-            guard
-                let output = AVAudioPCMBuffer(
-                    pcmFormat: outputFormat,
-                    frameCapacity: capacity
-                )
-            else {
-                throw SpeechServiceError.audioConversionUnavailable
-            }
-            var conversionError: NSError?
-            let status = converter.convert(
-                to: output,
-                error: &conversionError
-            ) { _, inputStatus in
-                inputStatus.pointee = .endOfStream
-                return nil
-            }
-
-            if let conversionError { throw conversionError }
-            if output.frameLength > 0 {
-                analyzerInputs.append(
-                    analyzerInput(for: output, fallbackStartTime: nil)
-                )
-            }
-
-            switch status {
-            case .endOfStream:
-                clearConversionState()
-                return analyzerInputs
-            case .inputRanDry where output.frameLength == 0:
-                clearConversionState()
-                return analyzerInputs
-            case .haveData, .inputRanDry:
-                continue
             case .error:
                 throw SpeechServiceError.audioConversionFailed
             @unknown default:
@@ -479,18 +447,6 @@ actor AudioBufferConverter {
         return CMTimeCompare(proposed, nextOutputStartTime) >= 0
             ? proposed
             : nextOutputStartTime
-    }
-
-    private func inputEndTime(for transfer: AudioBufferTransfer) -> CMTime? {
-        guard let startTime = transfer.bufferStartTime,
-            let duration = duration(
-                frameCount: transfer.buffer.frameLength,
-                sampleRate: transfer.buffer.format.sampleRate
-            )
-        else {
-            return nil
-        }
-        return CMTimeAdd(startTime, duration)
     }
 
     private func analyzerInput(

@@ -18,7 +18,7 @@
 - Ctrl-Say is a voice-controlled set of numbered and named clipboard slots. Commands include `copy 1`, `paste 1`, `copy house`, `paste house`, and `permanent copy house`.
 - End-to-end perceived latency is the primary product requirement. Optimize the speech-to-command-to-paste path before dashboard polish or additional features.
 - Use Apple's on-device transcription. Act on a confidently recognized complete command from partial results instead of waiting for utterance finalization when safe.
-- Keep the transcription pipeline warm only while an explicit Listening mode is enabled. Do not require network access for commands.
+- Capture microphone audio only while Listening is enabled. Apple-managed recognition resources may remain prepared between sessions when measured latency benefits justify their bounded footprint; release them under memory pressure and verify zero idle processing. Do not require network access for commands.
 
 ## Clipboard architecture
 

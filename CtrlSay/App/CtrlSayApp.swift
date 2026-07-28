@@ -63,6 +63,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         observeListeningState()
         observeHUDPresentation()
         observeNotchFeedback()
+        model.prewarmSpeechRecognitionIfReady()
 
         #if DEBUG
         let debugPresentationHarness = DebugPresentationHarness(

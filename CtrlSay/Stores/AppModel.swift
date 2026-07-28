@@ -33,6 +33,7 @@ final class AppModel {
     @ObservationIgnored private var listeningTransitionTask: Task<Void, Never>?
     @ObservationIgnored private var vocabularyRefreshPending = false
     @ObservationIgnored private var vocabularyRefreshTask: Task<Void, Never>?
+    @ObservationIgnored private var speechPrewarmTask: Task<Void, Never>?
     @ObservationIgnored private var hudPresentationRequestedAtNanoseconds: UInt64?
     @ObservationIgnored private var pendingHUDRowAppearance:
         (
@@ -339,7 +340,9 @@ final class AppModel {
     func requestMicrophoneAccess() {
         Task {
             let granted = await speech.requestMicrophoneAccess()
-            if !granted {
+            if granted {
+                prewarmSpeechRecognitionIfReady()
+            } else {
                 SystemSettingsLauncher.open()
             }
         }
@@ -353,6 +356,26 @@ final class AppModel {
         speech.refreshMicrophoneAuthorization()
         hasEventPostingAccess = clipboard.hasEventPostingAccess
         hasKeyboardMonitoringAccess = rightOptionMonitor?.refreshGlobalMonitoringAccess() == true
+        prewarmSpeechRecognitionIfReady()
+    }
+
+    /// Prepares only Apple's recognition resources. It never opens the
+    /// microphone and waits for restored permanent names before setting the
+    /// initial contextual vocabulary.
+    func prewarmSpeechRecognitionIfReady() {
+        guard isReadyForCommands, speechPrewarmTask == nil else { return }
+
+        let task = Task(priority: .utility) { @MainActor [weak self] in
+            guard let self else { return }
+            await self.waitForPermanentStorageRestore()
+            guard self.isReadyForCommands else {
+                self.speechPrewarmTask = nil
+                return
+            }
+            await self.speech.prewarm(vocabulary: Array(self.slots.allNamedKeys))
+            self.speechPrewarmTask = nil
+        }
+        speechPrewarmTask = task
     }
 
     // MARK: - Listening Intent
@@ -1539,9 +1562,9 @@ final class AppModel {
                 await listeningTransitionTask.value
             }
 
-            guard speech.isListening else { continue }
             let vocabulary = Array(slots.allNamedKeys)
             if !(await speech.updateVocabulary(vocabulary)) {
+                guard speech.isListening else { continue }
                 try? await Task.sleep(for: .milliseconds(50))
                 guard speech.isListening else { continue }
                 _ = await speech.updateVocabulary(Array(slots.allNamedKeys))
