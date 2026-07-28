@@ -2,56 +2,48 @@ import CoreMedia
 import XCTest
 
 final class SpeechCommandGateTests: XCTestCase {
-    func testRecognitionFreshnessRejectsLateResultWithoutAddingDelay() {
-        let maximum = SpeechCommandFreshnessPolicy.maximumRecognitionAgeNanoseconds
-        let metadata = SpeechCommandMetadata(
-            resultReceivedAtNanoseconds: 1_000,
-            audioEndUptimeNanoseconds: 1_000,
-            isFinalResult: false
-        )
-
-        XCTAssertNil(
-            SpeechCommandFreshnessPolicy.rejectionReason(
-                metadata,
-                at: 1_000 + maximum
-            )
-        )
-        XCTAssertEqual(
-            SpeechCommandFreshnessPolicy.rejectionReason(
-                metadata,
-                at: 1_001 + maximum
-            ),
-            .recognition
-        )
-    }
-
-    func testFinalResultGetsBoundedFallbackWindowWithoutAddingDelay() {
+    func testDelayedCurrentSessionResultIsEligibleWhenAppleDeliversIt() {
         let audioEnd: UInt64 = 1_000_000_000
-        let resultReceived = audioEnd + 1_105_000_000
+        let resultReceived = audioEnd + 4_000_000_000
         let metadata = SpeechCommandMetadata(
             resultReceivedAtNanoseconds: resultReceived,
             audioEndUptimeNanoseconds: audioEnd,
-            isFinalResult: true
+            isFinalResult: false
         )
 
-        XCTAssertNil(
-            SpeechCommandFreshnessPolicy.rejectionReason(
+        XCTAssertTrue(
+            SpeechCommandFreshnessPolicy.isFreshForDispatch(
                 metadata,
                 at: resultReceived
             )
         )
-        XCTAssertEqual(
-            SpeechCommandFreshnessPolicy.rejectionReason(
+    }
+
+    func testAudioAgeDoesNotConsumeDispatchWindow() {
+        let resultReceived: UInt64 = 10_000_000_000
+        let metadata = SpeechCommandMetadata(
+            resultReceivedAtNanoseconds: resultReceived,
+            audioEndUptimeNanoseconds: 1_000,
+            isFinalResult: true
+        )
+
+        XCTAssertTrue(
+            SpeechCommandFreshnessPolicy.isFreshForDispatch(
                 metadata,
-                at: audioEnd
-                    + SpeechCommandFreshnessPolicy
-                    .maximumFinalRecognitionAgeNanoseconds + 1
-            ),
-            .recognition
+                at: resultReceived
+            )
+        )
+        XCTAssertFalse(
+            SpeechCommandFreshnessPolicy.isFreshForDispatch(
+                metadata,
+                at: resultReceived
+                    + SpeechCommandFreshnessPolicy.maximumDispatchAgeNanoseconds
+                    + 1
+            )
         )
     }
 
-    func testDispatchFreshnessRemainsIndependentFromRecognitionAge() {
+    func testDispatchFreshnessExpiresOnlyAfterQueueDeadline() {
         let maximum = SpeechCommandFreshnessPolicy.maximumDispatchAgeNanoseconds
         let receivedAt: UInt64 = 10_000_000_000
         let metadata = SpeechCommandMetadata(
@@ -60,32 +52,32 @@ final class SpeechCommandGateTests: XCTestCase {
             isFinalResult: false
         )
 
-        XCTAssertNil(
-            SpeechCommandFreshnessPolicy.rejectionReason(
+        XCTAssertTrue(
+            SpeechCommandFreshnessPolicy.isFreshForDispatch(
                 metadata,
                 at: receivedAt + maximum
             )
         )
-        XCTAssertEqual(
-            SpeechCommandFreshnessPolicy.rejectionReason(
+        XCTAssertFalse(
+            SpeechCommandFreshnessPolicy.isFreshForDispatch(
                 metadata,
                 at: receivedAt + maximum + 1
-            ),
-            .dispatch
+            )
         )
     }
 
-    func testRecognitionStalenessWinsWhenBothLimitsAreExceeded() {
+    func testClockSkewDoesNotRejectAJustReceivedCommand() {
         let metadata = SpeechCommandMetadata(
-            resultReceivedAtNanoseconds: 1_000,
+            resultReceivedAtNanoseconds: 2_000,
             audioEndUptimeNanoseconds: 500,
             isFinalResult: false
         )
-        let now = 1_000 + SpeechCommandFreshnessPolicy.maximumDispatchAgeNanoseconds + 1
 
-        XCTAssertEqual(
-            SpeechCommandFreshnessPolicy.rejectionReason(metadata, at: now),
-            .recognition
+        XCTAssertTrue(
+            SpeechCommandFreshnessPolicy.isFreshForDispatch(
+                metadata,
+                at: 1_999
+            )
         )
     }
 

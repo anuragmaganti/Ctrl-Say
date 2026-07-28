@@ -624,25 +624,6 @@ final class AppModel {
                 ),
                 isFinalResult: resultIsFinal
             )
-            let isExistingNamedRevision =
-                candidate.command.isRevisableNamedCopy
-                && activeNamedCopyCommands[candidate.id] != nil
-            if !isExistingNamedRevision,
-                SpeechCommandFreshnessPolicy.rejectionReason(
-                    metadata,
-                    at: DispatchTime.now().uptimeNanoseconds
-                ) == .recognition
-            {
-                recordRejectedSpeechCandidate(
-                    candidate.command,
-                    metadata: metadata,
-                    reason: .recognition
-                )
-                removePendingCopy(identity: identity)
-                streamingCommandScanner.markCommitted(candidate.id)
-                capturedSpeechTargets.removeValue(forKey: identity)
-                return
-            }
             let pendingDestination = pendingCopyDestination(
                 for: candidate.command
             )
@@ -1146,7 +1127,7 @@ final class AppModel {
         if case .voice(let command) = queued.operation,
             command.requiresExternalTarget,
             let metadata = queued.speechMetadata,
-            let rejectionReason = SpeechCommandFreshnessPolicy.rejectionReason(
+            !SpeechCommandFreshnessPolicy.isFreshForDispatch(
                 metadata,
                 at: DispatchTime.now().uptimeNanoseconds
             )
@@ -1160,7 +1141,7 @@ final class AppModel {
                 succeeded: false
             )
             Telemetry.commands.warning(
-                "\(queued.operation.telemetryName, privacy: .public) dropped stale_stage=\(rejectionReason.rawValue, privacy: .public)"
+                "\(queued.operation.telemetryName, privacy: .public) dropped stale_stage=dispatch"
             )
             removePendingCopy(identity: identity)
             finishActiveNamedCopyAfterFailure(identity)
@@ -1444,21 +1425,6 @@ final class AppModel {
         let clipboardMilliseconds = clipboardMilliseconds ?? -1
         Telemetry.performance.info(
             "\(queued.operation.telemetryName, privacy: .public) result_state=\(resultState, privacy: .public) speech_ms=\(speechMilliseconds, privacy: .public) queue_ms=\(queueWaitMilliseconds, privacy: .public) execute_ms=\(executionMilliseconds, privacy: .public) clipboard_ms=\(clipboardMilliseconds, privacy: .public) target_status=\(targetStatus.rawValue, privacy: .public) success=\(succeeded, privacy: .public)"
-        )
-    }
-
-    private func recordRejectedSpeechCandidate(
-        _ command: VoiceCommand,
-        metadata: SpeechCommandMetadata,
-        reason: SpeechCommandFreshnessPolicy.RejectionReason
-    ) {
-        let speechMilliseconds = metadata.recognitionLatencyMilliseconds ?? -1
-        let resultState = metadata.isFinalResult ? "final" : "volatile"
-        Telemetry.performance.info(
-            "\(command.telemetryName, privacy: .public) result_state=\(resultState, privacy: .public) speech_ms=\(speechMilliseconds, privacy: .public) queue_ms=0.0 execute_ms=0.0 clipboard_ms=-1.0 target_status=\(TargetTelemetryStatus.notChecked.rawValue, privacy: .public) success=false stale_stage=\(reason.rawValue, privacy: .public)"
-        )
-        Telemetry.commands.warning(
-            "\(command.telemetryName, privacy: .public) rejected before dispatch stale_stage=\(reason.rawValue, privacy: .public)"
         )
     }
 

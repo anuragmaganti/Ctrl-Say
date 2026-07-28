@@ -61,50 +61,23 @@ struct SpeechCommandMetadata: Equatable, Sendable {
 }
 
 enum SpeechCommandFreshnessPolicy {
-    enum RejectionReason: String, Equatable, Sendable {
-        case recognition
-        case dispatch
-    }
-
-    // Apple's fast volatile results normally arrive well inside one audio-tap
-    // interval. Keep their deadline tight so old tentative interpretations
-    // cannot perform delayed side effects.
-    static let maximumRecognitionAgeNanoseconds: UInt64 = 500_000_000
-
-    // Apple doesn't guarantee that every phrase receives a useful tentative
-    // interpretation. A first-seen finalized command therefore gets a bounded
-    // fallback window. This is a deadline, never an added wait: dispatch still
-    // begins as soon as the result arrives.
-    static let maximumFinalRecognitionAgeNanoseconds: UInt64 = 1_500_000_000
-
-    // A fresh result may still spend a short time behind earlier serialized
-    // clipboard work. Keep that protection separate from recognition age so
-    // lowering the late-result ceiling does not reduce safe queue capacity.
+    // SpeechSessionResultGate rejects results from an earlier Listening
+    // session. Once Apple delivers a result from the current session, its
+    // audio age is diagnostic information rather than a reason to discard the
+    // user's command: first-result latency legitimately varies while the
+    // on-device recognizer becomes active. Bound only the time a recognized
+    // command may wait inside Ctrl-Say before its side effect begins.
     static let maximumDispatchAgeNanoseconds: UInt64 = 1_500_000_000
 
-    static func rejectionReason(
+    static func isFreshForDispatch(
         _ metadata: SpeechCommandMetadata,
         at uptimeNanoseconds: UInt64
-    ) -> RejectionReason? {
-        if let audioEndUptimeNanoseconds = metadata.audioEndUptimeNanoseconds,
-            uptimeNanoseconds >= audioEndUptimeNanoseconds,
-            uptimeNanoseconds - audioEndUptimeNanoseconds
-                > (metadata.isFinalResult
-                    ? maximumFinalRecognitionAgeNanoseconds
-                    : maximumRecognitionAgeNanoseconds)
-        {
-            return .recognition
-        }
-
+    ) -> Bool {
         guard uptimeNanoseconds >= metadata.resultReceivedAtNanoseconds else {
-            return nil
+            return true
         }
-        if uptimeNanoseconds - metadata.resultReceivedAtNanoseconds
-            > maximumDispatchAgeNanoseconds
-        {
-            return .dispatch
-        }
-        return nil
+        return uptimeNanoseconds - metadata.resultReceivedAtNanoseconds
+            <= maximumDispatchAgeNanoseconds
     }
 }
 
