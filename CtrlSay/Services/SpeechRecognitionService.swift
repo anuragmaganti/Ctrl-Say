@@ -433,11 +433,16 @@ final class SpeechRecognitionService {
             do {
                 for try await result in transcriber.results {
                     guard let self else { return }
-                    guard self.resultGate.accepts(result.range) else {
+                    guard
+                        let acceptedBoundary = self.resultGate.acceptedBoundary(
+                            for: result.range
+                        )
+                    else {
                         continue
                     }
                     let recognizedResult = RecognizedSpeechResult(
                         result,
+                        notBefore: acceptedBoundary,
                         analysisStartedAtNanoseconds: self.analysisStartedAtNanoseconds
                     )
                     #if DEBUG
@@ -847,6 +852,7 @@ struct RecognizedSpeechResult: Sendable {
 
     init(
         _ result: SpeechTranscriber.Result,
+        notBefore boundary: CMTime,
         analysisStartedAtNanoseconds: UInt64?
     ) {
         // Capture delivery before attributed-text assembly so `speech_ms`
@@ -854,9 +860,17 @@ struct RecognizedSpeechResult: Sendable {
         // accounts for Ctrl-Say's own result transformation separately.
         receivedAtNanoseconds = DispatchTime.now().uptimeNanoseconds
         let attributedText = result.text
-        text = String(attributedText.characters)
-        let fragments = attributedText.runs.map { run in
-            SpeechAttributedTextFragment(
+        let crossesBoundary = CMTimeCompare(result.range.start, boundary) < 0
+        let fragments = attributedText.runs.compactMap {
+            run -> SpeechAttributedTextFragment? in
+            if crossesBoundary {
+                guard let runRange = run.audioTimeRange,
+                    CMTimeCompare(runRange.end, boundary) >= 0
+                else {
+                    return nil
+                }
+            }
+            return SpeechAttributedTextFragment(
                 String(attributedText[run.range].characters),
                 range: run.audioTimeRange.map(SpeechResultRange.init),
                 confidence: run.transcriptionConfidence
@@ -864,13 +878,22 @@ struct RecognizedSpeechResult: Sendable {
         }
         let tokenAssembly = SpeechTokenAssembler.assemble(fragments)
         tokens = tokenAssembly.tokens
+        if crossesBoundary {
+            text = tokens.map(\.text).joined(separator: " ")
+        } else {
+            text = String(attributedText.characters)
+        }
         attributeRunCount = tokenAssembly.sourceFragmentCount
         inWordAttributeRunMergeCount = tokenAssembly.inWordBoundaryMergeCount
-        range = result.range
+        range = CMTimeRange(
+            start: crossesBoundary ? boundary : result.range.start,
+            end: result.range.end
+        )
         finalizationTime = result.resultsFinalizationTime
         isFinal = result.isFinal
-        minimumConfidence = attributedText.runs
-            .compactMap(\.transcriptionConfidence)
+        minimumConfidence =
+            tokens
+            .compactMap(\.confidence)
             .min()
         self.analysisStartedAtNanoseconds = analysisStartedAtNanoseconds
         audioEndUptimeNanoseconds = Self.audioEndUptimeNanoseconds(

@@ -26,21 +26,28 @@ struct SpeechSessionResultGate {
         sessionStartTime = nil
     }
 
-    func accepts(_ range: CMTimeRange) -> Bool {
+    func acceptedBoundary(for range: CMTimeRange) -> CMTime? {
         guard isAcceptingResults,
             let sessionStartTime,
             range.isValid,
             range.start.isNumeric,
             range.end.isNumeric
         else {
-            return false
+            return nil
         }
 
-        let earliestAcceptedStart = CMTimeSubtract(
+        let boundary = CMTimeSubtract(
             sessionStartTime,
             Self.timestampTolerance
         )
-        return CMTimeCompare(range.start, earliestAcceptedStart) >= 0
+        guard CMTimeCompare(range.end, boundary) >= 0 else {
+            return nil
+        }
+        return boundary
+    }
+
+    func accepts(_ range: CMTimeRange) -> Bool {
+        acceptedBoundary(for: range) != nil
     }
 
     func acceptsFinalizationTime(_ time: CMTime) -> Bool {

@@ -22,14 +22,14 @@ struct SpeechSessionResultGateTests {
         #expect(gate.acceptsFinalizationTime(time(10.25)))
     }
 
-    @Test("Late results from the previous session are rejected")
-    func rejectsPreviousSession() {
+    @Test("Old results are rejected while results reaching this session are accepted")
+    func handlesPreviousSessionBoundary() {
         var gate = SpeechSessionResultGate()
         gate.beginSession()
         gate.recordSessionStart(time(10))
 
         #expect(!gate.accepts(range(start: 4, duration: 2)))
-        #expect(!gate.accepts(range(start: 9, duration: 2)))
+        #expect(gate.accepts(range(start: 9, duration: 2)))
         #expect(!gate.acceptsFinalizationTime(time(9)))
     }
 
