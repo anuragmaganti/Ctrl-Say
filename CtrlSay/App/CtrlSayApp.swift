@@ -152,7 +152,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func processNotchFeedback(_ event: NotchFeedbackEvent) {
         switch event {
         case .listeningRequested:
-            _ = ensureNotchPanel()
+            // Listening state creates the panel outside the capture request.
             notchPresentationState.setListeningActivity(.preparing)
 
         case .listeningStopped:

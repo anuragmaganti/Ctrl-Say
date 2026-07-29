@@ -391,11 +391,7 @@ final class SpeechRecognitionService {
 
         let analyzer = SpeechAnalyzer(
             modules: [transcriber],
-            // Ctrl-Say retains this prepared analyzer while useful and releases
-            // it on memory pressure. Let Speech reclaim its model when the
-            // analyzer is actually released instead of pinning it for process
-            // lifetime independently of Ctrl-Say's lifecycle.
-            options: .init(priority: .userInitiated, modelRetention: .whileInUse)
+            options: .init(priority: .userInitiated, modelRetention: .processLifetime)
         )
         do {
             try await analyzer.setContext(context)
@@ -404,7 +400,6 @@ final class SpeechRecognitionService {
                 guard changedStart else { return }
                 Task { @MainActor [weak self] in
                     guard let self,
-                        self.state == .listening,
                         self.resultGate.acceptsFinalizationTime(range.start)
                     else {
                         return
@@ -438,9 +433,7 @@ final class SpeechRecognitionService {
             do {
                 for try await result in transcriber.results {
                     guard let self else { return }
-                    guard self.state == .listening,
-                        self.resultGate.accepts(result.range)
-                    else {
+                    guard self.resultGate.accepts(result.range) else {
                         continue
                     }
                     let recognizedResult = RecognizedSpeechResult(
@@ -471,9 +464,8 @@ final class SpeechRecognitionService {
         }
 
         let (inputSequence, continuation) = AsyncStream<AnalyzerInput>.makeStream(
-            // Keep only the newest converted input. Explicit timestamps retain
-            // any omitted interval as a gap instead of creating stale backlog.
-            bufferingPolicy: .bufferingNewest(1)
+            // Preserve up to 400 ms of opening audio while Apple's worker starts.
+            bufferingPolicy: .bufferingOldest(4)
         )
         analyzerInputContinuation = continuation
         latestAnalyzerInputEndTime = nil
@@ -684,7 +676,7 @@ final class SpeechRecognitionService {
         resultGate.endSession()
 
         if audioEngine.isRunning {
-            audioEngine.stop()
+            audioEngine.pause()
         }
         if isInputTapInstalled {
             audioEngine.inputNode.removeTap(onBus: 0)
@@ -736,6 +728,7 @@ final class SpeechRecognitionService {
         }
 
         await stopCurrentInputSequence()
+        audioEngine.stop()
         await converter.reset()
 
         let activeResultsTask = resultsTask

@@ -402,19 +402,17 @@ final class AppModel {
         prewarmSpeechRecognitionIfReady()
     }
 
-    /// Prepares only Apple's recognition resources. It never opens the
-    /// microphone and waits for restored permanent names before setting the
-    /// initial contextual vocabulary.
+    /// Prepares speech without opening the microphone or waiting on unrelated
+    /// Accessibility and permanent-storage work.
     func prewarmSpeechRecognitionIfReady() {
-        guard isReadyForCommands, speechPrewarmTask == nil else { return }
+        guard speech.microphoneAuthorization == .authorized,
+            speechPrewarmTask == nil
+        else {
+            return
+        }
 
-        let task = Task(priority: .utility) { @MainActor [weak self] in
+        let task = Task(priority: .userInitiated) { @MainActor [weak self] in
             guard let self else { return }
-            await self.waitForPermanentStorageRestore()
-            guard self.isReadyForCommands else {
-                self.speechPrewarmTask = nil
-                return
-            }
             await self.speech.prewarm(vocabulary: Array(self.slots.allNamedKeys))
             self.speechPrewarmTask = nil
         }
@@ -442,13 +440,13 @@ final class AppModel {
         }
 
         desiredListening = shouldListen
-        publishNotchFeedback(
-            shouldListen ? .listeningRequested : .listeningStopped
-        )
         if !shouldListen {
             listeningTransitionTask?.cancel()
         }
         startListeningTransitionIfNeeded()
+        publishNotchFeedback(
+            shouldListen ? .listeningRequested : .listeningStopped
+        )
         return true
     }
 
@@ -1536,7 +1534,10 @@ final class AppModel {
 
     private func startListeningTransitionIfNeeded() {
         guard listeningTransitionTask == nil else { return }
-        listeningTransitionTask = Task { [weak self] in
+        listeningTransitionTask = Task.immediate(
+            name: "listening-transition",
+            priority: .userInitiated
+        ) { @MainActor [weak self] in
             await self?.reconcileListeningState()
         }
     }
