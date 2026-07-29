@@ -188,14 +188,7 @@ final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
         guard panel.isVisible else { return }
         let screen = bestScreenForCurrentFrame()
         activeScreen = screen
-        let count = visibleItemCount
-        let height = ClipboardHUDMetrics.height(
-            itemCount: count,
-            collection: presentationState.selectedCollection,
-            permanentStatusLayout: permanentStatusLayout,
-            showsNumberedFooter: model.slots.hasTemporaryCopies,
-            visibleFrame: screen.visibleFrame
-        )
+        let height = contentHeight(on: screen)
         let frame: CGRect
         if let position = positionStore.position(
             for: displayIdentifier(for: screen)
@@ -323,13 +316,7 @@ final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
         guard wantsToBeShown, panel.isVisible else { return }
         let screen = activeScreen ?? bestScreenForCurrentFrame()
         activeScreen = screen
-        let height = ClipboardHUDMetrics.height(
-            itemCount: visibleItemCount,
-            collection: presentationState.selectedCollection,
-            permanentStatusLayout: permanentStatusLayout,
-            showsNumberedFooter: model.slots.hasTemporaryCopies,
-            visibleFrame: screen.visibleFrame
-        )
+        let height = contentHeight(on: screen)
         let target = ClipboardHUDPlacement.resizedFrame(
             from: panel.frame,
             height: height,
@@ -339,13 +326,7 @@ final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
     }
 
     private func applyInitialFrame(on screen: NSScreen) {
-        let height = ClipboardHUDMetrics.height(
-            itemCount: visibleItemCount,
-            collection: presentationState.selectedCollection,
-            permanentStatusLayout: permanentStatusLayout,
-            showsNumberedFooter: model.slots.hasTemporaryCopies,
-            visibleFrame: screen.visibleFrame
-        )
+        let height = contentHeight(on: screen)
         let size = CGSize(width: ClipboardHUDMetrics.width, height: height)
         let identifier = displayIdentifier(for: screen)
         let frame: CGRect
@@ -438,6 +419,16 @@ final class ClipboardHUDPanelController: NSObject, NSWindowDelegate {
                     )
                 }
             }
+        )
+    }
+
+    private func contentHeight(on screen: NSScreen) -> CGFloat {
+        ClipboardHUDMetrics.height(
+            itemCount: visibleItemCount,
+            collection: presentationState.selectedCollection,
+            permanentStatusLayout: permanentStatusLayout,
+            showsNumberedFooter: model.slots.hasTemporaryCopies,
+            visibleFrame: screen.visibleFrame
         )
     }
 

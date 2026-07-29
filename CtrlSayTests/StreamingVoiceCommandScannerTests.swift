@@ -1212,7 +1212,7 @@ final class StreamingVoiceCommandScannerTests: XCTestCase {
         XCTAssertEqual(Set(candidates.map(\.id)).count, 2)
     }
 
-    func testUsesTokenRangesAndMinimumConfidence() throws {
+    func testUsesTokenRanges() throws {
         var scanner = StreamingVoiceCommandScanner()
         let update = scanner.ingest(
             StreamingVoiceCommandSegment(
@@ -1234,7 +1234,6 @@ final class StreamingVoiceCommandScannerTests: XCTestCase {
         let candidate = try XCTUnwrap(upserts(in: update).first)
 
         XCTAssertEqual(candidate.range, timeRange(0.5, 1.1))
-        XCTAssertEqual(candidate.minimumConfidence, 0.73)
     }
 
     private func segment(

@@ -8,7 +8,7 @@ struct SpeechSessionResultGateTests {
         var gate = SpeechSessionResultGate()
         gate.beginSession()
 
-        #expect(!gate.accepts(range(start: 0, duration: 1)))
+        #expect(gate.acceptedBoundary(for: range(start: 0, duration: 1)) == nil)
     }
 
     @Test("Current-session results are accepted")
@@ -17,8 +17,8 @@ struct SpeechSessionResultGateTests {
         gate.beginSession()
         gate.recordSessionStart(time(10))
 
-        #expect(gate.accepts(range(start: 10, duration: 0.5)))
-        #expect(gate.accepts(range(start: 10, duration: 0)))
+        #expect(gate.acceptedBoundary(for: range(start: 10, duration: 0.5)) != nil)
+        #expect(gate.acceptedBoundary(for: range(start: 10, duration: 0)) != nil)
         #expect(gate.acceptsFinalizationTime(time(10.25)))
     }
 
@@ -28,8 +28,8 @@ struct SpeechSessionResultGateTests {
         gate.beginSession()
         gate.recordSessionStart(time(10))
 
-        #expect(!gate.accepts(range(start: 4, duration: 2)))
-        #expect(gate.accepts(range(start: 9, duration: 2)))
+        #expect(gate.acceptedBoundary(for: range(start: 4, duration: 2)) == nil)
+        #expect(gate.acceptedBoundary(for: range(start: 9, duration: 2)) != nil)
         #expect(!gate.acceptsFinalizationTime(time(9)))
     }
 
@@ -39,7 +39,7 @@ struct SpeechSessionResultGateTests {
         gate.beginSession()
         gate.recordSessionStart(time(10))
 
-        #expect(gate.accepts(range(start: 9.9995, duration: 0.5)))
+        #expect(gate.acceptedBoundary(for: range(start: 9.9995, duration: 0.5)) != nil)
     }
 
     @Test("Ending and restarting clears the previous session boundary")
@@ -49,12 +49,12 @@ struct SpeechSessionResultGateTests {
         gate.recordSessionStart(time(2))
         gate.endSession()
 
-        #expect(!gate.accepts(range(start: 2, duration: 1)))
+        #expect(gate.acceptedBoundary(for: range(start: 2, duration: 1)) == nil)
 
         gate.beginSession()
-        #expect(!gate.accepts(range(start: 20, duration: 1)))
+        #expect(gate.acceptedBoundary(for: range(start: 20, duration: 1)) == nil)
         gate.recordSessionStart(time(20))
-        #expect(gate.accepts(range(start: 20, duration: 1)))
+        #expect(gate.acceptedBoundary(for: range(start: 20, duration: 1)) != nil)
     }
 
     private func time(_ seconds: Double) -> CMTime {

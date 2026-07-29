@@ -963,26 +963,6 @@ final class ClipboardStoreMutationTests: XCTestCase {
         }
     }
 
-    private func makeTextPayload(
-        _ text: String,
-        id: UUID = UUID(),
-        capturedAt: Date = .now
-    ) -> ClipboardPayload {
-        let data = Data(text.utf8)
-        return ClipboardPayload(
-            id: id,
-            items: [
-                PasteboardItemPayload(
-                    representations: [plainTextRepresentation(text)]
-                )
-            ],
-            kind: .text,
-            preview: String(text.prefix(80)),
-            byteCount: data.count,
-            capturedAt: capturedAt
-        )
-    }
-
     private func plainTextRepresentation(_ text: String) -> PasteboardRepresentation {
         PasteboardRepresentation(
             typeIdentifier: plainTextType,

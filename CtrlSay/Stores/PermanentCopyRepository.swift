@@ -211,13 +211,7 @@ actor PermanentCopyRepository: PermanentCopyPersisting {
 
         let schema = Schema(versionedSchema: PermanentCopySchemaV1.self)
         let configuration: ModelConfiguration
-        switch location {
-        case .production:
-            let directory = URL.applicationSupportDirectory
-                .appending(
-                    path: Self.applicationSupportDirectoryName,
-                    directoryHint: .isDirectory
-                )
+        if let directory = persistentDirectory() {
             try FileManager.default.createDirectory(
                 at: directory,
                 withIntermediateDirectories: true
@@ -229,21 +223,7 @@ actor PermanentCopyRepository: PermanentCopyPersisting {
                 allowsSave: true,
                 cloudKitDatabase: .none
             )
-
-        case .temporary(let directory):
-            try FileManager.default.createDirectory(
-                at: directory,
-                withIntermediateDirectories: true
-            )
-            configuration = ModelConfiguration(
-                "PermanentCopies",
-                schema: schema,
-                url: directory.appending(path: Self.storeFileName),
-                allowsSave: true,
-                cloudKitDatabase: .none
-            )
-
-        case .memory:
+        } else {
             configuration = ModelConfiguration(
                 "PermanentCopies",
                 schema: schema,
@@ -264,18 +244,7 @@ actor PermanentCopyRepository: PermanentCopyPersisting {
     }
 
     private func removePersistentStoreArtifacts() throws {
-        let directory: URL
-        switch location {
-        case .production:
-            directory = URL.applicationSupportDirectory.appending(
-                path: Self.applicationSupportDirectoryName,
-                directoryHint: .isDirectory
-            )
-        case .temporary(let temporaryDirectory):
-            directory = temporaryDirectory
-        case .memory:
-            return
-        }
+        guard let directory = persistentDirectory() else { return }
 
         var isDirectory: ObjCBool = false
         guard
@@ -296,6 +265,20 @@ actor PermanentCopyRepository: PermanentCopyPersisting {
             includingPropertiesForKeys: nil
         ) where child.lastPathComponent.hasPrefix(Self.storeFileName) {
             try FileManager.default.removeItem(at: child)
+        }
+    }
+
+    private func persistentDirectory() -> URL? {
+        switch location {
+        case .production:
+            URL.applicationSupportDirectory.appending(
+                path: Self.applicationSupportDirectoryName,
+                directoryHint: .isDirectory
+            )
+        case .temporary(let temporaryDirectory):
+            temporaryDirectory
+        case .memory:
+            nil
         }
     }
 

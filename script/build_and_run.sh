@@ -27,18 +27,22 @@ BUILD_ARGS=(
   "${DERIVED_DATA_ARGS[@]}"
 )
 
-pkill -x "$APP_NAME" >/dev/null 2>&1 || true
-for _ in {1..40}; do
-  if ! pgrep -x "$APP_NAME" >/dev/null; then
-    break
-  fi
-  sleep 0.05
-done
+stop_running_app() {
+  local failure_message="$1"
 
-if pgrep -x "$APP_NAME" >/dev/null; then
-  echo "$APP_NAME did not stop; stop the active Xcode run and try again." >&2
-  exit 1
-fi
+  pkill -x "$APP_NAME" >/dev/null 2>&1 || true
+  for _ in {1..40}; do
+    if ! pgrep -x "$APP_NAME" >/dev/null; then
+      return 0
+    fi
+    sleep 0.05
+  done
+
+  echo "$failure_message" >&2
+  return 1
+}
+
+stop_running_app "$APP_NAME did not stop; stop the active Xcode run and try again."
 
 xcodebuild "${BUILD_ARGS[@]}" build
 
@@ -90,15 +94,7 @@ install_app() {
   /usr/bin/ditto "$APP_BUNDLE" "$staged_app"
   verify_signed_app "$staged_app"
 
-  pkill -x "$APP_NAME" >/dev/null 2>&1 || true
-  for _ in {1..40}; do
-    if ! pgrep -x "$APP_NAME" >/dev/null; then
-      break
-    fi
-    sleep 0.05
-  done
-  if pgrep -x "$APP_NAME" >/dev/null; then
-    echo "$APP_NAME did not stop; the installed app was not replaced." >&2
+  if ! stop_running_app "$APP_NAME did not stop; the installed app was not replaced."; then
     return 1
   fi
 

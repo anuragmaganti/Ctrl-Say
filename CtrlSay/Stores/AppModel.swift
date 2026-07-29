@@ -114,10 +114,7 @@ final class AppModel {
             gesture: gesture
         )
 
-        if next.isHUDPresented, !current.isHUDPresented {
-            hudPresentationRequestedAtNanoseconds = DispatchTime.now().uptimeNanoseconds
-        }
-        isClipboardHUDPresented = next.isHUDPresented
+        setClipboardHUDPresented(next.isHUDPresented)
         if next.wantsListening != current.wantsListening {
             _ = setListeningDesired(next.wantsListening)
         }
@@ -129,23 +126,16 @@ final class AppModel {
 
     // MARK: - Clipboard HUD Actions
 
-    func pasteNumberedCopy(_ payload: ClipboardPayload, number: Int) {
+    func pasteTemporaryCopy(_ payload: ClipboardPayload, label: String) {
         enqueueInterfaceCommand(
-            .pasteTemporary(payload: payload, label: String(number)),
-            target: clipboard.currentCommandTarget()
-        )
-    }
-
-    func pasteTemporaryNamedCopy(_ payload: ClipboardPayload, name: String) {
-        enqueueInterfaceCommand(
-            .pasteTemporary(payload: payload, label: name),
+            .pasteTemporary(payload: payload, label: label),
             target: clipboard.currentCommandTarget()
         )
     }
 
     func copyToSystemClipboard(_ payload: ClipboardPayload) {
         do {
-            _ = try clipboard.writeToSystemClipboard(payload)
+            try clipboard.writeToSystemClipboard(payload)
         } catch {
             NSSound.beep()
             Telemetry.clipboard.error("HUD clipboard write failed")
@@ -203,11 +193,10 @@ final class AppModel {
             return
         }
         self.pendingHUDRowAppearance = nil
-        let milliseconds =
-            Double(
-                DispatchTime.now().uptimeNanoseconds
-                    - pendingHUDRowAppearance.storedAtNanoseconds
-            ) / 1_000_000
+        let milliseconds = milliseconds(
+            from: pendingHUDRowAppearance.storedAtNanoseconds,
+            to: DispatchTime.now().uptimeNanoseconds
+        )
         Telemetry.performance.info(
             "HUD row appeared store_to_row_ms=\(milliseconds, privacy: .public)"
         )
@@ -222,10 +211,10 @@ final class AppModel {
         else {
             return
         }
-        let milliseconds =
-            Double(
-                now - pendingCopy.commandReadyAtNanoseconds
-            ) / 1_000_000
+        let milliseconds = milliseconds(
+            from: pendingCopy.commandReadyAtNanoseconds,
+            to: now
+        )
         Telemetry.performance.info(
             "copy-feedback command_ready_to_hud_pending_ms=\(milliseconds, privacy: .public)"
         )
@@ -1030,7 +1019,7 @@ final class AppModel {
 
     private func enqueueInterfaceCommand(
         _ operation: QueuedOperation,
-        target: CommandTarget? = nil
+        target: CommandTarget?
     ) {
         commandQueue.upsert(
             QueuedCommand(
@@ -1086,10 +1075,10 @@ final class AppModel {
             }
 
             let dequeuedAt = DispatchTime.now().uptimeNanoseconds
-            let queueWaitMilliseconds =
-                Double(
-                    dequeuedAt - entry.enqueuedAtNanoseconds
-                ) / 1_000_000
+            let queueWaitMilliseconds = milliseconds(
+                from: entry.enqueuedAtNanoseconds,
+                to: dequeuedAt
+            )
             #if DEBUG
             debugDiagnostics.began(
                 queueWaitMilliseconds: queueWaitMilliseconds,
@@ -1114,10 +1103,10 @@ final class AppModel {
         if let permanentRestoreTask {
             await permanentRestoreTask.value
         }
-        let restoreWaitMilliseconds =
-            Double(
-                DispatchTime.now().uptimeNanoseconds - restoreWaitStarted
-            ) / 1_000_000
+        let restoreWaitMilliseconds = milliseconds(
+            from: restoreWaitStarted,
+            to: DispatchTime.now().uptimeNanoseconds
+        )
         let effectiveQueueWaitMilliseconds =
             queueWaitMilliseconds
             + restoreWaitMilliseconds
@@ -1275,16 +1264,8 @@ final class AppModel {
                     scheduleVocabularyRefresh()
                 }
 
-            case .pasteTemporary(let payload, let label):
-                let metrics = try clipboard.paste(payload, target: queued.target)
-                clipboardMilliseconds = metrics.milliseconds
-                targetStatus = .verified
-                successfulNotchFeedback = .commandSucceeded(
-                    action: .paste,
-                    label: label
-                )
-
-            case .pastePermanent(let payload, let label):
+            case .pasteTemporary(let payload, let label),
+                .pastePermanent(let payload, let label):
                 let metrics = try clipboard.paste(payload, target: queued.target)
                 clipboardMilliseconds = metrics.milliseconds
                 targetStatus = .verified
@@ -1295,7 +1276,10 @@ final class AppModel {
             }
 
             hasEventPostingAccess = clipboard.hasEventPostingAccess
-            let milliseconds = Double(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000
+            let milliseconds = milliseconds(
+                from: started,
+                to: DispatchTime.now().uptimeNanoseconds
+            )
             recordPipeline(
                 queued,
                 queueWaitMilliseconds: effectiveQueueWaitMilliseconds,
@@ -1304,9 +1288,6 @@ final class AppModel {
                 targetStatus: targetStatus,
                 succeeded: true
             )
-            Telemetry.commands.info(
-                "\(queued.operation.telemetryName, privacy: .public) completed in \(milliseconds, privacy: .public) ms")
-
             #if DEBUG
             if let clipboardMilliseconds {
                 debugDiagnostics.recordedClipboardPath(
@@ -1320,16 +1301,18 @@ final class AppModel {
             }
         } catch {
             removePendingCopy(identity: identity)
+            finishActiveNamedCopyAfterFailure(identity)
             if error is CancellationError {
-                finishActiveNamedCopyAfterFailure(identity)
                 return
             }
-            finishActiveNamedCopyAfterFailure(identity)
             if queued.operation.requiresExternalTarget {
                 targetStatus = targetFailureStatus(error) ?? targetStatus
             }
             NSSound.beep()
-            let milliseconds = Double(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000
+            let milliseconds = milliseconds(
+                from: started,
+                to: DispatchTime.now().uptimeNanoseconds
+            )
             recordPipeline(
                 queued,
                 queueWaitMilliseconds: effectiveQueueWaitMilliseconds,
@@ -1339,7 +1322,7 @@ final class AppModel {
                 succeeded: false
             )
             Telemetry.commands.error(
-                "\(queued.operation.telemetryName, privacy: .public) failed: \(error.localizedDescription, privacy: .private)"
+                "\(queued.operation.telemetryName, privacy: .public) failed"
             )
             publishNotchFeedback(
                 .commandFailed(message: notchFailureMessage(for: error))
@@ -1448,20 +1431,18 @@ final class AppModel {
         _ event: NotchFeedbackEvent,
         commandReadyAtNanoseconds: UInt64? = nil
     ) {
-        let hasPresentationConsumer = onNotchFeedback != nil
-        onNotchFeedback?(event)
+        guard let onNotchFeedback else { return }
+        onNotchFeedback(event)
 
-        guard hasPresentationConsumer,
-            let commandReadyAtNanoseconds,
+        guard let commandReadyAtNanoseconds,
             DispatchTime.now().uptimeNanoseconds >= commandReadyAtNanoseconds
         else {
             return
         }
-        let milliseconds =
-            Double(
-                DispatchTime.now().uptimeNanoseconds
-                    - commandReadyAtNanoseconds
-            ) / 1_000_000
+        let milliseconds = milliseconds(
+            from: commandReadyAtNanoseconds,
+            to: DispatchTime.now().uptimeNanoseconds
+        )
         Telemetry.performance.info(
             "copy-feedback command_ready_to_notch_state_ms=\(milliseconds, privacy: .public)"
         )

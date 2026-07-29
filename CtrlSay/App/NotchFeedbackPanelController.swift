@@ -24,7 +24,6 @@ final class NotchFeedbackPanelController {
     private let windowContext = NotchWindowContext()
     private var delayedHideTask: Task<Void, Never>?
     private var isPresentationUpdateScheduled = false
-    private var scheduledUpdateShouldAnimate = false
 
     init(presentationState: NotchFeedbackPresentationState) {
         self.presentationState = presentationState
@@ -100,14 +99,13 @@ final class NotchFeedbackPanelController {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.observePresentation()
-                self.schedulePresentationUpdate(animated: true)
+                self.schedulePresentationUpdate()
             }
         }
         updatePresentation(animated: false)
     }
 
-    private func schedulePresentationUpdate(animated: Bool) {
-        scheduledUpdateShouldAnimate = scheduledUpdateShouldAnimate || animated
+    private func schedulePresentationUpdate() {
         guard !isPresentationUpdateScheduled else { return }
         isPresentationUpdateScheduled = true
 
@@ -117,10 +115,8 @@ final class NotchFeedbackPanelController {
         RunLoop.main.perform(inModes: [.common]) { [weak self] in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                let shouldAnimate = self.scheduledUpdateShouldAnimate
                 self.isPresentationUpdateScheduled = false
-                self.scheduledUpdateShouldAnimate = false
-                self.updatePresentation(animated: shouldAnimate)
+                self.updatePresentation(animated: true)
             }
         }
     }

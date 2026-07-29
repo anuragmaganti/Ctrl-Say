@@ -13,10 +13,6 @@ struct PasteDispatchMetrics: Equatable, Sendable {
     let milliseconds: Double
 }
 
-struct ClipboardWriteMetrics: Equatable, Sendable {
-    let milliseconds: Double
-}
-
 struct ClipboardCaptureResult: Sendable {
     let payload: ClipboardPayload
     let milliseconds: Double
@@ -193,7 +189,7 @@ final class ClipboardService {
 
     func writeToSystemClipboard(
         _ payload: ClipboardPayload
-    ) throws -> ClipboardWriteMetrics {
+    ) throws {
         let started = DispatchTime.now().uptimeNanoseconds
         try write(payload)
         let milliseconds =
@@ -203,7 +199,6 @@ final class ClipboardService {
         Telemetry.clipboard.info(
             "Clipboard written in \(milliseconds, privacy: .public) ms"
         )
-        return ClipboardWriteMetrics(milliseconds: milliseconds)
     }
 
     private func write(_ payload: ClipboardPayload) throws {

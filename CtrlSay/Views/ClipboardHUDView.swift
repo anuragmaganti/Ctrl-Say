@@ -173,9 +173,9 @@ struct ClipboardHUDView: View {
                                     model.copyToSystemClipboard(payload)
                                 },
                                 paste: {
-                                    model.pasteNumberedCopy(
+                                    model.pasteTemporaryCopy(
                                         payload,
-                                        number: number
+                                        label: String(number)
                                     )
                                 },
                                 delete: {
@@ -204,9 +204,9 @@ struct ClipboardHUDView: View {
                                     model.copyToSystemClipboard(payload)
                                 },
                                 paste: {
-                                    model.pasteTemporaryNamedCopy(
+                                    model.pasteTemporaryCopy(
                                         payload,
-                                        name: name
+                                        label: name
                                     )
                                 },
                                 delete: {
@@ -233,24 +233,11 @@ struct ClipboardHUDView: View {
                 }
             }
         }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
-        .contentMargins(.horizontal, 8, for: .scrollContent)
-        .contentMargins(
-            .top,
-            ClipboardHUDMetrics.listVerticalPadding / 2,
-            for: .scrollContent
-        )
-        .contentMargins(
-            .bottom,
-            model.slots.hasTemporaryCopies
+        .clipboardHUDListStyle(
+            bottomMargin: model.slots.hasTemporaryCopies
                 ? 0
-                : ClipboardHUDMetrics.listVerticalPadding / 2,
-            for: .scrollContent
+                : ClipboardHUDMetrics.listVerticalPadding / 2
         )
-        .scrollIndicators(.automatic)
-        .scrollBounceBehavior(.basedOnSize, axes: .vertical)
-        .scrollEdgeEffectStyle(.hard, for: [.top, .bottom])
     }
 
     @ViewBuilder
@@ -334,24 +321,11 @@ struct ClipboardHUDView: View {
                 }
             }
         }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
-        .contentMargins(.horizontal, 8, for: .scrollContent)
-        .contentMargins(
-            .top,
-            ClipboardHUDMetrics.listVerticalPadding / 2,
-            for: .scrollContent
-        )
-        .contentMargins(
-            .bottom,
-            showsPermanentCopies
+        .clipboardHUDListStyle(
+            bottomMargin: showsPermanentCopies
                 ? 0
-                : ClipboardHUDMetrics.listVerticalPadding / 2,
-            for: .scrollContent
+                : ClipboardHUDMetrics.listVerticalPadding / 2
         )
-        .scrollIndicators(.automatic)
-        .scrollBounceBehavior(.basedOnSize, axes: .vertical)
-        .scrollEdgeEffectStyle(.hard, for: [.top, .bottom])
     }
 
     private var temporaryRows: [TemporaryHUDRow] {
@@ -553,5 +527,22 @@ struct ClipboardHUDView: View {
         case .stopped:
             return .secondary
         }
+    }
+}
+
+extension View {
+    fileprivate func clipboardHUDListStyle(bottomMargin: CGFloat) -> some View {
+        listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .contentMargins(.horizontal, 8, for: .scrollContent)
+            .contentMargins(
+                .top,
+                ClipboardHUDMetrics.listVerticalPadding / 2,
+                for: .scrollContent
+            )
+            .contentMargins(.bottom, bottomMargin, for: .scrollContent)
+            .scrollIndicators(.automatic)
+            .scrollBounceBehavior(.basedOnSize, axes: .vertical)
+            .scrollEdgeEffectStyle(.hard, for: [.top, .bottom])
     }
 }

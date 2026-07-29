@@ -1,22 +1,33 @@
 import AppKit
 import SwiftUI
 
-private struct ClipboardPreview: View {
+private struct ClipboardPreviewCopyButton: View {
     let payload: ClipboardPayload
     let additionalHelp: String?
+    let accessibilityLabel: String
+    let copy: () -> Void
 
     @State private var isPreviewTruncated = false
 
     init(
         payload: ClipboardPayload,
-        additionalHelp: String? = nil
+        additionalHelp: String? = nil,
+        accessibilityLabel: String,
+        copy: @escaping () -> Void
     ) {
         self.payload = payload
         self.additionalHelp = additionalHelp
+        self.accessibilityLabel = accessibilityLabel
+        self.copy = copy
     }
 
     var body: some View {
-        contextualPreviewLabel
+        Button(action: copy) {
+            contextualPreviewLabel
+                .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(accessibilityLabel)
     }
 
     private var previewLabel: some View {
@@ -105,6 +116,101 @@ private struct ClipboardInlineEditControls: View {
     }
 }
 
+private enum ClipboardInlineEditingField: Hashable {
+    case name
+    case content
+}
+
+@ViewBuilder
+private func clipboardEditValidationMessage(_ message: String?) -> some View {
+    if let message {
+        Text(message)
+            .font(.caption2)
+            .foregroundStyle(.red)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityLabel("Editing error: \(message)")
+    }
+}
+
+private struct ClipboardRowChrome: ViewModifier {
+    let isEditing: Bool
+
+    @State private var isHovered = false
+
+    func body(content: Content) -> some View {
+        content
+            .padding(.horizontal, 8)
+            .frame(minHeight: ClipboardHUDMetrics.rowHeight)
+            .contentShape(.rect(cornerRadius: 11))
+            .background(
+                isHovered || isEditing
+                    ? AnyShapeStyle(.quaternary)
+                    : AnyShapeStyle(.clear),
+                in: .rect(cornerRadius: 11)
+            )
+            .onHover { hovering in
+                withAnimation(.easeOut(duration: 0.12)) {
+                    isHovered = hovering
+                }
+            }
+    }
+}
+
+extension View {
+    fileprivate func clipboardRowChrome(isEditing: Bool) -> some View {
+        modifier(ClipboardRowChrome(isEditing: isEditing))
+    }
+
+    fileprivate func clipboardInlineContentEditor(
+        cancel: @escaping () -> Void,
+        save: @escaping () -> Void,
+        accessibilityLabel: String
+    ) -> some View {
+        font(.callout)
+            .scrollContentBackground(.hidden)
+            .padding(5)
+            .frame(height: ClipboardHUDMetrics.inlineContentEditorHeight)
+            .background(.quaternary, in: .rect(cornerRadius: 7))
+            .onKeyPress(.escape) {
+                cancel()
+                return .handled
+            }
+            .onKeyPress(.return, phases: .down) { press in
+                guard press.modifiers.contains(.command) else {
+                    return .ignored
+                }
+                save()
+                return .handled
+            }
+            .accessibilityLabel(accessibilityLabel)
+            .accessibilityHint(
+                "Press Command-Return to save or Escape to cancel"
+            )
+    }
+}
+
+@MainActor
+private func boundedClipboardDraft(
+    editingSession: ClipboardHUDEditingSession,
+    sizeMessage: String
+) -> Binding<String> {
+    Binding(
+        get: { editingSession.draft },
+        set: { newValue in
+            guard
+                newValue.utf8.count
+                    <= ClipboardPayload.maximumInlineEditableTextBytes
+            else {
+                editingSession.setValidationMessage(sizeMessage)
+                NSSound.beep()
+                return
+            }
+            editingSession.updateDraft(newValue)
+            editingSession.clearValidationMessage(matching: sizeMessage)
+        }
+    )
+}
+
 struct PendingClipboardCopyRow: View {
     let copy: PendingClipboardCopy
 
@@ -177,7 +283,6 @@ struct TemporaryCopyRow: View {
     let updateText: (UUID, String) throws -> Void
     let thumbnailProvider: ClipboardThumbnailProvider?
 
-    @State private var isHovered = false
     @State private var focusLossIsArmed = false
     @FocusState private var contentIsFocused: Bool
 
@@ -256,44 +361,26 @@ struct TemporaryCopyRow: View {
                             .lineLimit(1)
                             .frame(maxWidth: .infinity, alignment: .leading)
 
-                        editorControls
+                        ClipboardInlineEditControls(
+                            cancel: cancelEditing,
+                            save: { _ = commitContentEdit() }
+                        )
                     }
 
                     TextEditor(text: boundedContentDraft)
-                        .font(.callout)
-                        .scrollContentBackground(.hidden)
-                        .padding(5)
-                        .frame(height: ClipboardHUDMetrics.inlineContentEditorHeight)
-                        .background(.quaternary, in: .rect(cornerRadius: 7))
+                        .clipboardInlineContentEditor(
+                            cancel: cancelEditing,
+                            save: { _ = commitContentEdit() },
+                            accessibilityLabel: "Temporary copy contents"
+                        )
                         .focused($contentIsFocused)
                         .onAppear {
                             focusContentEditor()
                         }
-                        .onKeyPress(.escape) {
-                            cancelEditing()
-                            return .handled
-                        }
-                        .onKeyPress(.return, phases: .down) { press in
-                            guard press.modifiers.contains(.command) else {
-                                return .ignored
-                            }
-                            _ = commitContentEdit()
-                            return .handled
-                        }
-                        .accessibilityLabel("Temporary copy contents")
-                        .accessibilityHint(
-                            "Press Command-Return to save or Escape to cancel"
-                        )
 
-                    if let validationMessage = editingSession.validationMessage {
-                        Text(validationMessage)
-                            .font(.caption2)
-                            .foregroundStyle(.red)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .accessibilityLabel(
-                                "Editing error: \(validationMessage)"
-                            )
-                    }
+                    clipboardEditValidationMessage(
+                        editingSession.validationMessage
+                    )
                 } else {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         titleCopyButton
@@ -301,7 +388,12 @@ struct TemporaryCopyRow: View {
                         pasteButton
                     }
 
-                    previewCopyButton
+                    ClipboardPreviewCopyButton(
+                        payload: payload,
+                        accessibilityLabel:
+                            "Copy \(slot.copyAccessibilityName) contents to clipboard",
+                        copy: copyToClipboard
+                    )
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -320,21 +412,7 @@ struct TemporaryCopyRow: View {
             }
 
         }
-        .padding(.leading, 8)
-        .padding(.trailing, 8)
-        .frame(minHeight: ClipboardHUDMetrics.rowHeight)
-        .contentShape(.rect(cornerRadius: 11))
-        .background(
-            isHovered || isEditingContent
-                ? AnyShapeStyle(.quaternary)
-                : AnyShapeStyle(.clear),
-            in: .rect(cornerRadius: 11)
-        )
-        .onHover { hovering in
-            withAnimation(.easeOut(duration: 0.12)) {
-                isHovered = hovering
-            }
-        }
+        .clipboardRowChrome(isEditing: isEditingContent)
     }
 
     @ViewBuilder
@@ -342,21 +420,12 @@ struct TemporaryCopyRow: View {
         if payload.kind.benefitsFromThumbnail,
             let thumbnailProvider
         {
-            if isEditingContent {
-                ClipboardPayloadThumbnailView(
-                    payload: payload,
-                    provider: thumbnailProvider
-                )
-            } else {
-                Button(action: copyToClipboard) {
-                    ClipboardPayloadThumbnailView(
-                        payload: payload,
-                        provider: thumbnailProvider
-                    )
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(copyAccessibilityLabel)
-            }
+            ClipboardPayloadThumbnailView(
+                payload: payload,
+                provider: thumbnailProvider,
+                copy: isEditingContent ? nil : copyToClipboard,
+                accessibilityLabel: copyAccessibilityLabel
+            )
         }
     }
 
@@ -372,34 +441,12 @@ struct TemporaryCopyRow: View {
         .accessibilityLabel(copyAccessibilityLabel)
     }
 
-    private var previewCopyButton: some View {
-        Button(action: copyToClipboard) {
-            ClipboardPreview(
-                payload: payload
-            )
-            .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(
-            "Copy \(slot.copyAccessibilityName) contents to clipboard"
-        )
-    }
-
     private var pasteButton: some View {
         Button("Paste", action: paste)
             .controlSize(.small)
             .buttonStyle(.borderless)
             .accessibilityLabel(pasteAccessibilityLabel)
             .help(pasteAccessibilityLabel)
-    }
-
-    private var editorControls: some View {
-        ClipboardInlineEditControls(
-            cancel: cancelEditing,
-            save: {
-                _ = commitContentEdit()
-            }
-        )
     }
 
     @ViewBuilder
@@ -456,21 +503,9 @@ struct TemporaryCopyRow: View {
     }
 
     private var boundedContentDraft: Binding<String> {
-        let sizeMessage = "Copy content must be 256 KB or smaller."
-        return Binding(
-            get: { editingSession.draft },
-            set: { newValue in
-                guard
-                    newValue.utf8.count
-                        <= ClipboardPayload.maximumInlineEditableTextBytes
-                else {
-                    editingSession.setValidationMessage(sizeMessage)
-                    NSSound.beep()
-                    return
-                }
-                editingSession.updateDraft(newValue)
-                editingSession.clearValidationMessage(matching: sizeMessage)
-            }
+        boundedClipboardDraft(
+            editingSession: editingSession,
+            sizeMessage: "Copy content must be 256 KB or smaller."
         )
     }
 
@@ -525,11 +560,6 @@ struct TemporaryCopyRow: View {
 }
 
 struct PermanentCopyRow: View {
-    private enum EditingField: Hashable {
-        case name
-        case content
-    }
-
     let name: String
     let payload: ClipboardPayload
     let editingSession: ClipboardHUDEditingSession
@@ -540,10 +570,9 @@ struct PermanentCopyRow: View {
     let updateText: (UUID, String) throws -> Void
     let thumbnailProvider: ClipboardThumbnailProvider?
 
-    @State private var isHovered = false
     @State private var nameSelection: TextSelection?
     @State private var focusLossIsArmed = false
-    @FocusState private var focusedField: EditingField?
+    @FocusState private var focusedField: ClipboardInlineEditingField?
 
     init(
         name: String,
@@ -634,21 +663,7 @@ struct PermanentCopyRow: View {
                 rowActions
             }
         }
-        .padding(.leading, 8)
-        .padding(.trailing, 8)
-        .frame(minHeight: ClipboardHUDMetrics.rowHeight)
-        .contentShape(.rect(cornerRadius: 11))
-        .background(
-            isHovered || editingField != nil
-                ? AnyShapeStyle(.quaternary)
-                : AnyShapeStyle(.clear),
-            in: .rect(cornerRadius: 11)
-        )
-        .onHover { hovering in
-            withAnimation(.easeOut(duration: 0.12)) {
-                isHovered = hovering
-            }
-        }
+        .clipboardRowChrome(isEditing: editingField != nil)
     }
 
     @ViewBuilder
@@ -656,21 +671,12 @@ struct PermanentCopyRow: View {
         if payload.kind.benefitsFromThumbnail,
             let thumbnailProvider
         {
-            if editingField == nil {
-                Button(action: copyToClipboard) {
-                    ClipboardPayloadThumbnailView(
-                        payload: payload,
-                        provider: thumbnailProvider
-                    )
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Copy permanent copy \(name) to clipboard")
-            } else {
-                ClipboardPayloadThumbnailView(
-                    payload: payload,
-                    provider: thumbnailProvider
-                )
-            }
+            ClipboardPayloadThumbnailView(
+                payload: payload,
+                provider: thumbnailProvider,
+                copy: editingField == nil ? copyToClipboard : nil,
+                accessibilityLabel: "Copy permanent copy \(name) to clipboard"
+            )
         }
     }
 
@@ -723,53 +729,35 @@ struct PermanentCopyRow: View {
                 }
 
                 if editingField != nil {
-                    editorControls
+                    ClipboardInlineEditControls(
+                        cancel: cancelEditing,
+                        save: { _ = commitCurrentEdit() }
+                    )
                 }
             }
 
             if editingField == .content {
                 TextEditor(text: boundedContentDraft)
-                    .font(.callout)
-                    .scrollContentBackground(.hidden)
-                    .padding(5)
-                    .frame(height: ClipboardHUDMetrics.inlineContentEditorHeight)
-                    .background(.quaternary, in: .rect(cornerRadius: 7))
+                    .clipboardInlineContentEditor(
+                        cancel: cancelEditing,
+                        save: { _ = commitCurrentEdit() },
+                        accessibilityLabel: "Permanent copy contents"
+                    )
                     .focused($focusedField, equals: .content)
                     .onAppear {
                         focus(.content, selectingAll: false)
                     }
-                    .onKeyPress(.escape) {
-                        cancelEditing()
-                        return .handled
-                    }
-                    .onKeyPress(.return, phases: .down) { press in
-                        guard press.modifiers.contains(.command) else {
-                            return .ignored
-                        }
-                        _ = commitCurrentEdit()
-                        return .handled
-                    }
-                    .accessibilityLabel("Permanent copy contents")
-                    .accessibilityHint("Press Command-Return to save or Escape to cancel")
             } else {
-                Button(action: copyToClipboard) {
-                    ClipboardPreview(
-                        payload: payload,
-                        additionalHelp: contentHelp
-                    )
-                    .contentShape(.rect)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Copy permanent copy \(name) contents to clipboard")
+                ClipboardPreviewCopyButton(
+                    payload: payload,
+                    additionalHelp: contentHelp,
+                    accessibilityLabel:
+                        "Copy permanent copy \(name) contents to clipboard",
+                    copy: copyToClipboard
+                )
             }
 
-            if let validationMessage = editingSession.validationMessage {
-                Text(validationMessage)
-                    .font(.caption2)
-                    .foregroundStyle(.red)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityLabel("Editing error: \(validationMessage)")
-            }
+            clipboardEditValidationMessage(editingSession.validationMessage)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .onChange(of: focusedField) { oldValue, newValue in
@@ -789,15 +777,6 @@ struct PermanentCopyRow: View {
                 }
             }
         }
-    }
-
-    private var editorControls: some View {
-        ClipboardInlineEditControls(
-            cancel: cancelEditing,
-            save: {
-                _ = commitCurrentEdit()
-            }
-        )
     }
 
     private var optionsMenu: some View {
@@ -854,7 +833,7 @@ struct PermanentCopyRow: View {
         )
     }
 
-    private var editingField: EditingField? {
+    private var editingField: ClipboardInlineEditingField? {
         if editingSession.isEditing(nameEditTarget) {
             return .name
         }
@@ -928,18 +907,9 @@ struct PermanentCopyRow: View {
     }
 
     private var boundedContentDraft: Binding<String> {
-        let sizeMessage = "Permanent copy content must be 256 KB or smaller."
-        return Binding(
-            get: { editingSession.draft },
-            set: { newValue in
-                guard newValue.utf8.count <= ClipboardPayload.maximumInlineEditableTextBytes else {
-                    editingSession.setValidationMessage(sizeMessage)
-                    NSSound.beep()
-                    return
-                }
-                editingSession.updateDraft(newValue)
-                editingSession.clearValidationMessage(matching: sizeMessage)
-            }
+        boundedClipboardDraft(
+            editingSession: editingSession,
+            sizeMessage: "Permanent copy content must be 256 KB or smaller."
         )
     }
 
@@ -969,7 +939,10 @@ struct PermanentCopyRow: View {
         "This permanent copy changed while you were editing. Cancel and edit the new copy."
     }
 
-    private func focus(_ field: EditingField, selectingAll: Bool) {
+    private func focus(
+        _ field: ClipboardInlineEditingField,
+        selectingAll: Bool
+    ) {
         focusLossIsArmed = false
         Task { @MainActor in
             await Task.yield()
@@ -1003,10 +976,30 @@ extension ClipboardContentKind {
 private struct ClipboardPayloadThumbnailView: View {
     let payload: ClipboardPayload
     let provider: ClipboardThumbnailProvider
+    let copy: (() -> Void)?
+    let accessibilityLabel: String
 
     @State private var thumbnail: NSImage?
 
     var body: some View {
+        Group {
+            if let copy {
+                Button(action: copy) {
+                    thumbnailContent
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(accessibilityLabel)
+            } else {
+                thumbnailContent
+            }
+        }
+        .task(id: payload.id) {
+            thumbnail = nil
+            thumbnail = await provider.thumbnail(for: payload)
+        }
+    }
+
+    private var thumbnailContent: some View {
         ZStack(alignment: .bottomTrailing) {
             Group {
                 if let thumbnail {
@@ -1036,9 +1029,5 @@ private struct ClipboardPayloadThumbnailView: View {
         }
         .frame(width: 38, height: 38)
         .accessibilityHidden(true)
-        .task(id: payload.id) {
-            thumbnail = nil
-            thumbnail = await provider.thumbnail(for: payload)
-        }
     }
 }

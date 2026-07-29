@@ -56,8 +56,6 @@ nonisolated enum VoiceCommandParser {
     ]
     static let numberedSlotRange = 1...canonicalSpokenSlotNumbers.count
     static let namedCopyWordRange = 1...5
-    static let temporaryNameWordRange = namedCopyWordRange
-    static let permanentNameWordRange = namedCopyWordRange
 
     // Scoped to the command verb position. These are common on-device
     // transcriptions of a spoken "paste" and must never rewrite slot names or
@@ -93,7 +91,7 @@ nonisolated enum VoiceCommandParser {
         }
 
         if tokens.starts(with: ["delete", "permanent", "copy"]) {
-            return validPermanentNameTokens(Array(tokens.dropFirst(3)))
+            return validNameTokens(Array(tokens.dropFirst(3)))
                 .map(VoiceCommand.deleteNamed)
         }
 
@@ -104,14 +102,14 @@ nonisolated enum VoiceCommandParser {
             {
                 return .deleteNumber(number)
             }
-            return validTemporaryNameTokens(nameTokens)
+            return validNameTokens(nameTokens)
                 .map(VoiceCommand.deleteNamed)
         }
 
         if tokens.first == "make", tokens.last == "permanent",
             tokens.count >= 3
         {
-            return validPermanentNameTokens(
+            return validNameTokens(
                 Array(tokens.dropFirst().dropLast())
             ).map(VoiceCommand.promoteTemporaryNamed)
         }
@@ -119,10 +117,10 @@ nonisolated enum VoiceCommandParser {
         if tokens.first == "rename", tokens.count >= 4,
             let separator = tokens.lastIndex(of: "to"), separator > 1,
             separator < tokens.index(before: tokens.endIndex),
-            let source = validTemporaryNameTokens(
+            let source = validNameTokens(
                 Array(tokens[1..<separator])
             ),
-            let destination = validTemporaryNameTokens(
+            let destination = validNameTokens(
                 Array(tokens[tokens.index(after: separator)...])
             )
         {
@@ -133,7 +131,7 @@ nonisolated enum VoiceCommandParser {
             if let number = slotNumber(tokens[1]) {
                 return tokens.count == 2 ? .copyNumber(number) : nil
             }
-            return validTemporaryNameTokens(Array(tokens.dropFirst()))
+            return validNameTokens(Array(tokens.dropFirst()))
                 .map(VoiceCommand.copyNamed)
         }
 
@@ -144,12 +142,12 @@ nonisolated enum VoiceCommandParser {
             {
                 return .pasteNumber(number)
             }
-            return validTemporaryNameTokens(nameTokens)
+            return validNameTokens(nameTokens)
                 .map(VoiceCommand.pasteNamed)
         }
 
         if tokens.starts(with: ["permanent", "copy"]) {
-            return validPermanentNameTokens(Array(tokens.dropFirst(2)))
+            return validNameTokens(Array(tokens.dropFirst(2)))
                 .map(VoiceCommand.permanentCopy)
         }
 
@@ -168,11 +166,11 @@ nonisolated enum VoiceCommandParser {
     }
 
     static func validNormalizedPermanentName(_ name: String) -> String? {
-        validPermanentNameTokens(normalizedTokens(name))
+        validNameTokens(normalizedTokens(name))
     }
 
     static func validNormalizedTemporaryName(_ name: String) -> String? {
-        validTemporaryNameTokens(normalizedTokens(name))
+        validNameTokens(normalizedTokens(name))
     }
 
     static func isPotentialCommand(_ transcript: String) -> Bool {
@@ -202,7 +200,7 @@ nonisolated enum VoiceCommandParser {
         token == "permanent" || token == "permanently" || token.hasPrefix("perman")
     }
 
-    private static func normalizedTokens(_ text: String) -> [String] {
+    static func normalizedTokens(_ text: String) -> [String] {
         text.lowercased()
             .components(separatedBy: CharacterSet.alphanumerics.inverted)
             .filter { !$0.isEmpty }
@@ -222,25 +220,14 @@ nonisolated enum VoiceCommandParser {
         token == "paste" || pasteVerbAliases.contains(token)
     }
 
-    private static func validNameTokens(
-        _ tokens: [String],
-        wordRange: ClosedRange<Int>
-    ) -> String? {
-        guard wordRange.contains(tokens.count),
+    private static func validNameTokens(_ tokens: [String]) -> String? {
+        guard namedCopyWordRange.contains(tokens.count),
             Int(tokens[0]) == nil,
             slotNumber(tokens[0]) == nil
         else {
             return nil
         }
         return tokens.joined(separator: " ")
-    }
-
-    private static func validTemporaryNameTokens(_ tokens: [String]) -> String? {
-        validNameTokens(tokens, wordRange: temporaryNameWordRange)
-    }
-
-    private static func validPermanentNameTokens(_ tokens: [String]) -> String? {
-        validNameTokens(tokens, wordRange: permanentNameWordRange)
     }
 }
 

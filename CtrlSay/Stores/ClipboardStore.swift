@@ -32,10 +32,6 @@ final class ClipboardStore {
         }
     }
 
-    var temporaryCopyCount: Int {
-        numbered.count + temporaryNamed.count
-    }
-
     var hasTemporaryCopies: Bool {
         !numbered.isEmpty || !temporaryNamed.isEmpty
     }

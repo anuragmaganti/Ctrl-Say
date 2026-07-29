@@ -10,7 +10,6 @@ struct SerialCommandQueueState<Element, Identity: Hashable> {
     private var entries: [Entry] = []
 
     var count: Int { entries.count }
-    var isEmpty: Bool { entries.isEmpty }
 
     @discardableResult
     mutating func upsert(
@@ -48,5 +47,4 @@ struct SerialCommandQueueState<Element, Identity: Hashable> {
         guard !entries.isEmpty else { return nil }
         return entries.removeFirst()
     }
-
 }

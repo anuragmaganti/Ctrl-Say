@@ -46,10 +46,6 @@ struct SpeechSessionResultGate {
         return boundary
     }
 
-    func accepts(_ range: CMTimeRange) -> Bool {
-        acceptedBoundary(for: range) != nil
-    }
-
     func acceptsFinalizationTime(_ time: CMTime) -> Bool {
         guard isAcceptingResults,
             let sessionStartTime,

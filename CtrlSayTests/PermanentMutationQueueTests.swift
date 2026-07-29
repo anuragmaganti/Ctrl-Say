@@ -4,8 +4,8 @@ import XCTest
 final class PermanentMutationQueueTests: XCTestCase {
     func testSequencesMutationsInArrivalOrder() {
         var queue = PermanentMutationQueueState()
-        let first = queue.enqueue(.upsert(name: "house", payload: payload("A")))
-        let second = queue.enqueue(.upsert(name: "office", payload: payload("B")))
+        let first = queue.enqueue(.upsert(name: "house", payload: makeTextPayload("A")))
+        let second = queue.enqueue(.upsert(name: "office", payload: makeTextPayload("B")))
 
         XCTAssertLessThan(first.sequence, second.sequence)
         XCTAssertEqual(queue.beginNext(), first)
@@ -18,13 +18,13 @@ final class PermanentMutationQueueTests: XCTestCase {
     func testCoalescesOnlyRedundantPendingUpserts() {
         var queue = PermanentMutationQueueState()
         let firstHouse = queue.enqueue(
-            .upsert(name: "house", payload: payload("Old"))
+            .upsert(name: "house", payload: makeTextPayload("Old"))
         )
         let office = queue.enqueue(
-            .upsert(name: "office", payload: payload("Office"))
+            .upsert(name: "office", payload: makeTextPayload("Office"))
         )
         let newestHouse = queue.enqueue(
-            .upsert(name: "house", payload: payload("New"))
+            .upsert(name: "house", payload: makeTextPayload("New"))
         )
 
         XCTAssertEqual(queue.entries.map(\.sequence), [office.sequence, newestHouse.sequence])
@@ -34,12 +34,12 @@ final class PermanentMutationQueueTests: XCTestCase {
     func testNeverCoalescesInFlightOrAcrossRenameBarrier() {
         var queue = PermanentMutationQueueState()
         let original = queue.enqueue(
-            .upsert(name: "house", payload: payload("Original"))
+            .upsert(name: "house", payload: makeTextPayload("Original"))
         )
         XCTAssertEqual(queue.beginNext(), original)
 
         let pending = queue.enqueue(
-            .upsert(name: "house", payload: payload("Pending"))
+            .upsert(name: "house", payload: makeTextPayload("Pending"))
         )
         let rename = queue.enqueue(
             .rename(
@@ -49,7 +49,7 @@ final class PermanentMutationQueueTests: XCTestCase {
             )
         )
         let recreated = queue.enqueue(
-            .upsert(name: "house", payload: payload("Recreated"))
+            .upsert(name: "house", payload: makeTextPayload("Recreated"))
         )
 
         XCTAssertEqual(
@@ -61,7 +61,7 @@ final class PermanentMutationQueueTests: XCTestCase {
     func testFailedMutationRemainsFirstForRetry() {
         var queue = PermanentMutationQueueState()
         let mutation = queue.enqueue(
-            .upsert(name: "house", payload: payload("Retry"))
+            .upsert(name: "house", payload: makeTextPayload("Retry"))
         )
 
         XCTAssertEqual(queue.beginNext(), mutation)
@@ -71,7 +71,7 @@ final class PermanentMutationQueueTests: XCTestCase {
 
     func testStreamingPermanentNameRevisionsRemainOrderedAfterInitialUpsert() {
         var queue = PermanentMutationQueueState()
-        let copiedPayload = payload("Address")
+        let copiedPayload = makeTextPayload("Address")
         let upsert = queue.enqueue(
             .upsert(name: "my", payload: copiedPayload)
         )
@@ -99,25 +99,6 @@ final class PermanentMutationQueueTests: XCTestCase {
             XCTAssertTrue(queue.complete(expected.sequence))
         }
         XCTAssertTrue(queue.isEmpty)
-    }
-
-    private func payload(_ text: String) -> ClipboardPayload {
-        let data = Data(text.utf8)
-        return ClipboardPayload(
-            items: [
-                PasteboardItemPayload(
-                    representations: [
-                        PasteboardRepresentation(
-                            typeIdentifier: "public.utf8-plain-text",
-                            data: data
-                        )
-                    ]
-                )
-            ],
-            kind: .text,
-            preview: text,
-            byteCount: data.count
-        )
     }
 
     private func payloadID(from mutation: PermanentCopyMutation) -> UUID {

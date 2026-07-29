@@ -8,14 +8,14 @@ final class ClipboardRowInteractionTests: XCTestCase {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let service = ClipboardService(pasteboard: pasteboard)
-        let payload = textPayload("Temporary row content")
+        let payload = makeTextPayload("Temporary row content")
 
         let row = TemporaryCopyRow(
             slot: .numbered(1),
             payload: payload,
             editingSession: ClipboardHUDEditingSession(),
             copyToClipboard: {
-                _ = try? service.writeToSystemClipboard(payload)
+                try? service.writeToSystemClipboard(payload)
             },
             paste: {},
             delete: {},
@@ -35,14 +35,14 @@ final class ClipboardRowInteractionTests: XCTestCase {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let service = ClipboardService(pasteboard: pasteboard)
-        let payload = textPayload("Temporary named row content")
+        let payload = makeTextPayload("Temporary named row content")
 
         let row = TemporaryCopyRow(
             slot: .named("house"),
             payload: payload,
             editingSession: ClipboardHUDEditingSession(),
             copyToClipboard: {
-                _ = try? service.writeToSystemClipboard(payload)
+                try? service.writeToSystemClipboard(payload)
             },
             paste: {},
             delete: {},
@@ -62,14 +62,14 @@ final class ClipboardRowInteractionTests: XCTestCase {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let service = ClipboardService(pasteboard: pasteboard)
-        let payload = textPayload("Permanent row content")
+        let payload = makeTextPayload("Permanent row content")
 
         let row = PermanentCopyRow(
             name: "address",
             payload: payload,
             editingSession: ClipboardHUDEditingSession(),
             copyToClipboard: {
-                _ = try? service.writeToSystemClipboard(payload)
+                try? service.writeToSystemClipboard(payload)
             },
             paste: {},
             delete: {},
@@ -87,7 +87,7 @@ final class ClipboardRowInteractionTests: XCTestCase {
 
     @MainActor
     func testPermanentNameEditorReplacesLabelWithoutEndingSession() {
-        let payload = textPayload("Permanent row content")
+        let payload = makeTextPayload("Permanent row content")
         let editingSession = ClipboardHUDEditingSession()
         let row = PermanentCopyRow(
             name: "address",
@@ -122,7 +122,7 @@ final class ClipboardRowInteractionTests: XCTestCase {
 
     @MainActor
     func testTemporaryContentEditorReplacesPreviewWithoutEndingSession() {
-        let payload = textPayload("Temporary row content")
+        let payload = makeTextPayload("Temporary row content")
         let editingSession = ClipboardHUDEditingSession()
         let row = TemporaryCopyRow(
             slot: .numbered(1),
@@ -163,7 +163,7 @@ final class ClipboardRowInteractionTests: XCTestCase {
 
     @MainActor
     func testPermanentContentEditorStaysInsideStandardRowHeight() {
-        let payload = textPayload(
+        let payload = makeTextPayload(
             "Permanent content that continues well beyond the two visible editor lines "
                 + "so the field must scroll internally instead of expanding the HUD row."
         )
@@ -208,7 +208,7 @@ final class ClipboardRowInteractionTests: XCTestCase {
 
     @MainActor
     func testDoubleClickingPermanentTitleDoesNotBeginEditing() {
-        let payload = textPayload("Permanent row content")
+        let payload = makeTextPayload("Permanent row content")
         let editingSession = ClipboardHUDEditingSession()
         let row = PermanentCopyRow(
             name: "address",
@@ -228,7 +228,7 @@ final class ClipboardRowInteractionTests: XCTestCase {
 
     @MainActor
     func testIdlePermanentRowMatchesTemporaryRowHeight() {
-        let payload = textPayload("Two-line clipboard preview content")
+        let payload = makeTextPayload("Two-line clipboard preview content")
         let temporaryRow = TemporaryCopyRow(
             slot: .numbered(1),
             payload: payload,
@@ -298,7 +298,7 @@ final class ClipboardRowInteractionTests: XCTestCase {
             byteCount: plainText.count + richText.count + customData.count
         )
 
-        _ = try service.writeToSystemClipboard(payload)
+        try service.writeToSystemClipboard(payload)
 
         let items = try XCTUnwrap(pasteboard.pasteboardItems)
         XCTAssertEqual(items.count, 2)
@@ -426,22 +426,4 @@ final class ClipboardRowInteractionTests: XCTestCase {
         window.sendEvent(event)
     }
 
-    private func textPayload(_ text: String) -> ClipboardPayload {
-        let data = Data(text.utf8)
-        return ClipboardPayload(
-            items: [
-                PasteboardItemPayload(
-                    representations: [
-                        PasteboardRepresentation(
-                            typeIdentifier: NSPasteboard.PasteboardType.string.rawValue,
-                            data: data
-                        )
-                    ]
-                )
-            ],
-            kind: .text,
-            preview: text,
-            byteCount: data.count
-        )
-    }
 }

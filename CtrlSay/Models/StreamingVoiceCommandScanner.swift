@@ -47,7 +47,6 @@ struct StreamingVoiceCommandCandidate: Equatable, Sendable {
     let id: StreamingVoiceCommandID
     let command: VoiceCommand
     let range: SpeechResultRange
-    let minimumConfidence: Double?
     let isReadyForDispatch: Bool
     let isStableForCommit: Bool
 }
@@ -109,7 +108,6 @@ struct StreamingVoiceCommandScanner {
         let sourceSegmentIDs: Set<SegmentID>
         let command: VoiceCommand
         let range: SpeechResultRange
-        let minimumConfidence: Double?
         let isReadyForDispatch: Bool
         let isStableForCommit: Bool
         let order: Int
@@ -121,7 +119,6 @@ struct StreamingVoiceCommandScanner {
         var sourceSegmentIDs: Set<SegmentID>
         var command: VoiceCommand
         var range: SpeechResultRange
-        var minimumConfidence: Double?
         var isReadyForDispatch: Bool
         var isStableForCommit: Bool
         var order: Int
@@ -155,7 +152,7 @@ struct StreamingVoiceCommandScanner {
         knownNamedCopies: Set<String> = []
     ) -> StreamingVoiceCommandScannerUpdate {
         let rangeWasAlreadyFinalized =
-            isNumeric(resultStreamFinalizedThrough)
+            resultStreamFinalizedThrough.isNumeric
             && CMTimeCompare(segment.range.end, resultStreamFinalizedThrough) <= 0
 
         updateLatestObservedEnd(segment.range.end)
@@ -262,8 +259,8 @@ struct StreamingVoiceCommandScanner {
     }
 
     private mutating func advanceFinalizationWatermark(to watermark: CMTime) {
-        guard isNumeric(watermark) else { return }
-        if !isNumeric(finalizedThrough)
+        guard watermark.isNumeric else { return }
+        if !finalizedThrough.isNumeric
             || CMTimeCompare(watermark, finalizedThrough) > 0
         {
             finalizedThrough = watermark
@@ -280,8 +277,8 @@ struct StreamingVoiceCommandScanner {
     private mutating func advanceResultStreamFinalizationWatermark(
         to watermark: CMTime
     ) {
-        guard isNumeric(watermark) else { return }
-        if !isNumeric(resultStreamFinalizedThrough)
+        guard watermark.isNumeric else { return }
+        if !resultStreamFinalizedThrough.isNumeric
             || CMTimeCompare(watermark, resultStreamFinalizedThrough) > 0
         {
             resultStreamFinalizedThrough = watermark
@@ -299,8 +296,8 @@ struct StreamingVoiceCommandScanner {
     }
 
     private mutating func updateLatestObservedEnd(_ end: CMTime) {
-        guard isNumeric(end) else { return }
-        if !isNumeric(latestObservedEnd)
+        guard end.isNumeric else { return }
+        if !latestObservedEnd.isNumeric
             || CMTimeCompare(end, latestObservedEnd) > 0
         {
             latestObservedEnd = end
@@ -321,10 +318,10 @@ struct StreamingVoiceCommandScanner {
         var resolvedTokens: [ResolvedToken] = []
         for segment in orderedSegments {
             let lastSemanticTokenIndex = segment.tokens.lastIndex {
-                !normalizedComponents($0.text).isEmpty
+                !VoiceCommandParser.normalizedTokens($0.text).isEmpty
             }
             for (tokenIndex, token) in segment.tokens.enumerated() {
-                let components = normalizedComponents(token.text)
+                let components = VoiceCommandParser.normalizedTokens(token.text)
                 for (componentIndex, component) in components.enumerated() {
                     let isLastComponent = componentIndex == components.count - 1
                     let tokenClosesPhrase =
@@ -426,25 +423,25 @@ struct StreamingVoiceCommandScanner {
         guard canBridge(verb, to: firstArgument) else { return nil }
 
         let arguments: [ResolvedToken]
-        if let numberedCommand = VoiceCommandParser.parse(
+        let firstArgumentCommand = VoiceCommandParser.parse(
             "\(canonicalVerb) \(firstArgument.text)"
-        ), case .copyNumber = numberedCommand {
+        )
+        switch firstArgumentCommand {
+        case .copyNumber, .pasteNumber:
             arguments = [firstArgument]
-        } else if let numberedCommand = VoiceCommandParser.parse(
-            "\(canonicalVerb) \(firstArgument.text)"
-        ), case .pasteNumber = numberedCommand {
-            arguments = [firstArgument]
-        } else if canonicalVerb == "copy" {
-            arguments = namedCopyArguments(
-                startingAt: index + 1,
-                in: tokens
-            )
-        } else {
-            arguments = longestKnownNameArguments(
-                startingAt: index + 1,
-                in: tokens,
-                knownNamedCopies: knownNamedCopies
-            )
+        default:
+            if canonicalVerb == "copy" {
+                arguments = namedCopyArguments(
+                    startingAt: index + 1,
+                    in: tokens
+                )
+            } else {
+                arguments = longestKnownNameArguments(
+                    startingAt: index + 1,
+                    in: tokens,
+                    knownNamedCopies: knownNamedCopies
+                )
+            }
         }
         guard let finalArgument = arguments.last else { return nil }
 
@@ -477,7 +474,6 @@ struct StreamingVoiceCommandScanner {
             sourceSegmentIDs: Set(commandTokens.map(\.segmentID)),
             command: command,
             range: range,
-            minimumConfidence: minimumConfidence,
             isReadyForDispatch: isReadyForDispatch(
                 command,
                 argument: finalArgument,
@@ -596,18 +592,12 @@ struct StreamingVoiceCommandScanner {
         let range = commandTokens.dropFirst().reduce(modifier.range) {
             $0.union($1.range)
         }
-        let confidences = commandTokens.map(\.confidence)
-        let minimumConfidence =
-            confidences.allSatisfy { $0 != nil }
-            ? confidences.compactMap { $0 }.min()
-            : nil
 
         return CandidateSnapshot(
             anchors: commandTokens.map(\.anchor),
             sourceSegmentIDs: Set(commandTokens.map(\.segmentID)),
             command: command,
             range: range,
-            minimumConfidence: minimumConfidence,
             isReadyForDispatch: isReadyForDispatch(
                 command,
                 argument: finalArgument
@@ -676,7 +666,7 @@ struct StreamingVoiceCommandScanner {
 
     private func canBridge(_ verb: ResolvedToken, to argument: ResolvedToken) -> Bool {
         guard verb.segmentID != argument.segmentID else { return true }
-        guard isNumeric(verb.range.end), isNumeric(argument.range.start) else {
+        guard verb.range.end.isNumeric, argument.range.start.isNumeric else {
             return false
         }
 
@@ -740,7 +730,6 @@ struct StreamingVoiceCommandScanner {
             // union would leave a volatile whole-phrase range attached to a
             // final word partition and could hide a real repeated command.
             candidates[index].range = snapshot.range
-            candidates[index].minimumConfidence = snapshot.minimumConfidence
             candidates[index].isReadyForDispatch = snapshot.isReadyForDispatch
             candidates[index].isStableForCommit = snapshot.isStableForCommit
             candidates[index].order = snapshot.order
@@ -762,7 +751,6 @@ struct StreamingVoiceCommandScanner {
                 id: candidates[index].id,
                 command: snapshot.command,
                 range: candidates[index].range,
-                minimumConfidence: snapshot.minimumConfidence,
                 isReadyForDispatch: snapshot.isReadyForDispatch,
                 isStableForCommit: snapshot.isStableForCommit
             )
@@ -826,7 +814,7 @@ struct StreamingVoiceCommandScanner {
                     // overlap. Endpoint-inclusive zero-range containment is safe
                     // for revisions of one source segment, but could otherwise
                     // absorb a genuine adjacent repeat that begins at that point.
-                    && strictlyOverlaps(candidates[$0].range, snapshot.range)
+                    && candidates[$0].range.overlaps(snapshot.range)
             }
     }
 
@@ -842,7 +830,6 @@ struct StreamingVoiceCommandScanner {
                 sourceSegmentIDs: snapshot.sourceSegmentIDs,
                 command: snapshot.command,
                 range: snapshot.range,
-                minimumConfidence: snapshot.minimumConfidence,
                 isReadyForDispatch: snapshot.isReadyForDispatch,
                 isStableForCommit: snapshot.isStableForCommit,
                 order: snapshot.order,
@@ -890,12 +877,6 @@ struct StreamingVoiceCommandScanner {
 
     // MARK: - Range Helpers
 
-    private func normalizedComponents(_ text: String) -> [String] {
-        text.lowercased()
-            .components(separatedBy: CharacterSet.alphanumerics.inverted)
-            .filter { !$0.isEmpty }
-    }
-
     private func rangesCorrespond(
         _ lhs: SpeechResultRange,
         _ rhs: SpeechResultRange
@@ -912,13 +893,6 @@ struct StreamingVoiceCommandScanner {
             || zeroDurationRange(rhs, isContainedIn: lhs)
     }
 
-    private func strictlyOverlaps(
-        _ lhs: SpeechResultRange,
-        _ rhs: SpeechResultRange
-    ) -> Bool {
-        lhs.overlaps(rhs)
-    }
-
     private func zeroDurationRange(
         _ pointRange: SpeechResultRange,
         isContainedIn other: SpeechResultRange
@@ -928,9 +902,5 @@ struct StreamingVoiceCommandScanner {
         }
         return CMTimeCompare(pointRange.start, other.start) >= 0
             && CMTimeCompare(pointRange.start, other.end) <= 0
-    }
-
-    private func isNumeric(_ time: CMTime) -> Bool {
-        time.isNumeric
     }
 }

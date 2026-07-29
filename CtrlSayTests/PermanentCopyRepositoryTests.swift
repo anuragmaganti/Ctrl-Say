@@ -31,8 +31,14 @@ final class PermanentCopyRepositoryTests: XCTestCase {
         let directory = makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let repository = PermanentCopyRepository(location: .temporary(directory))
-        let original = makeTextPayload("First", date: Date(timeIntervalSince1970: 10))
-        let replacement = makeTextPayload("Second", date: Date(timeIntervalSince1970: 20))
+        let original = makeTextPayload(
+            "First",
+            capturedAt: Date(timeIntervalSince1970: 10)
+        )
+        let replacement = makeTextPayload(
+            "Second",
+            capturedAt: Date(timeIntervalSince1970: 20)
+        )
 
         try await repository.apply(.upsert(name: "house", payload: original))
         try await repository.apply(.upsert(name: "house", payload: replacement))
@@ -354,31 +360,6 @@ final class PermanentCopyRepositoryTests: XCTestCase {
         let context = ModelContext(container)
         context.insert(record)
         try context.save()
-    }
-
-    private func makeTextPayload(
-        _ text: String,
-        id: UUID = UUID(),
-        date: Date = Date(timeIntervalSince1970: 1)
-    ) -> ClipboardPayload {
-        let data = Data(text.utf8)
-        return ClipboardPayload(
-            id: id,
-            items: [
-                PasteboardItemPayload(
-                    representations: [
-                        PasteboardRepresentation(
-                            typeIdentifier: "public.utf8-plain-text",
-                            data: data
-                        )
-                    ]
-                )
-            ],
-            kind: .text,
-            preview: text,
-            byteCount: data.count,
-            capturedAt: date
-        )
     }
 
     private func makeMixedPayload(fileURL: URL) -> ClipboardPayload {
